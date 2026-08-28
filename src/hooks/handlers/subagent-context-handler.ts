@@ -27,9 +27,11 @@ export function handleSubagentContext(input: SubagentStartInput, client: HookDbC
     const done = plan.steps.filter(s => s.status === 'done').length;
     const total = plan.steps.length;
     const current = plan.steps.find(s => s.status === 'in_progress');
-    let planLine = `Plan: "${plan.name}" — ${done}/${total} steps`;
+    // Plan names/steps are user-authored input too — same system-voice
+    // impersonation surface as memory content, same render-time defense.
+    let planLine = `Plan: "${neutralizeMemoryText(plan.name)}" — ${done}/${total} steps`;
     if (current) {
-      planLine += `, current: ${current.description}`;
+      planLine += `, current: ${neutralizeMemoryText(current.description)}`;
     }
     lines.push(planLine);
   }
