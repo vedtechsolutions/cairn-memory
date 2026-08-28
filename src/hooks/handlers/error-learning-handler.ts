@@ -16,7 +16,7 @@
  */
 import type { PostToolUseFailureInput } from '../shared/hook-io.js';
 import type { CachedHookContext } from '../shared/db-client.js';
-import { isCodexClient, originClientOf } from '../shared/client-adapter.js';
+import { capabilitiesOf, originClientOf } from '../shared/client-adapter.js';
 import { extractPatchFilePaths, patchTextOf } from '../shared/patch-paths.js';
 import { classifyError } from '../../utils/error-classifier.js';
 import { loadTracker, updateTracker, type EditTracker } from '../shared/edit-tracker.js';
@@ -241,12 +241,12 @@ function handleErrorLearningBusiness(input: PostToolUseFailureInput, client: Cac
 
   // --- Normal error learning ---
   const project = projectId(input.cwd);
-  // Codex-origin failures carry the command's ENTIRE merged output, so the
-  // first-line distillation fallback would store banners/log lines as
-  // lessons (surfaced cross-agent by pitfall-check). Strict mode stores
-  // nothing when no distillation pattern matched — counting, escalation,
-  // and investigation chains above have already happened.
-  const lesson = isCodexClient(input)
+  // Lookup-signal clients carry the command's ENTIRE merged output as
+  // error text, so the first-line distillation fallback would store
+  // banners/log lines as lessons (surfaced cross-agent by pitfall-check).
+  // Strict mode stores nothing when no distillation pattern matched —
+  // counting, escalation, and investigation chains above have happened.
+  const lesson = capabilitiesOf(input).toolFailureSignal === 'lookup'
     ? regexDistillErrorStrict(input.tool_name, errorText)
     : regexDistillError(input.tool_name, errorText);
   if (lesson === null) {
