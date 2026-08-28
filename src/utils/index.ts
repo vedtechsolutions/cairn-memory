@@ -1,6 +1,6 @@
 export { generateId } from './id.js';
 export { now, daysSince, isWithinDays } from './time.js';
-export { projectId } from './project-id.js';
+export { projectId, legacyProjectId, remoteProjectId, normalizeGitRemote } from './project-id.js';
 export { tokenOverlap } from './similarity.js';
 export { estimateTokens, truncateToTokenBudget } from './tokens.js';
 export {

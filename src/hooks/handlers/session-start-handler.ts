@@ -11,6 +11,7 @@ import type { SessionStartInput } from '../shared/hook-io.js';
 import type { CachedHookContext } from '../shared/db-client.js';
 import { compileBriefing, recoverDroppedPitfalls, buildBriefingQueryFp, type BriefingContext } from '../shared/briefing-compiler.js';
 import { projectId } from '../../utils/project-id.js';
+import { migrateProjectIdentity } from '../../db/project-identity-migration.js';
 import { generateId, now } from '../../utils/index.js';
 import { runMaintenance, runStalenessDetection, updateAnchorsForRenames } from '../../db/maintenance.js';
 import { LIMITS, BRIEFING_BUDGET } from '../../constants/index.js';
@@ -43,6 +44,9 @@ export function handleSessionStart(
   input: SessionStartInput,
   client: CachedHookContext,
 ): SessionStartResult {
+  // Move any pre-upgrade rows from the legacy path-hash project id to the
+  // stable git-remote id before anything reads project-scoped state.
+  migrateProjectIdentity(client.db, input.cwd);
   const project = projectId(input.cwd);
 
   // Detect session type — Claude Code may not send 'type' field after compaction.

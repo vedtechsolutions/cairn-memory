@@ -1,5 +1,6 @@
 import type Database from 'better-sqlite3';
 import { generateId, now, buildFtsQuery } from '../utils/index.js';
+import { resolveProjectParam } from './project-resolver.js';
 import { sanitize } from '../utils/validation.js';
 import { LIMITS, REMINDERS } from '../constants/index.js';
 import { evaluateCondition, type ConditionContext } from '../utils/condition-evaluator.js';
@@ -60,6 +61,12 @@ const MAX_FIRED_PER_PROMPT = LIMITS.REMINDERS_MAX_FIRE_PER_PROMPT;
 
 export class ReminderRepository {
   constructor(private db: Database.Database) {}
+
+  /** Resolve a user/agent-typed project param — a bare name resolves to the
+   *  full id when unambiguous, else passes through unchanged (fail closed). */
+  resolveProject(raw: string | null | undefined): string | null | undefined {
+    return resolveProjectParam(this.db, raw);
+  }
 
   create(input: CreateReminderInput): { id: string } | { error: string } {
     const trigger = sanitize(input.trigger).slice(0, REMINDERS.MAX_TRIGGER_CHARS);

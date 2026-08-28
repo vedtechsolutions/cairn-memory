@@ -181,8 +181,11 @@ export function registerPortabilityTools(
       const critical = isCritical(getMode());
       if (critical) return critical;
 
+      // Resolve a bare project name to its full id; preserves undefined so the
+      // unfiltered check below (free-form files ride along) still holds.
+      const resolvedProject = repo.resolveProject(project);
       const records = repo.exportPortable({
-        project,
+        project: resolvedProject,
         kind: kind as MemoryKind | undefined,
         // Pass through UNDEFINED when unfiltered: the SQL confidence
         // predicate must not silently swallow corrupt active rows.
@@ -190,7 +193,7 @@ export function registerPortabilityTools(
       });
       // Free-form files ride along on UNFILTERED exports only — any
       // project, kind, or confidence filter asks for records, not files.
-      const unfiltered = project === undefined && kind === undefined && minConfidence === undefined;
+      const unfiltered = resolvedProject === undefined && kind === undefined && minConfidence === undefined;
       const files = unfiltered ? repo.exportPortableFiles() : [];
 
       if (records.length === 0 && files.length === 0) {

@@ -74,7 +74,7 @@ export function registerReminderTools(
       const critical = isCritical(getMode());
       if (critical) return critical;
 
-      const reminders = repo.listActive(project);
+      const reminders = repo.listActive(repo.resolveProject(project));
       if (reminders.length === 0) {
         return { content: [{ type: 'text', text: 'No active reminders.' }] };
       }

@@ -5,6 +5,7 @@ import {
   type StepStatus,
 } from '../constants/index.js';
 import { generateId, now, sanitize, validateNoteContent, validateStepCount } from '../utils/index.js';
+import { resolveProjectParam } from './project-resolver.js';
 
 // --- Types ------------------------------------------------------------------
 
@@ -107,6 +108,12 @@ interface DecisionRow {
 
 export class PlanRepository {
   constructor(private db: Database.Database) {}
+
+  /** Resolve a user/agent-typed project param — a bare name resolves to the
+   *  full id when unambiguous, else passes through unchanged (fail closed). */
+  resolveProject(raw: string | null | undefined): string | null | undefined {
+    return resolveProjectParam(this.db, raw);
+  }
 
   create(input: CreatePlanInput): { plan: Plan; warnings: string[] } {
     const warnings: string[] = [];
