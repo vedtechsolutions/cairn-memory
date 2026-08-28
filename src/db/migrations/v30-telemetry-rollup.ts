@@ -16,6 +16,16 @@ const V30 = 30;
  * after a crash between DDL and version write is a no-op.
  */
 export function migrateToV30(db: Database.Database): void {
+  // Fast path, READS only: this runs on every open (dispatched at
+  // currentVersion <= 30 for the in-place-amend heal), and the
+  // unconditional transaction put a schema_version write commit on every
+  // hook fire of a HEALTHY database (review round 3). A correct shape at
+  // version >= 30 needs nothing.
+  const columns = db.prepare('PRAGMA table_info(telemetry_rollup)').all() as Array<{ name: string }>;
+  if (columns.length > 0 && columns.some((c) => c.name === 'events')) {
+    const v = db.prepare('SELECT version FROM schema_version LIMIT 1').get() as { version: number } | undefined;
+    if (v !== undefined && v.version >= V30) return;
+  }
   db.transaction(() => {
     db.exec(CREATE_TELEMETRY_ROLLUP_TABLE);
     // COLUMN-AWARE, and dispatched at `currentVersion <= 30`: the events
