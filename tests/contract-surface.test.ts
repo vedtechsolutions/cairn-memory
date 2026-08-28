@@ -6,7 +6,7 @@
  */
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -14,6 +14,8 @@ import {
   CLIENT_HEADER, CLIENT_ENV_VAR,
 } from '@cairn/contract';
 import { SERVED_HOOK_ROUTES } from '../src/mcp/hook-socket.js';
+import { cairnHooks } from '../src/cli/init.js';
+import { codexHooks, LEGACY_POST_TOOL_ROUTE } from '../src/cli/codex-init.js';
 
 // Compiled tests run from dist/tests — the repo root is two levels up
 // (the shell-relay check would deceptively pass from one level, because
@@ -47,6 +49,45 @@ describe('C relay literals ⊇ contract constants', () => {
     const c = readFileSync(join(REPO, 'src', 'hooks', 'hook-relay.c'), 'utf-8').toLowerCase();
     assert.ok(c.includes(`${CLIENT_HEADER}: %s`), 'hook-relay.c must emit the contract client header');
     assert.ok(c.includes(CLIENT_ENV_VAR.toLowerCase()), 'hook-relay.c must set the contract client env var');
+  });
+});
+
+describe('generated hook wiring targets real routes', () => {
+  // A generator typo is a SILENT failure for async hooks (fire-and-forget
+  // 404), so every subcommand a generator emits must exist in the contract.
+  const KNOWN = new Set<string>([...SYNC_ROUTES, ...ASYNC_ROUTES, ...STANDALONE_HOOKS]);
+  const RELAY = '/install/dist/src/hooks/hook-relay';
+
+  const subcommandOf = (command: string): string => {
+    const last = command.split(' ').at(-1) ?? '';
+    // Node-form fallback entries name the hook by script path.
+    return last.endsWith('.js') ? (last.split('/').at(-1) ?? '').replace(/\.js$/, '') : last;
+  };
+
+  const allCommands = (hooks: Record<string, Array<{ hooks: Array<{ command: string }> }>>): string[] =>
+    Object.values(hooks).flatMap((groups) => groups.flatMap((g) => g.hooks.map((h) => h.command)));
+
+  it('every Claude generator subcommand is a contract route or standalone hook', () => {
+    for (const command of allCommands(cairnHooks(RELAY))) {
+      assert.ok(KNOWN.has(subcommandOf(command)), `unknown hook target in: ${command}`);
+    }
+  });
+
+  it('every Codex generator subcommand is a contract route or standalone hook — both route generations', () => {
+    for (const file of [codexHooks(RELAY), codexHooks(RELAY, LEGACY_POST_TOOL_ROUTE)]) {
+      for (const command of allCommands(file.hooks)) {
+        assert.ok(KNOWN.has(subcommandOf(command)), `unknown hook target in: ${command}`);
+      }
+    }
+  });
+
+  it('both post-tool generations have a standalone fallback entry in dist (relay socket-miss path)', () => {
+    // Old wiring / new package and new wiring / new package must both
+    // survive a daemon outage: the relay execs dist/src/hooks/<sub>.js.
+    for (const name of ['post-tool', LEGACY_POST_TOOL_ROUTE]) {
+      assert.ok(existsSync(join(REPO, 'dist', 'src', 'hooks', `${name}.js`)),
+        `dist fallback entry missing for ${name} — old/new wiring would silently lose capture on socket miss`);
+    }
   });
 });
 

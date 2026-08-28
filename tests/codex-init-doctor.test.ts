@@ -20,7 +20,8 @@ import {
   codexDir, codexHooksPath, codexConfigPath,
   codexHooks, codexHookCount, mergeCodexHooks,
   codexMcpBlock, hasCairnMcpServer, countTrustedHooksIn, pruneHookState,
-  runCodexInit, type CodexHooksFile,
+  runCodexInit, postToolRouteFor, POST_TOOL_ROUTE, LEGACY_POST_TOOL_ROUTE,
+  type CodexHooksFile,
 } from '../src/cli/codex-init.js';
 import { checkCodexParity } from '../src/cli/doctor.js';
 
@@ -72,12 +73,37 @@ describe('codexHooks generator', () => {
     assert.equal(file.hooks.SessionStart[0].hooks[0].additionalContextLimit, 2500);
     assert.equal(file.hooks.PostToolUse[0].matcher, 'Bash|apply_patch');
     assert.equal(file.hooks.PostToolUse[0].hooks[0].async, true);
-    assert.match(file.hooks.PostToolUse[0].hooks[0].command, /codex-post-tool$/);
+    assert.match(file.hooks.PostToolUse[0].hooks[0].command, / post-tool$/, 'fresh installs get the canonical route');
   });
 
   it('supports the shell-relay command form', () => {
     const file = codexHooks(SHELL_RELAY);
     assert.ok(file.hooks.SessionStart[0].hooks[0].command.startsWith('bash /install/'));
+  });
+
+  it('can generate the deprecated post-tool route for wired installs', () => {
+    const file = codexHooks(RELAY, LEGACY_POST_TOOL_ROUTE);
+    assert.match(file.hooks.PostToolUse[0].hooks[0].command, / codex-post-tool$/);
+  });
+});
+
+describe('postToolRouteFor (D3 migration policy)', () => {
+  const legacyFile = (): CodexHooksFile => codexHooks(RELAY, LEGACY_POST_TOOL_ROUTE);
+
+  it('fresh installs get the canonical route', () => {
+    assert.equal(postToolRouteFor({}, 0, false), POST_TOOL_ROUTE);
+  });
+
+  it('a TRUSTED legacy wiring keeps its route — renaming would invalidate hash-pinned trust', () => {
+    assert.equal(postToolRouteFor(legacyFile(), 10, false), LEGACY_POST_TOOL_ROUTE);
+  });
+
+  it('an UNTRUSTED legacy wiring modernizes — there is no trust to preserve', () => {
+    assert.equal(postToolRouteFor(legacyFile(), 0, false), POST_TOOL_ROUTE);
+  });
+
+  it('--migrate-routes always yields the canonical route', () => {
+    assert.equal(postToolRouteFor(legacyFile(), 10, true), POST_TOOL_ROUTE);
   });
 });
 
@@ -196,6 +222,37 @@ describe('runCodexInit (hermetic end to end)', () => {
     assert.equal(countTrustedHooksIn(after, codexHooksPath()).trusted, 0, 'orphaned state pruned');
   });
 
+  it('preserves a trusted legacy post-tool route across re-init, then migrates on --migrate-routes', () => {
+    mkdirSync(codexDir(), { recursive: true });
+    // Seed a wired-and-trusted legacy install, written exactly as init writes.
+    const legacy = codexHooks(RELAY, LEGACY_POST_TOOL_ROUTE);
+    writeFileSync(codexHooksPath(), `${JSON.stringify(legacy, null, 2)}\n`);
+    writeFileSync(codexConfigPath(), '[mcp_servers.cairn]\ncommand = \'node\'\nargs = [\'/srv/server.js\']\n' + trustAll(codexHooksPath(), legacy));
+    const seeded = readFileSync(codexHooksPath(), 'utf-8');
+
+    // Default re-init: byte-identical file, trust untouched — THE property
+    // that keeps an upgraded install's hooks alive without a re-review.
+    runCodexInit(RELAY, '/srv/server.js', false);
+    assert.equal(readFileSync(codexHooksPath(), 'utf-8'), seeded, 'trusted legacy wiring preserved verbatim');
+    assert.equal(countTrustedHooksIn(readFileSync(codexConfigPath(), 'utf-8'), codexHooksPath()).trusted, 10, 'trust survives');
+
+    // Explicit migration: canonical route written, orphaned trust pruned.
+    runCodexInit(RELAY, '/srv/server.js', false, true);
+    const migrated = readFileSync(codexHooksPath(), 'utf-8');
+    assert.match(migrated, / post-tool"/, 'canonical route written');
+    assert.ok(!migrated.includes(LEGACY_POST_TOOL_ROUTE), 'deprecated route gone');
+    assert.equal(countTrustedHooksIn(readFileSync(codexConfigPath(), 'utf-8'), codexHooksPath()).trusted, 0, 'invalidated trust pruned for re-review');
+  });
+
+  it('rewrites an UNTRUSTED legacy wiring to the canonical route without --migrate-routes', () => {
+    mkdirSync(codexDir(), { recursive: true });
+    const legacy = codexHooks(RELAY, LEGACY_POST_TOOL_ROUTE);
+    writeFileSync(codexHooksPath(), `${JSON.stringify(legacy, null, 2)}\n`);
+    runCodexInit(RELAY, '/srv/server.js', false);
+    const written = readFileSync(codexHooksPath(), 'utf-8');
+    assert.ok(!written.includes(LEGACY_POST_TOOL_ROUTE), 'nothing trusted, nothing to preserve');
+  });
+
   it('does nothing when the codex dir is absent, and writes nothing on dry-run', () => {
     runCodexInit(RELAY, '/srv/server.js', false); // dir absent — no throw
     assert.equal(existsSync(codexHooksPath()), false);
@@ -241,5 +298,19 @@ describe('doctor checkCodexParity', () => {
     const disabled = checkCodexParity();
     assert.equal(disabled.status, 'warn');
     assert.match(disabled.detail, /1 hook\(s\) are DISABLED/);
+  });
+
+  it('notes deprecated route wiring without failing the check (D3 window)', () => {
+    mkdirSync(codexDir(), { recursive: true });
+    const legacy = codexHooks(RELAY, LEGACY_POST_TOOL_ROUTE);
+    writeFileSync(codexHooksPath(), `${JSON.stringify(legacy, null, 2)}\n`);
+    writeFileSync(codexConfigPath(), trustAll(codexHooksPath(), legacy));
+    const result = checkCodexParity();
+    assert.equal(result.status, 'ok', 'deprecated wiring stays green while the alias is served');
+    assert.match(result.detail, /deprecated 'codex-post-tool' route wiring.*--migrate-routes/);
+
+    // Canonical wiring carries no note.
+    runCodexInit(RELAY, '/srv/server.js', false, true);
+    assert.ok(!checkCodexParity().detail.includes('deprecated'), 'no note after migration');
   });
 });

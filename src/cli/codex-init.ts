@@ -44,8 +44,33 @@ const ASYNC_TIMEOUT_S = 30;
 /** Explicit so a Codex default change can't silently spill the briefing. */
 const CONTEXT_LIMIT_TOKENS = 2500;
 
-/** The canonical Codex hook set for this install's relay command. */
-export function codexHooks(relayCmd: string): CodexHooksFile {
+/** Canonical PostToolUse route (client-neutral, contract revision 1). */
+export const POST_TOOL_ROUTE = 'post-tool';
+/** Deprecated pre-contract alias; the daemon serves both indefinitely. */
+export const LEGACY_POST_TOOL_ROUTE = 'codex-post-tool';
+export type PostToolRoute = typeof POST_TOOL_ROUTE | typeof LEGACY_POST_TOOL_ROUTE;
+
+/**
+ * Which PostToolUse route to generate. Fresh installs get the canonical
+ * `post-tool`; an install whose TRUSTED wiring names the deprecated
+ * `codex-post-tool` keeps it verbatim — trust is hash-pinned to the exact
+ * command string, so renaming the route in place would silently disable
+ * every Cairn hook until the user re-reviews. Migration is therefore an
+ * explicit opt-in (`cairn init --migrate-routes`), which rides the
+ * existing trust-invalidation warning path.
+ */
+export function postToolRouteFor(
+  existing: Partial<CodexHooksFile>,
+  trustedBefore: number,
+  migrateRoutes: boolean,
+): PostToolRoute {
+  if (migrateRoutes) return POST_TOOL_ROUTE;
+  const hasLegacy = cairnCommandSet(existing).some((c) => c.endsWith(` ${LEGACY_POST_TOOL_ROUTE}`));
+  return hasLegacy && trustedBefore > 0 ? LEGACY_POST_TOOL_ROUTE : POST_TOOL_ROUTE;
+}
+
+/** The canonical Codex hook set for this install's resolved relay command. */
+export function codexHooks(relayCmd: string, postToolRoute: PostToolRoute = POST_TOOL_ROUTE): CodexHooksFile {
   const cmd = (sub: string): string => `${relayCmd} --client ${CLIENT_CODEX} ${sub}`;
   const sync = (sub: string, extra: Partial<CodexHookCommand> = {}): CodexMatcherGroup[] =>
     [{ hooks: [{ type: 'command', command: cmd(sub), timeout: SYNC_TIMEOUT_S, ...extra }] }];
@@ -55,7 +80,7 @@ export function codexHooks(relayCmd: string): CodexHooksFile {
       SessionStart: sync('session-start', { statusMessage: 'Cairn briefing', additionalContextLimit: CONTEXT_LIMIT_TOKENS }),
       UserPromptSubmit: sync('prompt-check', { additionalContextLimit: CONTEXT_LIMIT_TOKENS }),
       PreToolUse: [{ matcher: 'Bash|apply_patch', hooks: [{ type: 'command', command: cmd('pitfall-check'), timeout: SYNC_TIMEOUT_S }] }],
-      PostToolUse: [{ matcher: 'Bash|apply_patch', hooks: [{ type: 'command', command: cmd('codex-post-tool'), timeout: ASYNC_TIMEOUT_S, async: true }] }],
+      PostToolUse: [{ matcher: 'Bash|apply_patch', hooks: [{ type: 'command', command: cmd(postToolRoute), timeout: ASYNC_TIMEOUT_S, async: true }] }],
       Stop: [{ hooks: [{ type: 'command', command: cmd('stop'), timeout: ASYNC_TIMEOUT_S, async: true }] }],
       SubagentStart: sync('subagent-context'),
       SubagentStop: [{ hooks: [{ type: 'command', command: cmd('subagent-stop'), timeout: ASYNC_TIMEOUT_S, async: true }] }],
@@ -182,11 +207,10 @@ function backupOnce(path: string): void {
 }
 
 /** The Codex section of `cairn init`. Prints its own lines; never throws. */
-export function runCodexInit(relayCmd: string, serverPath: string, dryRun: boolean): void {
+export function runCodexInit(relayCmd: string, serverPath: string, dryRun: boolean, migrateRoutes = false): void {
   if (!existsSync(codexDir())) return;
   console.log(`\nCodex CLI (${codexHooksPath()}):`);
 
-  const generated = codexHooks(relayCmd);
   let existing: Partial<CodexHooksFile> = {};
   if (existsSync(codexHooksPath())) {
     try {
@@ -200,8 +224,6 @@ export function runCodexInit(relayCmd: string, serverPath: string, dryRun: boole
       existing = {};
     }
   }
-  const merged = mergeCodexHooks(existing, generated);
-  const total = codexHookCount(merged);
 
   let config = existsSync(codexConfigPath()) ? readFileSync(codexConfigPath(), 'utf-8') : '';
   const mcpRegistered = hasCairnMcpServer(config);
@@ -210,12 +232,21 @@ export function runCodexInit(relayCmd: string, serverPath: string, dryRun: boole
   // Trust is hash-pinned to the exact command strings: a changed set means
   // Codex re-reviews, so "trusted" must never be reported across a change.
   const trustBefore = countTrustedHooksIn(config, codexHooksPath());
+  const postToolRoute = postToolRouteFor(existing, trustBefore.trusted, migrateRoutes);
+  const generated = codexHooks(relayCmd, postToolRoute);
+  const merged = mergeCodexHooks(existing, generated);
+  const total = codexHookCount(merged);
+
   const commandsChanged = existsSync(codexHooksPath())
     && JSON.stringify(cairnCommandSet(existing)) !== JSON.stringify(cairnCommandSet(generated));
   const invalidatesTrust = commandsChanged && trustBefore.trusted > 0;
 
   const wrote = dryRun ? 'would write' : 'writing';
   console.log(`  ✓ hooks.json — ${wrote} ${Object.keys(generated.hooks).length} Cairn hook events (${total} hooks total in file)`);
+  if (postToolRoute === LEGACY_POST_TOOL_ROUTE) {
+    console.log(`  = keeping deprecated '${LEGACY_POST_TOOL_ROUTE}' PostToolUse route — trusted wiring preserved.`);
+    console.log(`    Migrate with \`cairn init --migrate-routes\` when convenient (one re-trust in codex).`);
+  }
   if (mcpRegistered) {
     console.log('  = config.toml [mcp_servers.cairn] already registered');
   } else if (mcpBlock === null) {

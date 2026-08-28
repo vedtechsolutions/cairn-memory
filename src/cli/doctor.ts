@@ -20,7 +20,8 @@ import { probeHookSocket, socketPath, pidPath } from '../mcp/socket-ownership.js
 import { binaryUsable, relayShellPath } from './relay.js';
 import {
   codexDir, codexHooksPath, codexConfigPath, codexHookCount,
-  countTrustedHooksIn, hasCairnMcpServer, type CodexHooksFile,
+  countTrustedHooksIn, hasCairnMcpServer, cairnCommandSet,
+  LEGACY_POST_TOOL_ROUTE, type CodexHooksFile,
 } from './codex-init.js';
 
 const MIN_NODE_MAJOR = 20;
@@ -188,13 +189,18 @@ export function checkCodexParity(): CheckResult {
   const config = existsSync(codexConfigPath()) ? readFileSync(codexConfigPath(), 'utf-8') : '';
   const mcp = hasCairnMcpServer(config) ? 'MCP registered' : 'MCP NOT registered (run `cairn init`)';
   const trust = countTrustedHooksIn(config, hooksPath);
+  // Deprecated-route note (D3 window): status stays as-is while the alias
+  // is served; this line escalates to a warn when a removal window opens.
+  const legacyRoute = cairnCommandSet(file).some((c) => c.endsWith(` ${LEGACY_POST_TOOL_ROUTE}`))
+    ? `; deprecated '${LEGACY_POST_TOOL_ROUTE}' route wiring — modernize with \`cairn init --migrate-routes\` (one re-trust)`
+    : '';
   if (trust.disabled > 0 && trust.trusted < total) {
-    return { status: 'warn', detail: `Codex wired but ${trust.disabled} hook(s) are DISABLED and ${total - trust.trusted - trust.disabled} untrusted (${trust.trusted}/${total} active; ${mcp}) — review with /hooks in codex` };
+    return { status: 'warn', detail: `Codex wired but ${trust.disabled} hook(s) are DISABLED and ${total - trust.trusted - trust.disabled} untrusted (${trust.trusted}/${total} active; ${mcp}) — review with /hooks in codex${legacyRoute}` };
   }
   if (trust.trusted >= total) {
-    return { status: 'ok', detail: `Codex wired and trusted (${trust.trusted}/${total} hooks; ${mcp})` };
+    return { status: 'ok', detail: `Codex wired and trusted (${trust.trusted}/${total} hooks; ${mcp}${legacyRoute})` };
   }
-  return { status: 'warn', detail: `Codex wired, awaiting one-time trust review (${trust.trusted}/${total} hooks trusted; ${mcp}) — start \`codex\` and accept the Cairn hooks` };
+  return { status: 'warn', detail: `Codex wired, awaiting one-time trust review (${trust.trusted}/${total} hooks trusted; ${mcp}) — start \`codex\` and accept the Cairn hooks${legacyRoute}` };
 }
 
 const CHECKS: Check[] = [

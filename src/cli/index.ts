@@ -10,7 +10,8 @@ function printHelp(): void {
 
 Usage:
   cairn [serve]     Start the MCP server over stdio (default)
-  cairn init        Write Cairn's client config (--dry-run to preview)
+  cairn init        Write Cairn's client config (--dry-run to preview,
+                    --migrate-routes to modernize deprecated hook routes)
   cairn build-relay Compile the fast C hook relay (optional; needs a C compiler)
   cairn doctor      Run install health checks
   cairn --help      Show this help
@@ -23,7 +24,10 @@ switch (command) {
   case 'init': {
     try {
       const { runInit } = await import('./init.js');
-      process.exit(runInit({ dryRun: process.argv.includes('--dry-run') }));
+      process.exit(runInit({
+        dryRun: process.argv.includes('--dry-run'),
+        migrateRoutes: process.argv.includes('--migrate-routes'),
+      }));
     } catch (err) {
       console.error(`cairn init: failed to run — ${(err as Error).message}`);
       process.exit(1);

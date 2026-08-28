@@ -37,6 +37,12 @@ export const ASYNC_ROUTES = [
   'stop-failure',
   'subagent-stop',
   'file-changed',
+  'post-tool',
+  // DEPRECATED alias of post-tool. Served indefinitely for already-wired
+  // installs (their hook trust is hash-pinned to command strings naming
+  // it); removal happens only through a doctor-guided, init-driven
+  // migration across a supported-versions window — an async route that
+  // disappears fails SILENTLY.
   'codex-post-tool',
   'bump-memory-version',
 ] as const;

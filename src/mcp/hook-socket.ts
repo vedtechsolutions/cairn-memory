@@ -229,6 +229,18 @@ const routes: Record<string, {
   // Codex PostToolUse demux: rollout-lookup ground truth routes each event
   // to error-learning or success-tracker (Codex payloads carry no failure
   // signal of their own).
+  '/post-tool': {
+    handler: async (input, c) => {
+      const r = await handleCodexPostTool(input, c);
+      return { output: r.output, action: r.action, exitCode: r.exitCode };
+    },
+    telemetryName: 'post-tool',
+    extractEventType: (input: { tool_name?: string }) => input.tool_name ?? 'unknown',
+    extractMeta: (_input, result) => ({ daemon: true, action: result.action, exitCode: result.exitCode }),
+  },
+  // DEPRECATED alias of /post-tool — served for installs whose trusted
+  // hook wiring names it (D3: async 404s are silent, so the alias lives
+  // until a doctor-guided init migration retires it).
   '/codex-post-tool': {
     handler: async (input, c) => {
       const r = await handleCodexPostTool(input, c);
