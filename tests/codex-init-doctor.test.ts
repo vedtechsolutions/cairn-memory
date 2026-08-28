@@ -8,13 +8,17 @@ import { mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, mkdtempSync
 import { tmpdir, homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 
-// SELF-HERMETICIZE BEFORE ANYTHING ELSE. The suite's hermetic-env preload
-// sets CAIRN_CODEX_DIR, but a direct `node --test <file>` run does not —
-// and this file DELETES its target directory. Without this line, a direct
-// run once recursively deleted a developer's real ~/.codex (auth, sessions,
-// memories). Env is read at call time, so setting it here beats the
-// hoisted imports below.
-process.env.CAIRN_CODEX_DIR ??= mkdtempSync(join(tmpdir(), 'cairn-codex-test-'));
+// SELF-HERMETICIZE BEFORE ANYTHING ELSE — and UNCONDITIONALLY. Two reasons:
+// a direct `node --test <file>` run has no hermetic-env preload, and this
+// file DELETES its target directory (a conditional ??= once let a direct
+// run recursively delete a developer's real ~/.codex — auth, sessions,
+// memories). And under the full suite the preload's dir is SHARED across
+// test processes: other files spawn the CLI against it concurrently, so
+// this file's beforeEach rmSync raced them (observed flake: doctor's
+// parity walk failing mid-suite, green in isolation). A private mkdtemp
+// removes both hazards. Env is read at call time, so setting it here
+// beats the hoisted imports below.
+process.env.CAIRN_CODEX_DIR = mkdtempSync(join(tmpdir(), 'cairn-codex-test-'));
 
 import {
   codexDir, codexHooksPath, codexConfigPath,
@@ -150,6 +154,26 @@ describe('trust-state parsing and scoped pruning', () => {
     const trusted = trustedCommandsIn(toml, hooksPath, file);
     assert.equal(trusted.length, 1, 'only resolvable trusted positions');
     assert.match(trusted[0], / codex-post-tool$/);
+  });
+
+  it('a hand-edited hooks.json cannot inherit a stale hash — the trust shadow fails closed', () => {
+    // trusted_hash pins a command VALUE Cairn cannot recompute; the shadow
+    // written at init records what each position held, so editing a Cairn
+    // command in place must read as UNTRUSTED, never as the old trust.
+    mkdirSync(codexDir(), { recursive: true });
+    runCodexInit(RELAY, '/srv/server.js', false); // writes hooks.json + shadow
+    const written = JSON.parse(readFileSync(codexHooksPath(), 'utf-8')) as CodexHooksFile;
+    const config = trustAll(codexHooksPath(), written);
+    assert.equal(countTrustedHooksIn(config, codexHooksPath(), written).trusted, 10, 'as-written wiring is fully trusted');
+
+    // Tamper with one Cairn command at its position, config untouched.
+    const tampered = JSON.parse(
+      readFileSync(codexHooksPath(), 'utf-8').replace(' session-start', ' session-start --evil'),
+    ) as CodexHooksFile;
+    const counts = countTrustedHooksIn(config, codexHooksPath(), tampered);
+    assert.equal(counts.trusted, 9, 'the tampered position loses its trust attribution');
+    assert.ok(!trustedCommandsIn(config, codexHooksPath(), tampered).some((c) => c.includes('--evil')),
+      'the tampered command is never reported as trusted');
   });
 
   it('pruneTrustKeys removes exactly the named sections', () => {
@@ -340,6 +364,25 @@ describe('runCodexInit (hermetic end to end)', () => {
     const configAfter = readFileSync(codexConfigPath(), 'utf-8');
     assert.equal(countTrustedHooksIn(configAfter, codexHooksPath()).trusted, 9, 'only the migrated hook re-reviews');
     assert.ok(!configAfter.includes(':post_tool_use:'), 'the invalidated entry is gone');
+  });
+
+  it('--migrate-routes NEVER prunes an enabled=false entry — a disable is a user decision', () => {
+    mkdirSync(codexDir(), { recursive: true });
+    const legacy = codexHooks(RELAY, LEGACY_POST_TOOL_ROUTE);
+    writeFileSync(codexHooksPath(), `${JSON.stringify(legacy, null, 2)}\n`);
+    // All trusted, except the PostToolUse hook is deliberately DISABLED.
+    const config = trustAll(codexHooksPath(), legacy)
+      .replace(`[hooks.state."${codexHooksPath()}:post_tool_use:0:0"]`,
+        `[hooks.state."${codexHooksPath()}:post_tool_use:0:0"]\nenabled = false`);
+    writeFileSync(codexConfigPath(), config);
+
+    runCodexInit(RELAY, '/srv/server.js', false, true);
+    const after = readFileSync(codexConfigPath(), 'utf-8');
+    assert.ok(after.includes(`:post_tool_use:0:0`), 'disabled entry survives the migration');
+    assert.match(after, /enabled = false/, 'the disable record is intact');
+    const counts = countTrustedHooksIn(after, codexHooksPath());
+    assert.equal(counts.disabled, 1, 'still reported disabled — an approve-all cannot silently re-enable it');
+    assert.equal(counts.trusted, 9, 'the other nine keep their trust');
   });
 
   it('rewrites an UNTRUSTED legacy wiring to the canonical route without --migrate-routes', () => {

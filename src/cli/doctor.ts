@@ -130,10 +130,15 @@ async function checkSocket(): Promise<CheckResult> {
     // table; async hooks aimed at a route it lacks fail silently (the
     // relay's direct-node fallback catches the 404, but capture should
     // not be living on the fallback path).
-    const missingRoutes = live.routes === null
-      ? []
-      : [...SYNC_ROUTES, ...ASYNC_ROUTES].filter((r) => !live.routes!.includes(`/${r}`));
-    const revisionDrift = live.contractRevision !== null && live.contractRevision !== CONTRACT_REVISION;
+    // Absent metadata is itself the oldest form of drift: every daemon of
+    // this contract era serves routes + contract_revision, so a null on
+    // either means the owner PREDATES both fields — exactly the daemon
+    // this check exists to catch. Null must warn, never pass as healthy.
+    if (live.routes === null || live.contractRevision === null) {
+      return { status: 'warn', detail: `hook socket owner (PID ${live.pid}) predates contract metadata (/health lacks routes/contract_revision) — restart it: \`systemctl restart cairn-daemon\` (or restart the agent that owns the socket)` };
+    }
+    const missingRoutes = [...SYNC_ROUTES, ...ASYNC_ROUTES].filter((r) => !live.routes!.includes(`/${r}`));
+    const revisionDrift = live.contractRevision !== CONTRACT_REVISION;
     if (missingRoutes.length > 0 || revisionDrift) {
       const what = missingRoutes.length > 0
         ? `missing routes: ${missingRoutes.join(', ')}`
@@ -203,7 +208,7 @@ export function checkCodexParity(): CheckResult {
   }
   const config = existsSync(codexConfigPath()) ? readFileSync(codexConfigPath(), 'utf-8') : '';
   const mcp = hasCairnMcpServer(config) ? 'MCP registered' : 'MCP NOT registered (run `cairn init`)';
-  const trust = countTrustedHooksIn(config, hooksPath);
+  const trust = countTrustedHooksIn(config, hooksPath, file);
   // Deprecated-route note (D3 window): status stays as-is while the alias
   // is served; this line escalates to a warn when a removal window opens.
   const legacyRoute = cairnCommandSet(file).some((c) => c.endsWith(` ${LEGACY_POST_TOOL_ROUTE}`))

@@ -69,17 +69,18 @@ if [ -S "$SOCK" ]; then
   else
     # Async: fire and forget. The subshell owns the temp file's lifetime —
     # the EXIT trap would otherwise race the backgrounded curl's open().
-    # A 404 from a stale daemon that predates this route (curl exit 22)
-    # or a refused connection (exit 7) would otherwise be a SILENT capture
-    # loss — fall back to direct node. A timeout (exit 28) does NOT fall
-    # back: the daemon may have processed the event (same policy as the
-    # compiled relay's empty-response case).
+    # Fall back to direct node ONLY on definite non-processing failures:
+    # a refused connection (curl exit 7) or a 404/410 from a stale daemon
+    # that predates this route — a SILENT capture loss otherwise. A 5xx or
+    # a timeout does NOT fall back: the handler may have mutated state
+    # before failing, and a re-run could double-process (the demux handler
+    # also dedups on tool_use_id as a second line of defense).
     trap - EXIT
     (
-      curl -sf --max-time 3 --unix-socket "$SOCK" "http://localhost/$HOOK_TYPE" -H "Content-Type: application/json" "${CLIENT_HDR[@]}" --data-binary @"$INPUT_FILE" >/dev/null 2>&1
-      case "$?" in
-        7|22) CAIRN_CLIENT="$CLIENT" node "$SCRIPT_DIR/$HOOK_TYPE.js" < "$INPUT_FILE" >/dev/null 2>&1 ;;
-      esac
+      HTTP_CODE=$(curl -s --max-time 3 --unix-socket "$SOCK" "http://localhost/$HOOK_TYPE" -H "Content-Type: application/json" "${CLIENT_HDR[@]}" --data-binary @"$INPUT_FILE" -o /dev/null -w '%{http_code}' 2>/dev/null)
+      if [ "$?" = "7" ] || [ "$HTTP_CODE" = "404" ] || [ "$HTTP_CODE" = "410" ]; then
+        CAIRN_CLIENT="$CLIENT" node "$SCRIPT_DIR/$HOOK_TYPE.js" < "$INPUT_FILE" >/dev/null 2>&1
+      fi
       rm -f "$INPUT_FILE"
     ) &
     exit 0

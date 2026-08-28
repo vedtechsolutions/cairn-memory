@@ -193,14 +193,64 @@ export function commandAt(file: Partial<CodexHooksFile>, entry: Pick<TrustStateE
   return null;
 }
 
+/**
+ * Trust shadow: `trusted_hash` pins a command VALUE we cannot recompute
+ * (the hash inputs are Codex-internal), so the position join alone would
+ * attribute a stale hash to whatever command now occupies the position —
+ * e.g. after a hand-edit of hooks.json. The shadow records what each
+ * position held at OUR last write; a Cairn command that no longer matches
+ * its shadow entry is treated as untrusted (fail-safe: the worst case is
+ * an unnecessary "trust step required", never a false "trusted"). Foreign
+ * commands are not ours to attest and keep position-join semantics.
+ * Absent/invalid shadow (pre-shadow installs) means tolerant behavior.
+ */
+export function trustShadowPath(): string { return join(codexDir(), '.cairn-trust-shadow.json'); }
+
+export function readTrustShadow(): Record<string, string> | null {
+  try {
+    const parsed = JSON.parse(readFileSync(trustShadowPath(), 'utf-8')) as { v?: number; positions?: unknown };
+    if (parsed.v !== 1 || parsed.positions === null || typeof parsed.positions !== 'object') return null;
+    const positions = parsed.positions as Record<string, unknown>;
+    for (const value of Object.values(positions)) {
+      if (typeof value !== 'string') return null;
+    }
+    return positions as Record<string, string>;
+  } catch {
+    return null;
+  }
+}
+
+/** Snapshot every (position key → command) of the file just written.
+ *  Best-effort: a shadow write failure must never fail init (it only
+ *  costs tolerance, not correctness). */
+export function writeTrustShadow(hooksJsonPath: string, file: CodexHooksFile): void {
+  try {
+    const positions: Record<string, string> = {};
+    for (const [event, groups] of Object.entries(file.hooks ?? {})) {
+      groups.forEach((group, g) => {
+        group.hooks.forEach((hook, h) => {
+          positions[`${hooksJsonPath}:${snakeEvent(event)}:${g}:${h}`] = hook.command;
+        });
+      });
+    }
+    atomicWrite(trustShadowPath(), `${JSON.stringify({ v: 1, positions }, null, 2)}\n`);
+  } catch { /* tolerated — see doc comment */ }
+}
+
 /** The command strings whose pinned positions currently hold live trust
- *  (trusted_hash, not disabled) — per-command trust, which the file-wide
- *  counters cannot give. */
+ *  (trusted_hash, not disabled), shadow-attested for Cairn commands —
+ *  per-command trust, which the file-wide counters cannot give. */
 export function trustedCommandsIn(configToml: string, hooksJsonPath: string, file: Partial<CodexHooksFile>): string[] {
-  return parseTrustState(configToml, hooksJsonPath)
-    .filter((e) => e.trusted)
-    .map((e) => commandAt(file, e))
-    .filter((c): c is string => c !== null);
+  const shadow = readTrustShadow();
+  const out: string[] = [];
+  for (const entry of parseTrustState(configToml, hooksJsonPath)) {
+    if (!entry.trusted) continue;
+    const cmd = commandAt(file, entry);
+    if (cmd === null) continue;
+    if (shadow !== null && cmd.includes(CAIRN_HOOK_DIR_MARKER) && shadow[entry.key] !== cmd) continue;
+    out.push(cmd);
+  }
+  return out;
 }
 
 /** Remove exactly the [hooks.state] sections named by `keys` — scoped
@@ -248,24 +298,28 @@ export function hasCairnMcpServer(configToml: string): boolean {
 
 export interface TrustCount { trusted: number; disabled: number }
 
-/** Count [hooks.state] entries for a hooks.json file via a scoped line scan.
- *  File-scoped like the state itself (Cairn and foreign hooks alike): an
- *  entry with trusted_hash counts as trusted unless enabled = false. */
-export function countTrustedHooksIn(configToml: string, hooksJsonPath: string): TrustCount {
-  const lines = configToml.split('\n');
-  const result: TrustCount = { trusted: 0, disabled: 0 };
-  for (let i = 0; i < lines.length; i++) {
-    if (!lines[i].includes(`[hooks.state."${hooksJsonPath}:`)) continue;
-    let hasHash = false;
-    let disabled = false;
-    for (let j = i + 1; j < lines.length && !lines[j].trimStart().startsWith('['); j++) {
-      if (lines[j].includes('trusted_hash')) hasHash = true;
-      if (/^\s*enabled\s*=\s*false/.test(lines[j])) disabled = true;
-    }
-    if (disabled) result.disabled++;
-    else if (hasHash) result.trusted++;
-  }
-  return result;
+/** Count [hooks.state] entries for a hooks.json file. File-scoped like
+ *  the state itself (Cairn and foreign hooks alike): an entry with
+ *  trusted_hash counts as trusted unless enabled = false. Derived from
+ *  parseTrustState — ONE parser: if Codex ever changes the key shape,
+ *  decisions AND displayed counts go to zero together, which reads as
+ *  "trust step required" (fail-safe) instead of a stale "10/10 trusted"
+ *  while the strict decision path sees nothing (fail-green). */
+export function countTrustedHooksIn(configToml: string, hooksJsonPath: string, file?: Partial<CodexHooksFile>): TrustCount {
+  const entries = parseTrustState(configToml, hooksJsonPath);
+  const shadow = file === undefined ? null : readTrustShadow();
+  const trusted = (e: TrustStateEntry): boolean => {
+    if (!e.trusted) return false;
+    if (file === undefined) return true; // no join context — raw count
+    const cmd = commandAt(file, e);
+    if (cmd === null) return false; // stale position can never re-match
+    if (shadow !== null && cmd.includes(CAIRN_HOOK_DIR_MARKER) && shadow[e.key] !== cmd) return false;
+    return true;
+  };
+  return {
+    trusted: entries.filter(trusted).length,
+    disabled: entries.filter((e) => e.disabled).length,
+  };
 }
 
 /** Drop [hooks.state] sections for a hooks file whose commands changed —
@@ -336,7 +390,13 @@ export function runCodexInit(relayCmd: string, serverPath: string, dryRun: boole
   // entry whose pinned position now resolves to a different command (or
   // to none) can never hash-match again — prune exactly those, keeping
   // the trust of unrelated hooks that kept their position and command.
-  const invalidated = trustEntries.filter((e) => commandAt(merged, e) !== commandAt(existing, e));
+  // DISABLED entries are never pruned: `enabled = false` is the user's
+  // recorded decision, and erasing it would present the hook as a fresh
+  // approval at the next Codex review — an approve-all would re-enable
+  // what they deliberately turned off. A kept disabled entry is inert
+  // (the hook stays off) and is reported as disabled, never trusted.
+  const invalidated = trustEntries.filter(
+    (e) => !e.disabled && commandAt(merged, e) !== commandAt(existing, e));
   const invalidatesTrust = invalidated.some((e) => e.trusted);
 
   const wrote = dryRun ? 'would write' : 'writing';
@@ -370,8 +430,9 @@ export function runCodexInit(relayCmd: string, serverPath: string, dryRun: boole
       }
       backupOnce(codexHooksPath());
       atomicWrite(codexHooksPath(), `${JSON.stringify(merged, null, 2)}\n`);
+      writeTrustShadow(codexHooksPath(), merged);
     } catch (err) {
-      console.log(`  ✗ could not write Codex config: ${(err as Error).message} — ${
+      console.log(`  ✗ could not write Codex configuration: ${(err as Error).message} — ${
         wroteConfig
           ? 'config.toml was updated but hooks.json was NOT; re-run `cairn init` (hooks re-review pending either way)'
           : 'nothing was changed'}`);
@@ -387,7 +448,7 @@ export function runCodexInit(relayCmd: string, serverPath: string, dryRun: boole
     console.log(`    Cairn hooks — then re-run \`cairn doctor\`.`);
     return;
   }
-  const trust = countTrustedHooksIn(config, codexHooksPath());
+  const trust = countTrustedHooksIn(config, codexHooksPath(), merged);
   if (trust.trusted >= total && total > 0) {
     console.log(`  ✓ hooks trusted (${trust.trusted}/${total}${trust.disabled > 0 ? `, ${trust.disabled} disabled` : ''})`);
   } else {

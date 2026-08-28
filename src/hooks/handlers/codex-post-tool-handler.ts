@@ -16,6 +16,7 @@ import type { ToolOutcome } from '@cairn/contract';
 import type { PostToolUseInput, PostToolUseFailureInput } from '../shared/hook-io.js';
 import type { CachedHookContext } from '../shared/db-client.js';
 import { adapterFor } from '../shared/client-adapter.js';
+import { findRolloutToolRecord } from '../shared/rollout-lookup.js';
 import { handleErrorLearning } from './error-learning-handler.js';
 import { handleSuccessTracker } from './success-tracker-handler.js';
 import { loadTracker, saveTracker } from '../shared/edit-tracker.js';
@@ -106,15 +107,25 @@ export async function handleCodexPostTool(
     return { output: null, action: 'skipped', exitCode: null };
   }
 
+  // IDEMPOTENCY: once an outcome has been routed for this tool_use_id,
+  // every further delivery is dropped — a relay status-fallback retry,
+  // the C relay's bad-status re-exec, or a tailer/hook race must never
+  // double-count an error (escalation, investigation chains) or success.
+  if (input.tool_use_id && isToolSeen(client.db, input.tool_use_id)) {
+    return { output: null, action: 'skipped', exitCode: null };
+  }
+
   // Ground truth comes from the ADAPTER (the extension seam's promise):
-  // a lookup-signal client resolves from its own state; a client with no
-  // resolver degrades to the payload-text fallback / unknown.
+  // a lookup-signal client resolves from its own state. A caller with NO
+  // resolver (undeclared/legacy delivery straight to this route) gets the
+  // pre-seam behavior — direct rollout lookup — rather than a silent
+  // degradation to unknown: this route is lookup-based by definition.
   const resolver = adapterFor(input).resolveToolOutcome;
   const record = preResolved !== undefined
     ? preResolved
     : resolver
       ? await resolver(input)
-      : null;
+      : await findRolloutToolRecord(input.transcript_path, input.tool_use_id);
   const { failed, exitCode, errorText } = demuxOutcome(input, record);
 
   if (failed === true) {
