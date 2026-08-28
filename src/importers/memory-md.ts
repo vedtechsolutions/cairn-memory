@@ -15,10 +15,12 @@ import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { IMPORT, LIMITS } from '../constants/index.js';
 import type { LearnSection } from './learn-pipeline.js';
+import { inferKind, slugTag } from './shared.js';
 
 export interface MemoryMdImport {
   sections: LearnSection[];
   notes: string[];
+  excluded?: Array<{ name: string; reason: string }>;
 }
 
 /** Native auto-memory topic files carry YAML frontmatter (`type:` of
@@ -38,21 +40,17 @@ const FRONTMATTER_KIND: Record<string, LearnSection['kind']> = {
   reference: 'fact',
 };
 
-function inferKind(text: string): LearnSection['kind'] {
-  if (/\b(never|avoid|don'?t|broke|breaks|fails?|error|pitfall|gotcha|warning)\b/i.test(text)) return 'pitfall';
-  if (/\b(chose|decided|prefer(red)?|opted|instead of|over)\b/i.test(text)) return 'decision';
-  return 'fact';
-}
 
-function slugify(prefix: string, value: string): string {
-  return `${prefix}:${value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40)}`;
-}
 
 /** Transform one freeform markdown document into learn sections. */
 export function sectionsFromFreeformMarkdown(rawMarkdown: string, baseTags: string[]): LearnSection[] {
-  const { body: markdown, type } = stripFrontmatter(rawMarkdown);
+  // CRLF normalize, then MASK fenced code blocks: a '## ' inside a fence
+  // is an example, not a section boundary, and a '#' line inside one is
+  // not a lesson (review). Imported lessons are prose — fences drop.
+  const noFences = rawMarkdown.replace(/\r\n/g, '\n').replace(/^```[\s\S]*?^```\s*$/gm, '');
+  const { body: markdown, type } = stripFrontmatter(noFences);
   const kindHint = type ? FRONTMATTER_KIND[type] : undefined;
-  const typeTags = type ? [slugify('type', type)] : [];
+  const typeTags = type ? [slugTag('type', type)] : [];
   const out: LearnSection[] = [];
   const push = (raw: string, extraTags: string[] = []): void => {
     const content = raw.trim().replace(/\s+/g, ' ').slice(0, LIMITS.MAX_CONTENT_CHARS);
@@ -85,11 +83,12 @@ export function sectionsFromFreeformMarkdown(rawMarkdown: string, baseTags: stri
   return out;
 }
 
-export function transformMemoryMd(path: string): MemoryMdImport {
+export function transformMemoryMd(path: string, opts: { includeSiblings?: boolean } = {}): MemoryMdImport {
   if (!existsSync(path)) {
     throw new Error(`MEMORY.md not found: ${path}`);
   }
   const notes: string[] = [];
+  const excluded: Array<{ name: string; reason: string }> = [];
   const sections: LearnSection[] = [];
   const baseTags = ['import:memory-md'];
 
@@ -97,18 +96,30 @@ export function transformMemoryMd(path: string): MemoryMdImport {
   sections.push(...main);
   notes.push(`${basename(path)}: ${main.length} section(s)`);
 
-  // Sibling topic files (the auto-memory convention keeps them beside
-  // MEMORY.md). Only same-directory .md files — never recurse.
+  // Sibling .md files import ONLY when they are recognizably auto-memory
+  // topic files (YAML frontmatter with a type:) or the caller opted in —
+  // '--path ./MEMORY.md' in a repo root must not slurp README/CHANGELOG
+  // as global facts (review). Per-file try/catch: one broken symlink
+  // must not abort the whole migration.
   const dir = dirname(path);
   for (const name of readdirSync(dir)) {
     if (name === basename(path) || !name.endsWith('.md')) continue;
-    const full = join(dir, name);
-    if (!statSync(full).isFile()) continue;
-    const topicSlug = name.replace(/\.md$/, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40);
-    const fileSections = sectionsFromFreeformMarkdown(
-      readFileSync(full, 'utf-8'), [...baseTags, `topic:${topicSlug}`]);
-    sections.push(...fileSections);
-    notes.push(`${name}: ${fileSections.length} section(s)`);
+    try {
+      const full = join(dir, name);
+      if (!statSync(full).isFile()) continue;
+      const raw = readFileSync(full, 'utf-8');
+      const hasMemoryFrontmatter = stripFrontmatter(raw.replace(/\r\n/g, '\n')).type !== null;
+      if (!hasMemoryFrontmatter && !opts.includeSiblings) {
+        excluded.push({ name, reason: 'no auto-memory frontmatter (use --include-notes to import siblings)' });
+        continue;
+      }
+      const topicSlug = name.replace(/\.md$/, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40);
+      const fileSections = sectionsFromFreeformMarkdown(raw, [...baseTags, `topic:${topicSlug}`]);
+      sections.push(...fileSections);
+      notes.push(`${name}: ${fileSections.length} section(s)`);
+    } catch (err) {
+      excluded.push({ name, reason: `unreadable (${(err as NodeJS.ErrnoException).code ?? 'error'})` });
+    }
   }
-  return { sections, notes };
+  return { sections, notes, excluded };
 }

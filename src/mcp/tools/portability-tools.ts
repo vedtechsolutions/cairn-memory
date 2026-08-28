@@ -160,7 +160,10 @@ export function registerPortabilityTools(
       {
         const learned = learnSections(repo, v1.sections, project ?? null);
         ingested += learned.ingested;
-        deduplicated += learned.deduplicated;
+        // The tool's output contract predates merge-visibility: its
+        // 'deduplicated' count covers both identical skips and merges
+        // (unchanged tool strings); the CLI importer reports them apart.
+        deduplicated += learned.exactDuplicates + learned.merged.length;
         writeErrors.push(...learned.errors.map(e => `⚠ record ${e}`));
       }
 

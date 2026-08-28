@@ -1,9 +1,10 @@
 /**
  * Importer: Codex CLI native memories (~/.codex/memories/).
  *
- * MEMORY.md is a STRUCTURED curated handbook with a STRICT v1 format
+ * MEMORY.md is a STRUCTURED curated handbook with a STRICT format
  * (spec extracted verbatim from the codex 0.150.x binary's consolidation
- * prompt): a `v1` marker line, then `# Task Group:` blocks each carrying
+ * prompt; note the `v1` marker belongs to memory_summary.md, NOT this
+ * file): `# Task Group:` blocks each carrying
  * `scope:` and `applies_to:` header lines, `## Task <n>` sections
  * (provenance: `### rollout_summary_files`, `### keywords`), and
  * consolidated block-level sections `## User preferences`,
@@ -34,6 +35,7 @@ import { projectId } from '../utils/project-id.js';
 import { IMPORT } from '../constants/index.js';
 import type { LearnSection } from './learn-pipeline.js';
 import { sectionsFromFreeformMarkdown } from './memory-md.js';
+import { inferKind } from './shared.js';
 
 export interface CodexMemoriesImport {
   sections: LearnSection[];
@@ -56,33 +58,40 @@ interface TaskGroup {
   scope: string;
   appliesTo: string;
   cwd: string | null;
-  keywords: string[];
+  /** Task-LOCAL keywords by task number — a [Task 3] lesson must carry
+   *  Task 3's retrieval handles, not a flattened group union (review). */
+  taskKeywords: Map<number, string[]>;
   preferences: string[];
   knowledge: string[];
   failures: string[];
-}
-
-/** True when a Reusable-knowledge bullet records a CHOICE, not a fact. */
-function looksLikeDecision(bullet: string): boolean {
-  return /\b(chose|decided|prefer(red)?|opted|picked|instead of|over)\b/i.test(bullet);
+  warnings: string[];
 }
 
 function parseTaskGroups(markdown: string): TaskGroup[] {
+  const normalized = markdown.replace(/\r\n/g, '\n');
   const groups: TaskGroup[] = [];
-  // Split on top-level Task Group headers (the v1 marker line and any
-  // preamble fall away with the first split segment).
-  const blocks = markdown.split(/^# Task Group:\s*/m).slice(1);
+  // Split on top-level Task Group headers (any preamble falls away with
+  // the first split segment; MEMORY.md itself has no version marker).
+  const blocks = normalized.split(/^# Task Group:[ \t]*/m).slice(1);
   for (const block of blocks) {
     const lines = block.split('\n');
     const name = (lines[0] ?? '').trim();
     if (!name) continue;
+    const warnings: string[] = [];
     const scope = lines.find((l) => l.startsWith('scope:'))?.slice(6).trim() ?? '';
     const appliesTo = lines.find((l) => l.startsWith('applies_to:'))?.slice(11).trim() ?? '';
-    const cwd = /cwd=([^;\s]+)/.exec(appliesTo)?.[1] ?? null;
+    // cwd runs to the ';' segment boundary or end of line — paths contain
+    // spaces (a Windows 'C:\Users\Jane Doe\repo' must not truncate at
+    // the first space; review).
+    const cwd = /cwd=([^;]+?)(?:;|$)/.exec(appliesTo)?.[1]?.trim() || null;
+    if (!appliesTo) warnings.push(`task group "${name}": applies_to header missing — scoping falls back to --project/global`);
+    else if (!cwd) warnings.push(`task group "${name}": applies_to has no cwd= segment — scoping falls back to --project/global`);
 
-    const keywords: string[] = [];
-    for (const m of block.matchAll(/^### keywords\n-\s*(.+)$/gm)) {
-      keywords.push(...m[1].split(',').map((k) => k.trim()).filter(Boolean));
+    // Per-task keywords: ## Task <n> ... ### keywords\n- a, b, c
+    const taskKeywords = new Map<number, string[]>();
+    for (const tm of block.matchAll(/^## Task (\d+)[^\n]*\n([\s\S]*?)(?=^## |^# |$(?![\s\S]))/gm)) {
+      const kw = /^### keywords\n-[ \t]*(.+)$/m.exec(tm[2])?.[1];
+      if (kw) taskKeywords.set(Number(tm[1]), kw.split(',').map((k) => k.trim()).filter(Boolean));
     }
 
     const sectionBullets = (heading: string): string[] => {
@@ -98,13 +107,24 @@ function parseTaskGroups(markdown: string): TaskGroup[] {
       scope,
       appliesTo,
       cwd,
-      keywords,
+      taskKeywords,
       preferences: sectionBullets('User preferences'),
       knowledge: sectionBullets('Reusable knowledge'),
       failures: sectionBullets('Failures and how to do differently'),
+      warnings,
     });
   }
   return groups;
+}
+
+/** Keywords for one bullet: the union of the tasks it cites via
+ *  [Task n] refs; a ref-less bullet gets the group union. Capped. */
+function keywordsForBullet(group: TaskGroup, bullet: string): string[] {
+  const refs = [...bullet.matchAll(/\[Task (\d+)\]/g)].map((m) => Number(m[1]));
+  const source = refs.length > 0
+    ? refs.flatMap((n) => group.taskKeywords.get(n) ?? [])
+    : [...group.taskKeywords.values()].flat();
+  return [...new Set(source)].slice(0, IMPORT.MAX_KEYWORD_TAGS);
 }
 
 /** Strip the `[Task 1]` provenance refs the strict format appends. */
@@ -113,23 +133,29 @@ function stripTaskRefs(bullet: string): string {
 }
 
 function groupSections(group: TaskGroup): LearnSection[] {
-  const project = group.cwd ? projectId(group.cwd) : null;
+  // A mapped cwd wins; an unmappable group leaves project UNDEFINED so
+  // the CLI --project fallback (or global) applies — never a silent
+  // hard-null that blocks the fallback (review).
+  const project = group.cwd ? projectId(group.cwd) : undefined;
   const groupSlug = group.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
-  const baseTags = ['import:codex-memories', ...(groupSlug ? [`group:${groupSlug}`] : []),
-    ...group.keywords.slice(0, IMPORT.MAX_KEYWORD_TAGS)];
+  const baseTags = ['import:codex-memories', ...(groupSlug ? [`group:${groupSlug}`] : [])];
   const why = `Codex task group "${group.name}"${group.scope ? ` — ${group.scope}` : ''}`.slice(0, 200);
   const context = { why };
 
+  const make = (kind: LearnSection['kind'], bullet: string, extraTags: string[] = []): LearnSection => ({
+    kind,
+    content: stripTaskRefs(bullet),
+    tags: [...baseTags, ...keywordsForBullet(group, bullet), ...extraTags],
+    project,
+    context,
+    originClient: 'codex',
+  });
+
   const out: LearnSection[] = [];
-  for (const bullet of group.failures) {
-    out.push({ kind: 'pitfall', content: stripTaskRefs(bullet), tags: baseTags, project, context });
-  }
-  for (const bullet of group.preferences) {
-    out.push({ kind: 'fact', content: stripTaskRefs(bullet), tags: [...baseTags, 'preference'], project, context });
-  }
+  for (const bullet of group.failures) out.push(make('pitfall', bullet));
+  for (const bullet of group.preferences) out.push(make('fact', bullet, ['preference']));
   for (const bullet of group.knowledge) {
-    const content = stripTaskRefs(bullet);
-    out.push({ kind: looksLikeDecision(content) ? 'decision' : 'fact', content, tags: baseTags, project, context });
+    out.push(make(inferKind(stripTaskRefs(bullet)) === 'decision' ? 'decision' : 'fact', bullet));
   }
   return out;
 }
@@ -152,12 +178,20 @@ export function transformCodexMemories(dir: string, opts: { includeNotes?: boole
       continue;
     }
     if (name !== 'MEMORY.md' && name.endsWith('.md')) adHoc.push(name);
+    else if (name !== 'MEMORY.md') {
+      // 'Enforced AND reported' means EVERY skip is visible — a stray
+      // notes.txt or MEMORY.md.bak must not vanish silently (review).
+      excluded.push({ name, reason: 'unrecognized format' });
+    }
   }
 
   const memoryPath = join(dir, 'MEMORY.md');
   if (existsSync(memoryPath)) {
     const groups = parseTaskGroups(readFileSync(memoryPath, 'utf-8'));
-    for (const group of groups) sections.push(...groupSections(group));
+    for (const group of groups) {
+      sections.push(...groupSections(group));
+      notes.push(...group.warnings.map((w) => `warning: ${w}`));
+    }
     notes.push(`MEMORY.md: ${groups.length} task group(s)`);
   } else {
     notes.push('MEMORY.md not present — nothing structured to import');
@@ -166,10 +200,14 @@ export function transformCodexMemories(dir: string, opts: { includeNotes?: boole
   if (adHoc.length > 0) {
     if (opts.includeNotes) {
       for (const name of adHoc) {
-        const fileSections = sectionsFromFreeformMarkdown(
-          readFileSync(join(dir, name), 'utf-8'), ['import:codex-memories', 'ad-hoc']);
-        sections.push(...fileSections);
-        notes.push(`${name}: ${fileSections.length} note section(s)`);
+        try {
+          const fileSections = sectionsFromFreeformMarkdown(
+            readFileSync(join(dir, name), 'utf-8'), ['import:codex-memories', 'ad-hoc']);
+          sections.push(...fileSections);
+          notes.push(`${name}: ${fileSections.length} note section(s)`);
+        } catch (err) {
+          excluded.push({ name, reason: `unreadable (${(err as NodeJS.ErrnoException).code ?? 'error'})` });
+        }
       }
     } else {
       for (const name of adHoc) excluded.push({ name, reason: 'ad-hoc note (use --include-notes to import)' });

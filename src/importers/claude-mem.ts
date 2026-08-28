@@ -12,8 +12,9 @@
  * vectors (derived — Cairn re-embeds), FTS mirrors, sync_* tables,
  * user_prompts (raw prompt text is noise, not lessons), archives/.
  *
- * Safety: the worker daemon may be LIVE against this DB — we snapshot-
- * copy db + -wal + -shm to a temp dir and open the copy readonly.
+ * Safety: the worker daemon may be LIVE against this DB — the importer
+ * takes a single atomic VACUUM INTO snapshot (readonly source
+ * connection) and reads the copy readonly.
  * Column sets vary across their schema_versions 4-49, so every read
  * selects defensively via PRAGMA table_info.
  *
@@ -23,28 +24,19 @@
  * Their `project` is a NAME, not a Cairn project id — it becomes a
  * `src-project:` tag; --project scopes the batch if wanted.
  */
-import { copyFileSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join, basename } from 'node:path';
 import DatabaseCtor from 'better-sqlite3';
 import type { Database as DatabaseType } from 'better-sqlite3';
 import { LIMITS, IMPORT } from '../constants/index.js';
 import type { LearnSection } from './learn-pipeline.js';
+import { inferKind, slugTag } from './shared.js';
 
 export interface ClaudeMemImport {
   sections: LearnSection[];
   excluded?: Array<{ name: string; reason: string }>;
   notes: string[];
-}
-
-function slugTag(prefix: string, value: string): string {
-  return `${prefix}:${value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40)}`;
-}
-
-function inferKind(text: string): LearnSection['kind'] {
-  if (/\b(never|avoid|don'?t|broke|breaks|fails?|error|race|leak|crash|bug)\b/i.test(text)) return 'pitfall';
-  if (/\b(chose|decided|prefer(red)?|opted|instead of)\b/i.test(text)) return 'decision';
-  return 'fact';
 }
 
 function parseJsonArray(raw: unknown): string[] {
@@ -93,19 +85,29 @@ function fromSummaryRow(row: Record<string, unknown>): LearnSection | null {
 }
 
 function fromMemoryItemRow(row: Record<string, unknown>): LearnSection | null {
-  // Server-beta unified shape mirrors observations closely.
+  // Server-beta unified shape mirrors observations closely, but carries
+  // project_id where the worker schema carries project — normalize so
+  // provenance is not dropped (review).
   if (row.kind === 'prompt') return null; // raw prompts are noise
-  return fromObservationRow(row);
+  const normalized = { ...row, project: row.project ?? row.project_id };
+  return fromObservationRow(normalized);
 }
 
-/** Snapshot-copy a possibly-live WAL database and open the copy. */
+/** Consistent snapshot of a possibly-live WAL database. Sequential file
+ *  copies RACE the writer's checkpointer — a TRUNCATE between the db and
+ *  -wal copies yields a snapshot with ZERO tables, read as an empty
+ *  archive and reported as success (review, reproduced). VACUUM INTO on
+ *  a READONLY source connection is a single atomic database-level
+ *  statement; the copy then opens readonly. */
 function openSnapshot(dbPath: string, scratch: string): DatabaseType {
   const copy = join(scratch, 'claude-mem-snapshot.db');
-  copyFileSync(dbPath, copy);
-  for (const suffix of ['-wal', '-shm']) {
-    if (existsSync(dbPath + suffix)) copyFileSync(dbPath + suffix, copy + suffix);
+  const source = new DatabaseCtor(dbPath, { readonly: true, fileMustExist: true });
+  try {
+    source.prepare('VACUUM INTO ?').run(copy);
+  } finally {
+    source.close();
   }
-  return new DatabaseCtor(copy, { readonly: false }); // WAL replay needs write on the COPY
+  return new DatabaseCtor(copy, { readonly: true });
 }
 
 export function transformClaudeMem(path?: string): ClaudeMemImport {
@@ -124,6 +126,11 @@ export function transformClaudeMem(path?: string): ClaudeMemImport {
     const db = openSnapshot(dbPath, scratch);
     try {
       const tables = tableNames(db);
+      // A non-trivial source snapshotting to NOTHING recognizable is a
+      // failure, never a quiet 'Nothing to import' (review).
+      if (![...tables].some((t) => ['observations', 'session_summaries', 'memory_items', 'sessions', 'memories'].includes(t))) {
+        throw new Error(`no recognizable claude-mem tables in ${dbPath} (found: ${[...tables].join(', ') || 'none'}) — is this really a claude-mem database?`);
+      }
       const rowsOf = (table: string): Array<Record<string, unknown>> =>
         db.prepare(`SELECT * FROM ${table}`).all() as Array<Record<string, unknown>>;
 
@@ -131,14 +138,41 @@ export function transformClaudeMem(path?: string): ClaudeMemImport {
       // rule); memory_sources dedupe is unnecessary here because we then
       // skip the worker tables entirely.
       const memoryItems = tables.has('memory_items') ? rowsOf('memory_items') : [];
-      if (memoryItems.length > 0) {
+      // Preference keys on USABLE (non-prompt) rows: a memory_items
+      // holding only prompt rows must not shadow the real worker archive
+      // (review). Partial population is covered by memory_sources: worker
+      // rows already represented there are skipped, the rest still import.
+      const usableItems = memoryItems.filter((r) => r.kind !== 'prompt');
+      if (usableItems.length > 0) {
         let count = 0;
         for (const row of memoryItems) {
           const section = fromMemoryItemRow(row);
           if (section) { sections.push(section); count++; }
         }
         notes.push(`memory_items (server-beta schema): ${count} of ${memoryItems.length} imported`);
-        notes.push('worker tables skipped (memory_items supersedes them)');
+        const migrated = tables.has('memory_sources')
+          ? new Set((rowsOf('memory_sources')).map((r) => `${String(r.legacy_table)}:${String(r.legacy_id)}`))
+          : null;
+        if (migrated) {
+          let extra = 0;
+          if (tables.has('observations')) {
+            for (const row of rowsOf('observations')) {
+              if (migrated.has(`observations:${String(row.id)}`)) continue;
+              const section = fromObservationRow(row);
+              if (section) { sections.push(section); extra++; }
+            }
+          }
+          if (tables.has('session_summaries') && columnsOf(db, 'session_summaries').has('learned')) {
+            for (const row of rowsOf('session_summaries')) {
+              if (migrated.has(`session_summaries:${String(row.id)}`)) continue;
+              const section = fromSummaryRow(row);
+              if (section) { sections.push(section); extra++; }
+            }
+          }
+          notes.push(`worker tables: ${extra} not-yet-migrated row(s) imported via memory_sources diff`);
+        } else {
+          notes.push('worker tables skipped (memory_items populated, no memory_sources to diff — gateway dedup covers overlap)');
+        }
       } else {
         if (tables.has('observations')) {
           let count = 0;

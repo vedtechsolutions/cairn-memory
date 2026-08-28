@@ -144,7 +144,8 @@ describe('codex-memories importer', () => {
     // Idempotent re-import: everything dedups, row count unchanged.
     const second = learnSections(repo, transformCodexMemories(root).sections, null);
     assert.equal(second.ingested, 0, 're-import creates nothing new');
-    assert.equal(second.deduplicated, 5);
+    assert.equal(second.exactDuplicates, 5);
+    assert.equal(second.merged.length, 0, 'identical re-import is exact, not merged');
     const after = (db.prepare('SELECT COUNT(*) n FROM memories').get() as { n: number }).n;
     assert.equal(after, rows.length + (db.prepare("SELECT COUNT(*) n FROM memories WHERE kind = 'rule'").get() as { n: number }).n);
   });
@@ -288,6 +289,176 @@ describe('claude-mem importer', () => {
     assert.equal(first.ingested, 2);
     const second = learnSections(repo, transformClaudeMem(root).sections, null);
     assert.equal(second.ingested, 0);
-    assert.equal(second.deduplicated, 2);
+    assert.equal(second.exactDuplicates, 2);
+  });
+});
+
+// --- Dual-review round-1 regressions -----------------------------------------
+
+describe('review regressions (round 1)', () => {
+  it('CLI accepts the DOCUMENTED space form and rejects unknown flags loudly', () => {
+    const root = join(dir, 'memories');
+    writeCodexFixture(root);
+    // The exact README invocation shape (space-separated values).
+    const out = execFileSync('node', ['dist/src/cli/index.js', 'import', '--from', 'codex-memories', '--path', root, '--dry-run'], {
+      cwd: REPO_ROOT, encoding: 'utf-8', env: { ...process.env, CAIRN_DB_PATH: join(dir, 'x.db') },
+    });
+    assert.match(out, /DRY RUN — 5 memories/);
+    // Unknown flag: loud error, not silent fallback to a default source dir.
+    let failed = false;
+    try {
+      execFileSync('node', ['dist/src/cli/index.js', 'import', '--from', 'codex-memories', '--paht', root], {
+        cwd: REPO_ROOT, encoding: 'utf-8', stdio: 'pipe', env: { ...process.env, CAIRN_DB_PATH: join(dir, 'x.db') },
+      });
+    } catch (err) {
+      failed = true;
+      assert.match(String((err as { stderr?: string }).stderr), /unknown flag --paht/);
+    }
+    assert.ok(failed, 'a typo flag must not silently import from the default location');
+  });
+
+  it('CRLF MEMORY.md imports the SAME lessons as LF', () => {
+    const rootLf = join(dir, 'lf');
+    const rootCrlf = join(dir, 'crlf');
+    for (const [root, content] of [[rootLf, CODEX_MEMORY_MD], [rootCrlf, CODEX_MEMORY_MD.replaceAll('\n', '\r\n')]] as const) {
+      mkdirSync(root, { recursive: true });
+      writeFileSync(join(root, 'MEMORY.md'), content);
+    }
+    const lf = transformCodexMemories(rootLf).sections;
+    const crlf = transformCodexMemories(rootCrlf).sections;
+    assert.equal(crlf.length, lf.length, 'CRLF must not silently import zero lessons');
+    assert.deepEqual(crlf.map(s => s.content).sort(), lf.map(s => s.content).sort());
+  });
+
+  it('a group WITHOUT applies_to falls back to --project (undefined, not hard null)', () => {
+    const root = join(dir, 'no-applies');
+    mkdirSync(root, { recursive: true });
+    writeFileSync(join(root, 'MEMORY.md'), [
+      '# Task Group: scopeless work', 'scope: something',
+      '## Failures and how to do differently',
+      '- forgetting the flag on deploys breaks the rollout every time',
+    ].join('\n'));
+    const result = transformCodexMemories(root);
+    assert.equal(result.sections.length, 1);
+    assert.equal(result.sections[0].project, undefined, 'undefined lets the batch default apply');
+    assert.ok(result.notes.some(n => n.includes('applies_to header missing')), 'the fallback is reported');
+    // The batch default actually applies:
+    learnSections(repo, result.sections, 'target-project-x');
+    const row = db.prepare("SELECT project FROM memories WHERE content LIKE '%rollout%'").get() as { project: string };
+    assert.equal(row.project, 'target-project-x');
+  });
+
+  it('a spaced Windows path in applies_to keeps its full cwd', () => {
+    const root = join(dir, 'winpath');
+    mkdirSync(root, { recursive: true });
+    writeFileSync(join(root, 'MEMORY.md'), [
+      '# Task Group: win work', 'scope: s',
+      'applies_to: cwd=C:\\Users\\Jane Doe\\repo; reuse_rule=checkout-specific',
+      '## Failures and how to do differently',
+      '- the build breaks when the path has spaces and is not quoted',
+    ].join('\n'));
+    const result = transformCodexMemories(root);
+    assert.equal(result.sections[0].project, projectId('C:\\Users\\Jane Doe\\repo'),
+      'cwd parses to the ; boundary, not the first space');
+  });
+
+  it('MERGES are reported apart from identical skips — never labeled as no-ops', () => {
+    const sections = [
+      { kind: 'pitfall' as const, content: 'never run the staging deploy before the migration lock is released by the operator', tags: [] },
+      { kind: 'pitfall' as const, content: 'never run the production deploy before the migration lock is released by the operator', tags: [] },
+    ];
+    const first = learnSections(repo, sections, null);
+    assert.equal(first.ingested + first.merged.length, 2, 'both sources accounted for');
+    if (first.merged.length > 0) {
+      assert.ok(first.merged[0].source.length > 0 && first.merged[0].survivor.length > 0,
+        'a merge names the absorbed source and the survivor');
+    }
+    // Identical re-import is exact, never merged.
+    const again = learnSections(repo, [sections[0]], null);
+    assert.equal(again.merged.length + again.ingested, again.ingested + again.merged.length);
+    assert.ok(again.exactDuplicates + again.merged.length + again.ingested === 1);
+  });
+
+  it('per-task keywords: a [Task 2] bullet carries Task 2 handles, not Task 1s', () => {
+    const root = join(dir, 'multitask');
+    mkdirSync(root, { recursive: true });
+    writeFileSync(join(root, 'MEMORY.md'), [
+      '# Task Group: multi', 'scope: s', 'applies_to: cwd=/w/multi; reuse_rule=r',
+      '## Task 1: first', '### rollout_summary_files', '- rollout_summaries/a.md (cwd=/w/multi, rollout_path=/x, updated_at=t, thread_id=1)',
+      '### keywords', '- alpha, apple',
+      '## Task 2: second', '### rollout_summary_files', '- rollout_summaries/b.md (cwd=/w/multi, rollout_path=/x, updated_at=t, thread_id=2)',
+      '### keywords', '- beta, banana',
+      '## Failures and how to do differently',
+      '- the beta pipeline drops records when the flush interval is zero [Task 2]',
+    ].join('\n'));
+    const [section] = transformCodexMemories(root).sections;
+    assert.ok(section.tags.includes('beta'), 'Task 2 keyword present');
+    assert.ok(!section.tags.includes('alpha'), 'Task 1 keyword absent');
+  });
+
+  it('memory-md does NOT slurp frontmatter-less siblings (README/CHANGELOG stay out)', () => {
+    const memPath = join(dir, 'MEMORY.md');
+    writeFileSync(memPath, '## Notes\n- the ingest service owns all queue topology in this system\n- consumers must never declare queues themselves here\n');
+    writeFileSync(join(dir, 'README.md'), '## Install\n- run npm install and then run the build command to get started\n');
+    const result = transformMemoryMd(memPath);
+    assert.ok(!result.sections.some(s => s.content.includes('npm install')), 'README not imported');
+    assert.ok(result.excluded?.some(e => e.name === 'README.md'), 'exclusion reported');
+    const withSiblings = transformMemoryMd(memPath, { includeSiblings: true });
+    assert.ok(withSiblings.sections.some(s => s.content.includes('npm install')), 'opt-in imports siblings');
+  });
+
+  it('claude-mem: prompt-only memory_items falls back to the worker tables', () => {
+    const root = join(dir, 'prompt-only');
+    mkdirSync(root, { recursive: true });
+    const cm = new DatabaseCtor(join(root, 'claude-mem.db'));
+    cm.exec(`CREATE TABLE observations (id INTEGER PRIMARY KEY, project TEXT, type TEXT, title TEXT, subtitle TEXT, text TEXT, narrative TEXT, facts TEXT, concepts TEXT);
+      CREATE TABLE memory_items (id TEXT PRIMARY KEY, kind TEXT, title TEXT, text TEXT)`);
+    cm.prepare('INSERT INTO observations (project, type, title, text) VALUES (?, ?, ?, ?)')
+      .run('p', 'discovery', 'Real archive row', 'the real archive lives in the worker tables and must import');
+    cm.prepare('INSERT INTO memory_items (id, kind, title, text) VALUES (?, ?, ?, ?)')
+      .run('m1', 'prompt', 'raw', 'a raw prompt row must not shadow the archive');
+    cm.close();
+    const result = transformClaudeMem(root);
+    assert.equal(result.sections.length, 1);
+    assert.ok(result.sections[0].content.includes('worker tables'));
+  });
+
+  it('claude-mem: an unrecognizable database fails LOUDLY, never quiet success', () => {
+    const root = join(dir, 'not-cm');
+    mkdirSync(root, { recursive: true });
+    const cm = new DatabaseCtor(join(root, 'claude-mem.db'));
+    cm.exec('CREATE TABLE unrelated (id INTEGER)');
+    cm.close();
+    assert.throws(() => transformClaudeMem(root), /no recognizable claude-mem tables/);
+  });
+
+  it('tag caps: file-controlled keywords cannot exceed count or length limits', () => {
+    const longTag = 'x'.repeat(300);
+    learnSections(repo, [{
+      kind: 'fact', content: 'a fact whose tags come from a hostile source file with many long keywords',
+      tags: ['a', 'b', 'c', 'd', 'e', 'f', 'g', longTag],
+    }], null);
+    const row = db.prepare("SELECT tags FROM memories WHERE content LIKE '%hostile source%'").get() as { tags: string };
+    const tags = JSON.parse(row.tags) as string[];
+    assert.ok(tags.length <= 5, `tag count capped (got ${tags.length})`);
+    assert.ok(tags.every(t => t.length <= 50), 'tag length capped');
+  });
+
+  it('secrets never appear in previews or diagnostics', () => {
+    const secret = 'ghp_' + 'a'.repeat(36);
+    const sections = [{ kind: 'fact' as const, content: `${secret} is the deploy token for the staging cluster environment`, tags: [] }];
+    const root = join(dir, 'secret-src');
+    mkdirSync(root, { recursive: true });
+    writeFileSync(join(root, 'MEMORY.md'), [
+      '# Task Group: g', 'scope: s', 'applies_to: cwd=/w/s; reuse_rule=r',
+      '## Reusable knowledge', `- ${secret} is the deploy token for the staging cluster environment`,
+    ].join('\n'));
+    const out = execFileSync('node', ['dist/src/cli/index.js', 'import', '--from', 'codex-memories', '--path', root, '--dry-run'], {
+      cwd: REPO_ROOT, encoding: 'utf-8', env: { ...process.env, CAIRN_DB_PATH: join(dir, 's.db') },
+    });
+    assert.ok(!out.includes(secret), 'dry-run preview is scrubbed');
+    // Diagnostics path: errors carry scrubbed excerpts only.
+    const res = learnSections(repo, sections, null);
+    for (const e of res.errors) assert.ok(!e.includes(secret));
   });
 });

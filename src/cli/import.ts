@@ -14,7 +14,8 @@ import { join } from 'node:path';
 import { openDatabase } from '../db/connection.js';
 import { resolveDbPath } from '../db/db-path.js';
 import { MemoryRepository } from '../db/memory-repository.js';
-import { learnSections, type LearnSection } from '../importers/learn-pipeline.js';
+import { learnSections, safeExcerpt, type LearnSection } from '../importers/learn-pipeline.js';
+import { isPrivateProject } from '../config/cairn-config.js';
 import { transformCodexMemories } from '../importers/codex-memories.js';
 import { transformMemoryMd } from '../importers/memory-md.js';
 import { transformClaudeMem } from '../importers/claude-mem.js';
@@ -45,7 +46,9 @@ export function runImport(options: ImportOptions): number {
           console.error('cairn import --from memory-md requires --path <MEMORY.md>');
           return 1;
         }
-        ({ sections, notes } = transformMemoryMd(options.path));
+        const result = transformMemoryMd(options.path, { includeSiblings: options.includeNotes });
+        ({ sections, notes } = result);
+        excluded = result.excluded ?? [];
         break;
       }
       case 'claude-mem': {
@@ -75,7 +78,10 @@ export function runImport(options: ImportOptions): number {
     console.log(`  DRY RUN — ${sections.length} memories would be imported:`);
     for (const s of sections) {
       const scope = s.project === undefined ? (options.project ?? 'global') : (s.project ?? 'global');
-      console.log(`    [${s.kind}] (${scope}) ${s.content.slice(0, 90)}${s.content.length > 90 ? '…' : ''}`);
+      const privateFlag = scope !== 'global' && isPrivateProject(scope) ? ' [PRIVATE]' : '';
+      // Scrubbed excerpt: a source bullet can BEGIN with a credential,
+      // and dry-run output must never print it verbatim (review).
+      console.log(`    [${s.kind}] (${scope}${privateFlag}) ${safeExcerpt(s.content)}`);
     }
     return 0;
   }
@@ -84,9 +90,30 @@ export function runImport(options: ImportOptions): number {
   try {
     const repo = new MemoryRepository(db);
     const result = learnSections(repo, sections, options.project ?? null);
-    console.log(`  imported: ${result.ingested}, deduplicated: ${result.deduplicated}${result.errors.length > 0 ? `, errors: ${result.errors.length}` : ''}`);
+    console.log(`  imported: ${result.ingested}, identical (skipped): ${result.exactDuplicates}, merged into existing: ${result.merged.length}${result.errors.length > 0 ? `, errors: ${result.errors.length}` : ''}`);
+    // MERGES are lossy — the source wording is absorbed into a similar
+    // existing row. The importer is the one caller that knows the source
+    // records were distinct, so it says exactly what happened to each.
+    for (const m of result.merged) {
+      console.log(`    ~ merged: "${m.source}"`);
+      console.log(`      into:   "${m.survivor}"`);
+    }
     for (const e of result.errors) console.log(`    ⚠ ${e}`);
-    console.log('  Re-running is safe: identical content deduplicates.');
+
+    // Scope disclosure: writes into scopes chosen by the SOURCE FILE
+    // (applies_to) must be named, and private targets flagged — never an
+    // undisclosed placement into the most-trusted scope (review).
+    const byScope = new Map<string, number>();
+    for (const s2 of sections) {
+      const scope = s2.project === undefined ? (options.project ?? 'global') : (s2.project ?? 'global');
+      byScope.set(scope, (byScope.get(scope) ?? 0) + 1);
+    }
+    console.log('  Scopes written:');
+    for (const [scope, count] of byScope) {
+      const privateFlag = scope !== 'global' && isPrivateProject(scope) ? '  [PRIVATE project]' : '';
+      console.log(`    ${scope}: ${count}${privateFlag}`);
+    }
+    console.log('  Re-running is safe for identical content; near-duplicates merge (reported above).');
     return result.errors.length > 0 ? 1 : 0;
   } finally {
     db.close();

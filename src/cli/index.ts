@@ -49,21 +49,46 @@ switch (command) {
   case 'import': {
     try {
       const { runImport } = await import('./import.js');
-      const arg = (name: string): string | undefined => {
-        const found = process.argv.find((a) => a.startsWith(`--${name}=`));
-        return found?.slice(name.length + 3);
-      };
-      const from = arg('from') ?? process.argv[3];
-      if (!from || from.startsWith('--')) {
+      // Both --name=value and --name value forms (the README documents the
+      // space form; accepting only '=' made every documented invocation
+      // fail — and worse, silently ignored '--path DIR', importing from
+      // the DEFAULT location instead of the named one; review).
+      const argv = process.argv.slice(3);
+      const values: Record<string, string> = {};
+      const flags = new Set<string>();
+      const VALUE_ARGS = new Set(['from', 'path', 'project']);
+      const BOOL_ARGS = new Set(['dry-run', 'include-notes']);
+      let argError: string | null = null;
+      for (let i = 0; i < argv.length; i++) {
+        const token = argv[i];
+        if (!token.startsWith('--')) { argError = `unexpected argument "${token}"`; break; }
+        const eq = token.indexOf('=');
+        const name = eq === -1 ? token.slice(2) : token.slice(2, eq);
+        if (BOOL_ARGS.has(name)) {
+          if (eq !== -1) { argError = `--${name} takes no value`; break; }
+          flags.add(name);
+        } else if (VALUE_ARGS.has(name)) {
+          const value = eq !== -1 ? token.slice(eq + 1) : argv[++i];
+          if (value === undefined || value.startsWith('--')) { argError = `--${name} requires a value`; break; }
+          values[name] = value;
+        } else {
+          argError = `unknown flag --${name}`;
+          break;
+        }
+      }
+      if (argError || !values.from) {
+        if (argError) console.error(`cairn import: ${argError}`);
         console.error('usage: cairn import --from codex-memories|memory-md|claude-mem [--path P] [--project ID] [--dry-run] [--include-notes]');
         process.exit(1);
       }
       process.exit(runImport({
-        from,
-        path: arg('path'),
-        project: arg('project') ?? null,
-        dryRun: process.argv.includes('--dry-run'),
-        includeNotes: process.argv.includes('--include-notes'),
+        from: values.from,
+        path: values.path,
+        // An EMPTY --project= must not become project '' (neither global
+        // nor a real project; review) — treat as unset.
+        project: values.project ? values.project : null,
+        dryRun: flags.has('dry-run'),
+        includeNotes: flags.has('include-notes'),
       }));
     } catch (err) {
       console.error(`cairn import: failed — ${(err as Error).message}`);
