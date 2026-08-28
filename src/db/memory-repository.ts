@@ -332,6 +332,11 @@ export class MemoryRepository {
   }
 
   /** Delete memories matching a cleanup filter */
+  /** Single-statement delete of exactly these ids (atomic). */
+  deleteByIds(ids: readonly string[]): number {
+    return stats.deleteByIds(this.db, ids);
+  }
+
   deleteByFilter(filter: CleanupFilter, limit = 100): number {
     return stats.deleteByFilter(this.db, filter, limit);
   }

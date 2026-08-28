@@ -627,10 +627,9 @@ export function registerMemoryTools(
       const executePid = sessionProjectId();
       const deletable = candidates.filter(m => canReadPrivate(m.project, executePid));
       const skippedPrivate = candidates.length - deletable.length;
-      let deleted = 0;
-      for (const m of deletable) {
-        if (repo.delete(m.id)) deleted++;
-      }
+      // One statement — a per-row loop an interruption leaves half-applied
+      // would trade cleanup's atomicity for the private-row exclusion.
+      const deleted = repo.deleteByIds(deletable.map(m => m.id));
       if (deleted > 0) bumpCache(sessionCache);
       const note = skippedPrivate > 0
         ? ` (${skippedPrivate} in private project(s) skipped — run from a session inside the project)` : '';

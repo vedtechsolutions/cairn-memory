@@ -175,9 +175,14 @@ export function findByFilter(db: Database.Database, filter: CleanupFilter, limit
 /** Delete memories matching a cleanup filter */
 export function deleteByFilter(db: Database.Database, filter: CleanupFilter, limit = 100): number {
   const memories = findByFilter(db, filter, limit);
-  if (memories.length === 0) return 0;
+  return deleteByIds(db, memories.map(m => m.id));
+}
 
-  const ids = memories.map(m => m.id);
+/** Delete exactly these ids in ONE statement — callers that pre-filter a
+ *  candidate set (cleanup's private-row exclusion) must not degrade to a
+ *  per-row autocommit loop that an interruption leaves half-applied. */
+export function deleteByIds(db: Database.Database, ids: readonly string[]): number {
+  if (ids.length === 0) return 0;
   const placeholders = ids.map(() => '?').join(',');
   const result = db.prepare(`DELETE FROM memories WHERE id IN (${placeholders})`).run(...ids);
   return result.changes;

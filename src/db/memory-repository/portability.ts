@@ -126,13 +126,15 @@ export function exportPortableFiles(db: Database.Database): PortableFile[] {
  *  eleven non-id portable fields; telemetry and revision take column
  *  defaults on insert and are NEVER copied from the payload. Returns
  *  whether the row was created or an existing id was overwritten. */
-/** Thrown when a restore record would change an existing PRIVATE row's
- *  project scope without standing + acknowledgment. Restore is a WHOLE-
- *  DOCUMENT transaction, so this aborts everything — a partial commit
- *  would silently break the all-or-nothing backup contract. */
+/** Thrown when a restore record would touch an existing PRIVATE row
+ *  without standing (any overwrite) or acknowledgment (a scope change).
+ *  Restore is a WHOLE-DOCUMENT transaction, so this aborts everything —
+ *  a partial commit would silently break the all-or-nothing contract. */
 export class PrivateScopeChangeError extends Error {
-  constructor(public readonly recordId: string, public readonly fromProject: string) {
-    super(`record ${recordId} would change the scope of a memory in private project "${fromProject}"`);
+  constructor(public readonly recordId: string, public readonly fromProject: string, reason: 'standing' | 'ack') {
+    super(reason === 'standing'
+      ? `record ${recordId} would overwrite a memory in private project "${fromProject}"`
+      : `record ${recordId} would change the scope of a memory in private project "${fromProject}"`);
   }
 }
 
@@ -147,15 +149,21 @@ export function restoreRecord(
   const existing = db.prepare('SELECT kind, project FROM memories WHERE id = ?').get(record.id) as { kind: string; project: string | null } | undefined;
   if (existing?.kind === 'rule') throw new Error('rule memories are not portable');
   // Scope-policy invariant, enforced at the REPOSITORY boundary so no
-  // restore caller can bypass it: moving content out of a private project
-  // requires BOTH standing (the session runs inside that project — same
-  // binding as every private read) AND the explicit acknowledgment. The
-  // throw aborts the whole document (all-or-nothing contract preserved).
-  if (existing && existing.project !== null
-    && record.project !== existing.project
-    && isPrivateProject(existing.project)
-    && !(opts.allowPrivateScopeChange === true && opts.sessionProjectId === existing.project)) {
-    throw new PrivateScopeChangeError(record.id, existing.project);
+  // restore caller can bypass it. Mutation follows readability: ANY
+  // overwrite of an existing private row requires standing (the session
+  // runs inside that project — cairn_correct refuses the same row from
+  // the same session, and restore must not be the workaround). A SCOPE
+  // change additionally requires the explicit acknowledgment. Either
+  // throw aborts the whole document (all-or-nothing preserved). A fresh
+  // INSERT into a private project is deliberately allowed — content
+  // flowing IN leaks nothing (documented seeding path).
+  if (existing && existing.project !== null && isPrivateProject(existing.project)) {
+    if (opts.sessionProjectId !== existing.project) {
+      throw new PrivateScopeChangeError(record.id, existing.project, 'standing');
+    }
+    if (record.project !== existing.project && opts.allowPrivateScopeChange !== true) {
+      throw new PrivateScopeChangeError(record.id, existing.project, 'ack');
+    }
   }
   db.prepare(`
     INSERT INTO memories (id, content, kind, project, tags, confidence, source, created_at,

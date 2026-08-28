@@ -130,6 +130,31 @@ describe('scope config loader', () => {
     }
   });
 
+  it("a typo'd scope key WARNS (bad-shape); minimal and empty-scope files stay silent", () => {
+    const warnings: string[] = [];
+    const original = console.error;
+    console.error = (msg?: unknown): void => { warnings.push(String(msg)); };
+    try {
+      const cases: Array<[string, boolean]> = [
+        ['{"scope":{"private_projects":["x-1"]}}', true],   // snake_case typo
+        ['{"scope":{"privateProject":["x-1"]}}', true],     // singular typo
+        ['{"scope":{}}', false],                            // deliberate empty
+        ['{}', false],                                      // minimal file
+        ['{"scope":{"privateProjects":[]}}', false],        // explicit empty list
+      ];
+      for (const [raw, shouldWarn] of cases) {
+        const before = warnings.length;
+        writeFileSync(join(configDir, 'config.json'), raw);
+        resetConfigCacheForTests();
+        assert.equal(isPrivateProject('x-1'), false, `inactive for: ${raw}`);
+        assert.equal(warnings.length > before, shouldWarn,
+          `${raw} should ${shouldWarn ? '' : 'NOT '}warn (a typo silently deactivating privacy is the failure the warning exists for)`);
+      }
+    } finally {
+      console.error = original;
+    }
+  });
+
   it('reloads on mtime change and reverts when the file is deleted (daemon-safe)', () => {
     writeScopeConfig([PRIVATE_PROJECT]);
     assert.equal(isPrivateProject(PRIVATE_PROJECT), true);
@@ -531,6 +556,28 @@ describe('MCP surfaces', () => {
     const acked = await call('cairn_ingest', { content: doc, mode: 'restore', from_private: true });
     assert.equal(acked.isError, false);
     assert.equal(repo.findById(priv.id)?.project, null, 'acknowledged restore applies the scope change');
+  });
+
+  it("restore cannot overwrite a private row's CONTENT from outside — mutation follows readability on every door", async () => {
+    const priv = repo.create({ content: PRIVATE_MARKER, kind: 'pitfall', project: PRIVATE_PROJECT, confidence: 0.9 });
+    writeScopeConfig([PRIVATE_PROJECT]);
+    setSessionProjectForTests(PRIVATE_PROJECT);
+    const doc = (await call('cairn_export', { project: PRIVATE_PROJECT })).text
+      .replaceAll(PRIVATE_MARKER, 'CONTENT REWRITTEN VIA RESTORE');
+
+    // Outside: same project, changed content — cairn_correct refuses this
+    // row from this session, and restore must not be the workaround.
+    setSessionProjectForTests(OTHER_PROJECT);
+    const refused = await call('cairn_ingest', { content: doc, mode: 'restore' });
+    assert.equal(refused.isError, true);
+    assert.match(refused.text, /would overwrite a memory in private project/);
+    assert.equal(repo.findById(priv.id)?.content, PRIVATE_MARKER, 'content untouched');
+
+    // Inside: a same-scope overwrite needs standing only, no flag.
+    setSessionProjectForTests(PRIVATE_PROJECT);
+    const applied = await call('cairn_ingest', { content: doc, mode: 'restore' });
+    assert.equal(applied.isError, false);
+    assert.equal(repo.findById(priv.id)?.content, 'CONTENT REWRITTEN VIA RESTORE');
   });
 
   it('plan tool, plan resource, and reminders are session-bound (the surfaces the first sweep missed)', async () => {

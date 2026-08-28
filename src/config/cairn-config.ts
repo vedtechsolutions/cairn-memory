@@ -60,7 +60,13 @@ function parseConfig(raw: string): CairnConfig | 'bad-shape' {
   if (scope === undefined) return EMPTY_CONFIG; // scope simply not configured
   if (scope === null || typeof scope !== 'object') return 'bad-shape';
   const list = (scope as { privateProjects?: unknown }).privateProjects;
-  if (list === undefined) return EMPTY_CONFIG;
+  if (list === undefined) {
+    // A deliberately empty scope block is legal; a NON-empty one without
+    // privateProjects is almost certainly a typo (private_projects,
+    // privateProject) — and a typo silently deactivating every private
+    // project is the failure this warning exists for.
+    return Object.keys(scope as object).length === 0 ? EMPTY_CONFIG : 'bad-shape';
+  }
   if (!Array.isArray(list)) return 'bad-shape';
   return {
     scope: {
