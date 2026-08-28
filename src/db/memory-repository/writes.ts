@@ -69,9 +69,11 @@ export function create(db: Database.Database, input: CreateMemoryInput): CreateR
       UPDATE memories SET content = ?, confidence = ?, tags = ?, source = ?
       WHERE id = ?
     `).run(newContent, newConfidence,
-      // Union capped: repeated merges (bulk imports especially) would
-      // otherwise grow tags without bound past MAX_TAGS (review).
-      JSON.stringify([...new Set([...existing.tags, ...tags])].slice(0, LIMITS.MAX_TAGS)),
+      // Union BOUNDED, never shrunk: cap growth at MAX_TAGS, but a
+      // pre-existing row already carrying more keeps everything it has —
+      // a flat slice destroyed two tags of an unrelated 7-tag row on any
+      // merge (review). Existing tags order first, so they survive.
+      JSON.stringify([...new Set([...existing.tags, ...tags])].slice(0, Math.max(LIMITS.MAX_TAGS, existing.tags.length))),
       source, existing.id);
 
     return { id: existing.id, deduplicated: true };
@@ -123,8 +125,9 @@ export function storeMemory(db: Database.Database, input: StoreMemoryInput): Cre
     // Content: keep the longer version
     const newContent = content.length > existing.content.length ? content : existing.content;
 
-    // Tags: union
-    const newTags = [...new Set([...existing.tags, ...tags])];
+    // Tags: union, bounded like create's — growth capped at MAX_TAGS,
+    // pre-existing rows never shrunk (review).
+    const newTags = [...new Set([...existing.tags, ...tags])].slice(0, Math.max(LIMITS.MAX_TAGS, existing.tags.length));
 
     // Context: incoming fills gaps, doesn't overwrite
     const existingCtx = existing.context ?? {};
@@ -204,11 +207,20 @@ export function findSimilar(db: Database.Database, content: string, project: str
         AND m.invalidated = 0
         AND m.kind = ?
         AND ((? IS NULL AND m.project IS NULL) OR m.project = ?)
+      ORDER BY rank
       LIMIT 10
     `).all(ftsQuery, kind, project, project) as MemoryRow[];
   } catch {
     return null;
   }
+
+  // An EXACT row always wins over a near match: with both present
+  // (restored/legacy stores have them), merging into the near-dup
+  // overwrites the WRONG row and leaves two identical copies (closing
+  // review, reproduced). Best-match-first ordering above keeps the exact
+  // row inside the candidate window.
+  const exact = candidates.find((row) => row.content === content);
+  if (exact) return rowToMemory(exact);
 
   for (const row of candidates) {
     // Opposed content (divergent value, negation flip, antonym) is NOT a

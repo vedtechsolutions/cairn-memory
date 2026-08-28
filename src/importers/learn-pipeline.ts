@@ -46,6 +46,16 @@ export interface LearnResult {
   errors: string[];
 }
 
+export interface LearnOptions {
+  /** Exact repeats: false (default — bulk CLI imports) makes them TRUE
+   *  no-ops (idempotent re-runs never inflate confidence or mutate
+   *  tags); true (the MCP cairn_ingest path) keeps the gateway's
+   *  reinforcement semantics its tool description promises. A source
+   *  file gaining a keyword between CLI re-imports is deliberately not
+   *  picked up — idempotency wins there (review R3, decided). */
+  reinforceExact?: boolean;
+}
+
 /** Apply sections through the gateway. `defaultProject` scopes sections
  *  without their own; dryRun is decided by the CALLER (importers preview
  *  before calling; the MCP tool has its own dry-run rendering). */
@@ -53,6 +63,7 @@ export function learnSections(
   repo: MemoryRepository,
   sections: readonly LearnSection[],
   defaultProject: string | null,
+  options: LearnOptions = {},
 ): LearnResult {
   let ingested = 0;
   let exactDuplicates = 0;
@@ -76,7 +87,8 @@ export function learnSections(
       // confidence every pass), and a merge captures the pre-existing
       // text before create overwrites it with the longer version.
       const similar = repo.findSimilarTo(content, project, section.kind);
-      if (similar && similar.content === content) {
+      const isExact = similar !== null && similar.content === content;
+      if (isExact && !options.reinforceExact) {
         exactDuplicates++;
         continue;
       }
@@ -92,6 +104,7 @@ export function learnSections(
         ...(section.originClient ? { originClient: section.originClient } : {}),
       });
       if (!result.deduplicated) ingested++;
+      else if (isExact) exactDuplicates++; // reinforced, still not a merge
       else {
         merged.push({
           source: safeExcerpt(section.content, 70),

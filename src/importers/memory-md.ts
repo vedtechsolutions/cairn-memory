@@ -14,6 +14,7 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { IMPORT, LIMITS } from '../constants/index.js';
+import { scrubSecrets } from '../utils/secret-scanner.js';
 import type { LearnSection } from './learn-pipeline.js';
 import { inferKind, slugTag } from './shared.js';
 
@@ -44,7 +45,10 @@ const FRONTMATTER_KIND: Record<string, LearnSection['kind']> = {
  *  — ANY `type:` would let a README with `type: guide` through the gate
  *  (review round 2). */
 export function isAutoMemoryType(type: string | null): boolean {
-  return type !== null && type in FRONTMATTER_KIND;
+  // Own-property check: `in` walks the prototype chain, so `type:
+  // constructor` (or toString/__proto__) passed the gate and even
+  // produced a FUNCTION-valued kind via the lookup (closing review).
+  return type !== null && Object.hasOwn(FRONTMATTER_KIND, type);
 }
 
 
@@ -58,13 +62,21 @@ export function sectionsFromFreeformMarkdown(rawMarkdown: string, baseTags: stri
   // spaces (review round 2: the narrow column-zero triple-backtick form
   // left indented/tilde/longer fences parseable as lessons).
   const noFences = rawMarkdown.replace(/\r\n/g, '\n')
-    .replace(/^ {0,3}(`{3,}|~{3,})[^\n]*\n[\s\S]*?^ {0,3}\1`*~*[ \t]*$/gm, '');
+    .replace(/^ {0,3}(`{3,}|~{3,})[^\n]*\n[\s\S]*?^ {0,3}\1`*~*[ \t]*$/gm, '')
+    // An UNCLOSED fence runs to EOF under CommonMark — a leftover
+    // opener after the pass above starts one, and everything after it
+    // is code, not lessons (closing review).
+    .replace(/^ {0,3}(`{3,}|~{3,})[^\n]*\n[\s\S]*$/m, '');
   const { body: markdown, type } = stripFrontmatter(noFences);
-  const kindHint = type ? FRONTMATTER_KIND[type] : undefined;
+  const kindHint = type && Object.hasOwn(FRONTMATTER_KIND, type) ? FRONTMATTER_KIND[type] : undefined;
   const typeTags = type ? [slugTag('type', type)] : [];
   const out: LearnSection[] = [];
   const push = (raw: string, extraTags: string[] = []): void => {
-    const content = raw.trim().replace(/\s+/g, ' ').slice(0, LIMITS.MAX_CONTENT_CHARS);
+    // Scrub BEFORE the clip: slicing raw text can cut a credential at
+    // the boundary so the scrubber no longer recognizes the remnant —
+    // the pipeline scrubs-then-clips, and so must every upstream cap
+    // (closing review, reproduced with a boundary-straddling token).
+    const content = scrubSecrets(raw.trim().replace(/\s+/g, ' ')).text.slice(0, LIMITS.MAX_CONTENT_CHARS);
     if (content.length < IMPORT.MIN_SECTION_CHARS) return; // headers alone carry no lesson
     out.push({ kind: kindHint ?? inferKind(content), content, tags: [...baseTags, ...typeTags, ...extraTags] });
   };

@@ -23,7 +23,7 @@ import { openDatabase } from '../src/db/connection.js';
 import { MemoryRepository } from '../src/db/memory-repository.js';
 import { learnSections } from '../src/importers/learn-pipeline.js';
 import { transformCodexMemories } from '../src/importers/codex-memories.js';
-import { transformMemoryMd, stripFrontmatter } from '../src/importers/memory-md.js';
+import { transformMemoryMd, stripFrontmatter, isAutoMemoryType, sectionsFromFreeformMarkdown } from '../src/importers/memory-md.js';
 import { transformClaudeMem } from '../src/importers/claude-mem.js';
 import { projectId } from '../src/utils/project-id.js';
 import { execFileSync } from 'node:child_process';
@@ -497,8 +497,182 @@ describe('review regressions (round 1)', () => {
       cwd: REPO_ROOT, encoding: 'utf-8', env: { ...process.env, CAIRN_DB_PATH: join(dir, 's.db') },
     });
     assert.ok(!out.includes(secret), 'dry-run preview is scrubbed');
-    // Diagnostics path: errors carry scrubbed excerpts only.
-    const res = learnSections(repo, sections, null);
-    for (const e of res.errors) assert.ok(!e.includes(secret));
+    // Diagnostics path EXECUTED, not assumed: a closed connection makes
+    // the section fail, and the reported error must carry a scrubbed
+    // excerpt (the previous loop iterated an empty array; closing review).
+    const closedDb = openDatabase({ dbPath: ':memory:' });
+    const closedRepo = new MemoryRepository(closedDb);
+    closedDb.close();
+    const res = learnSections(closedRepo, sections, null);
+    assert.equal(res.errors.length, 1, 'the failure is reported, not swallowed');
+    assert.ok(!res.errors[0].includes(secret), 'error diagnostics are scrubbed');
+  });
+});
+
+// --- Closing-review fixes (Claude R1-R3 + Codex closing round) -----------------
+
+describe('closing review fixes', () => {
+  it('empty --path errors loudly; empty --project still means unset [R1]', () => {
+    // `--path "$UNSET_VAR"` in a script must never fall through to the
+    // DEFAULT source under a success banner — that imports content the
+    // user never pointed at (closing review R1).
+    for (const argv of [
+      ['import', '--from', 'codex-memories', '--path', ''],
+      ['import', '--from=codex-memories', '--path='],
+    ]) {
+      let failed = false;
+      try {
+        execFileSync('node', ['dist/src/cli/index.js', ...argv], {
+          cwd: REPO_ROOT, encoding: 'utf-8', stdio: 'pipe', env: { ...process.env, CAIRN_DB_PATH: join(dir, 'r1.db') },
+        });
+      } catch (err) {
+        failed = true;
+        assert.match(String((err as { stderr?: string }).stderr), /--path requires a non-empty value/);
+      }
+      assert.ok(failed, 'an empty --path must not import from the default source');
+    }
+    // --project is an OPTIONAL scope: explicitly empty means unset
+    // (global fallback), never rows scoped to '' and never an error.
+    const root = join(dir, 'r1-src');
+    mkdirSync(root, { recursive: true });
+    writeFileSync(join(root, 'MEMORY.md'), [
+      '# Task Group: g', 'scope: s',
+      '## Reusable knowledge', '- an empty project flag leaves the batch scoped to global rather than empty string',
+    ].join('\n'));
+    const out = execFileSync('node', ['dist/src/cli/index.js', 'import', '--from', 'codex-memories', '--path', root, '--project=', '--dry-run'], {
+      cwd: REPO_ROOT, encoding: 'utf-8', env: { ...process.env, CAIRN_DB_PATH: join(dir, 'r1.db') },
+    });
+    assert.match(out, /\(global\)/);
+  });
+
+  it('merges BOUND tag growth but never shrink a pre-existing row [R2]', () => {
+    const staging = 'never run the staging deploy before the migration lock is released by the operator';
+    const production = 'never run the production deploy again before the migration lock is released by the operator';
+    const seven = ['t1', 't2', 't3', 't4', 't5', 't6', 't7'];
+    repo.create({ kind: 'pitfall', content: staging, tags: seven });
+    // A merge from an unrelated write must not destroy tags the row
+    // already carries (a flat MAX_TAGS slice dropped two; closing R2).
+    repo.create({ kind: 'pitfall', content: production, tags: ['t8'] });
+    const row = db.prepare("SELECT tags FROM memories WHERE kind = 'pitfall'").get() as { tags: string };
+    const tags = JSON.parse(row.tags) as string[];
+    for (const t of seven) assert.ok(tags.includes(t), `pre-existing tag ${t} survives the merge`);
+    // And growth stays bounded: a small row cannot balloon past MAX_TAGS.
+    const factA = 'the deploy pipeline uses blue green switching for the payroll service rollout';
+    const factB = 'the deploy pipeline uses blue green switching for the payroll service rollout always';
+    repo.create({ kind: 'fact', content: factA, tags: ['a1', 'a2'] });
+    repo.create({ kind: 'fact', content: factB, tags: ['b1', 'b2', 'b3', 'b4', 'b5', 'b6'] });
+    const fact = db.prepare("SELECT tags FROM memories WHERE kind = 'fact'").get() as { tags: string };
+    assert.equal((JSON.parse(fact.tags) as string[]).length, 5, 'growth is capped at MAX_TAGS');
+  });
+
+  it('reinforceExact keeps cairn_ingest gateway semantics; CLI default stays a no-op [R3]', () => {
+    const lesson = 'the payroll export job requires the ledger snapshot to finish before it starts';
+    learnSections(repo, [{ kind: 'fact', content: lesson, tags: ['first'] }], null);
+    const before = db.prepare('SELECT confidence, tags FROM memories').get() as { confidence: number; tags: string };
+
+    // CLI default: an exact re-run is a TRUE no-op — no boost, no union.
+    const cli = learnSections(repo, [{ kind: 'fact', content: lesson, tags: ['second'] }], null);
+    assert.equal(cli.exactDuplicates, 1);
+    const afterCli = db.prepare('SELECT confidence, tags FROM memories').get() as { confidence: number; tags: string };
+    assert.equal(afterCli.confidence, before.confidence);
+    assert.deepEqual(JSON.parse(afterCli.tags), JSON.parse(before.tags));
+
+    // cairn_ingest promises gateway semantics: an exact repeat REINFORCES
+    // (boost + tag union) and still counts as deduplicated for the tool
+    // output contract (closing review R3, decided).
+    const mcp = learnSections(repo, [{ kind: 'fact', content: lesson, tags: ['second'] }], null, { reinforceExact: true });
+    assert.equal(mcp.exactDuplicates, 1, 'a reinforced exact counts as deduplicated, never a merge');
+    assert.equal(mcp.merged.length, 0);
+    const afterMcp = db.prepare('SELECT confidence, tags FROM memories').get() as { confidence: number; tags: string };
+    assert.ok(afterMcp.confidence > before.confidence, 'the gateway boost applies');
+    assert.ok((JSON.parse(afterMcp.tags) as string[]).includes('second'), 'the new tag unions in');
+  });
+
+  it('a boundary-straddling token is scrubbed, never stored as a partial secret [C1]', () => {
+    const secret = 'ghp_' + 'c'.repeat(36);
+    const pad = 'x'.repeat(1990); // raw clip at 2000 would cut mid-token
+    // memory-md path
+    const secs = sectionsFromFreeformMarkdown(`- ${pad} ${secret}`, []);
+    assert.equal(secs.length, 1);
+    assert.ok(!secs[0].content.includes('ghp_'), 'memory-md clip scrubs before slicing');
+    // claude-mem path
+    const root = join(dir, 'cm-straddle');
+    mkdirSync(root, { recursive: true });
+    const cm = new DatabaseCtor(join(root, 'claude-mem.db'));
+    cm.exec('CREATE TABLE observations (id INTEGER PRIMARY KEY, project TEXT, type TEXT, title TEXT, subtitle TEXT, text TEXT, narrative TEXT, facts TEXT, concepts TEXT)');
+    cm.prepare('INSERT INTO observations (title, text) VALUES (?, ?)').run('boundary', `${pad} ${secret}`);
+    cm.close();
+    const out = transformClaudeMem(root);
+    assert.equal(out.sections.length, 1);
+    assert.ok(!out.sections[0].content.includes('ghp_'), 'claude-mem clip scrubs before slicing');
+  });
+
+  it('an EXACT row wins over a near match — no wrong-row overwrite [C2]', () => {
+    const staging = 'never run the staging deploy before the migration lock is released by the operator';
+    const production = 'never run the production deploy again before the migration lock is released by the operator';
+    repo.create({ kind: 'pitfall', content: staging, tags: [] });
+    repo.create({ kind: 'pitfall', content: production, tags: [], skipDedup: true });
+    const confs = () => Object.fromEntries((db.prepare('SELECT content, confidence FROM memories').all() as Array<{ content: string; confidence: number }>).map((r) => [r.content, r.confidence]));
+    const before = confs();
+    // Import the exact production wording: with BOTH rows present the
+    // near match must not be chosen as the merge target (that overwrote
+    // staging and left two identical rows; closing review, reproduced).
+    const res = learnSections(repo, [{ kind: 'pitfall', content: production, tags: [] }], null);
+    assert.equal(res.exactDuplicates, 1, 'recognized as exact, not a merge');
+    assert.equal(res.merged.length, 0);
+    const after = confs();
+    assert.equal(after[staging], before[staging], 'the staging row is untouched');
+    assert.equal(after[production], before[production], 'a bulk re-run stays a no-op');
+    assert.equal(Object.keys(after).length, 2, 'no duplicate production row');
+  });
+
+  it('the frontmatter type gate rejects prototype properties [C3]', () => {
+    for (const bad of ['constructor', 'toString', '__proto__', 'hasOwnProperty']) {
+      assert.equal(isAutoMemoryType(bad), false, `'${bad}' must not pass the sibling gate`);
+    }
+    assert.equal(isAutoMemoryType('feedback'), true);
+    // And the kind lookup can never yield a prototype FUNCTION as kind.
+    const secs = sectionsFromFreeformMarkdown('---\ntype: constructor\n---\n- a lesson long enough to pass the minimum section length gate', []);
+    assert.equal(secs.length, 1);
+    assert.ok(['fact', 'pitfall', 'decision', 'correction'].includes(secs[0].kind), `kind is a real kind, got ${String(secs[0].kind)}`);
+  });
+
+  it("a ';' field boundary beats a literal reuse_rule= inside the path [A3]", () => {
+    const root = join(dir, 'a3-src');
+    mkdirSync(root, { recursive: true });
+    writeFileSync(join(root, 'MEMORY.md'), [
+      '# Task Group: odd path', 'scope: s',
+      'applies_to: cwd=/srv/odd reuse_rule=x; reuse_rule=safe within this checkout',
+      '## Failures and how to do differently',
+      '- the semicolon is the field separator even when the path contains reuse_rule text',
+    ].join('\n'));
+    const result = transformCodexMemories(root);
+    assert.equal(result.sections[0].project, projectId('/srv/odd reuse_rule=x'));
+  });
+
+  it('an unclosed fence masks to EOF [A5]', () => {
+    const md = [
+      '- a real lesson kept before the unclosed fence begins in this file',
+      '',
+      '```',
+      '## fake heading inside the unclosed fence',
+      '- fake bullet that must never become a lesson row in the store',
+    ].join('\n');
+    const secs = sectionsFromFreeformMarkdown(md, []);
+    assert.equal(secs.length, 1, 'only the lesson before the fence imports');
+    assert.match(secs[0].content, /real lesson/);
+  });
+
+  it('--include-notes sections carry codex provenance', () => {
+    const root = join(dir, 'prov-src');
+    mkdirSync(root, { recursive: true });
+    writeFileSync(join(root, 'MEMORY.md'), [
+      '# Task Group: g', 'scope: s', 'applies_to: cwd=/w/p; reuse_rule=r',
+      '## Reusable knowledge', '- a structured lesson with full codex provenance attached to it',
+    ].join('\n'));
+    writeFileSync(join(root, 'notes.md'), '- an ad-hoc codex note that must keep codex provenance when opted in');
+    const result = transformCodexMemories(root, { includeNotes: true });
+    assert.ok(result.sections.length >= 2);
+    for (const s of result.sections) assert.equal(s.originClient, 'codex');
   });
 });

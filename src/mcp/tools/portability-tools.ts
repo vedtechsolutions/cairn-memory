@@ -160,7 +160,7 @@ export function registerPortabilityTools(
       // v1 sections ride the SAME shared pipeline the CLI importers use —
       // one neutralize/sanitize/dedup path, no tool-vs-CLI drift.
       {
-        const learned = learnSections(repo, v1.sections, project ?? null);
+        const learned = learnSections(repo, v1.sections, project ?? null, { reinforceExact: true });
         ingested += learned.ingested;
         // The tool's output contract predates merge-visibility: its
         // 'deduplicated' count covers both identical skips and merges

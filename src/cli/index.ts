@@ -75,10 +75,16 @@ switch (command) {
         } else if (VALUE_ARGS.has(name)) {
           const value = eq !== -1 ? token.slice(eq + 1) : argv[++i];
           if (value === undefined || value.startsWith('--')) { argError = `--${name} requires a value`; break; }
-          // An explicitly EMPTY value means unset for every value flag
-          // (--project= previously scoped rows to ''; --path= errored
-          // with a blank path in the message).
-          if (value !== '') values[name] = value;
+          if (value === '') {
+            // Empty means UNSET only for --project (an optional scope).
+            // An empty --path/--from means the user MEANT to name a
+            // source and failed (unset shell variable in a script) — a
+            // silent fall-through to the DEFAULT source imports content
+            // they never pointed at, under a success banner (review).
+            if (name !== 'project') { argError = `--${name} requires a non-empty value`; break; }
+          } else {
+            values[name] = value;
+          }
         } else {
           argError = `unknown flag --${name}`;
           break;

@@ -80,11 +80,12 @@ function parseTaskGroups(markdown: string): TaskGroup[] {
     const warnings: string[] = [];
     const scope = lines.find((l) => l.startsWith('scope:'))?.slice(6).trim() ?? '';
     const appliesTo = lines.find((l) => l.startsWith('applies_to:'))?.slice(11).trim() ?? '';
-    // cwd runs to the ';' boundary, a space-separated `reuse_rule=`
-    // boundary (both real shapes), or end of line — spaced paths must
-    // not truncate at the first space, and the space-form must not glue
-    // reuse_rule onto the path (both reviewed rounds).
-    let cwd = /cwd=([^;]+?)(?:;|\s+reuse_rule=|$)/.exec(appliesTo)?.[1]?.trim() || null;
+    // cwd runs to the ';' boundary when one exists (the format's real
+    // field separator — it wins even over a literal ' reuse_rule='
+    // inside the path; closing review), else to a space-separated
+    // `reuse_rule=` boundary or end of line. Spaced paths must not
+    // truncate at the first space (both reviewed rounds).
+    let cwd = (/cwd=([^;]*);/.exec(appliesTo) ?? /cwd=(.+?)(?:\s+reuse_rule=|$)/.exec(appliesTo))?.[1]?.trim() || null;
     if (!appliesTo) warnings.push(`task group "${name}": applies_to header missing — scoping falls back to --project/global`);
     else if (!cwd) warnings.push(`task group "${name}": applies_to has no cwd= segment — scoping falls back to --project/global`);
     // Only ABSOLUTE paths map to a project: a relative cwd (or a Windows
@@ -218,7 +219,9 @@ export function transformCodexMemories(dir: string, opts: { includeNotes?: boole
         try {
           const fileSections = sectionsFromFreeformMarkdown(
             readFileSync(join(dir, name), 'utf-8'), ['import:codex-memories', 'ad-hoc']);
-          sections.push(...fileSections);
+          // Same provenance as the structured sections — these notes are
+          // codex-authored too (closing review).
+          sections.push(...fileSections.map((fs) => ({ ...fs, originClient: 'codex' })));
           notes.push(`${name}: ${fileSections.length} note section(s)`);
         } catch (err) {
           excluded.push({ name, reason: `unreadable (${(err as NodeJS.ErrnoException).code ?? 'error'})` });

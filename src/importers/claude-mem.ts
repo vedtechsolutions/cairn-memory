@@ -30,6 +30,7 @@ import { join, basename } from 'node:path';
 import DatabaseCtor from 'better-sqlite3';
 import type { Database as DatabaseType } from 'better-sqlite3';
 import { LIMITS, IMPORT } from '../constants/index.js';
+import { scrubSecrets } from '../utils/secret-scanner.js';
 import type { LearnSection } from './learn-pipeline.js';
 import { inferKind, slugTag } from './shared.js';
 
@@ -58,7 +59,9 @@ function tableNames(db: DatabaseType): Set<string> {
 }
 
 function clip(text: string): string {
-  return text.replace(/\s+/g, ' ').trim().slice(0, LIMITS.MAX_CONTENT_CHARS);
+  // Scrub BEFORE the cap — a clip of raw text can leave a partial
+  // credential the scrubber no longer matches (closing review).
+  return scrubSecrets(text.replace(/\s+/g, ' ').trim()).text.slice(0, LIMITS.MAX_CONTENT_CHARS);
 }
 
 function fromObservationRow(row: Record<string, unknown>): LearnSection | null {
