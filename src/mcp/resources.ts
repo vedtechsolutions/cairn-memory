@@ -3,6 +3,8 @@
  * Exposes read-only views of plan state and briefings without token budget constraints.
  */
 import { ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { canReadPrivate } from '../config/cairn-config.js';
+import { sessionProjectId } from '../utils/session-project.js';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { PlanRepository, Plan } from '../db/plan-repository.js';
 import type { MemoryRepository } from '../db/memory-repository.js';
@@ -44,6 +46,16 @@ export function registerResources(
     { description: 'Full project briefing without token budget constraints' },
     async (uri, variables) => {
       const project = variables.project as string;
+      // Session-bound private reads: the URI selects a project, but a
+      // private project's briefing is readable only from inside it.
+      if (!canReadPrivate(project, sessionProjectId())) {
+        return {
+          contents: [{
+            uri: uri.href,
+            text: `[Cairn] ${project} is marked private — its briefing is available only from a session inside that project.`,
+          }],
+        };
+      }
       const lines: string[] = [];
       lines.push(`[Cairn Full Briefing — ${project}]`);
 

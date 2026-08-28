@@ -17,6 +17,7 @@
  * preserve round-trip fidelity; capture-path scrubbing is the guarantee.
  */
 import type Database from 'better-sqlite3';
+import { isPrivateProject } from '../../config/cairn-config.js';
 import { writeFreeForm } from '../../memory-tool/free-form-store.js';
 import {
   assertPortableFilePath, validateRecordPayload,
@@ -125,12 +126,27 @@ export function exportPortableFiles(db: Database.Database): PortableFile[] {
  *  eleven non-id portable fields; telemetry and revision take column
  *  defaults on insert and are NEVER copied from the payload. Returns
  *  whether the row was created or an existing id was overwritten. */
-export function restoreRecord(db: Database.Database, record: PortableRecord & { id: string }): 'inserted' | 'updated' {
+export function restoreRecord(
+  db: Database.Database,
+  record: PortableRecord & { id: string },
+  opts: { allowPrivateScopeChange?: boolean } = {},
+): 'inserted' | 'updated' | 'skipped_private' {
   if ((record as { kind: string }).kind === 'rule') {
     throw new Error('rule memories are not portable');
   }
-  const existing = db.prepare('SELECT kind FROM memories WHERE id = ?').get(record.id) as { kind: string } | undefined;
+  const existing = db.prepare('SELECT kind, project FROM memories WHERE id = ?').get(record.id) as { kind: string; project: string | null } | undefined;
   if (existing?.kind === 'rule') throw new Error('rule memories are not portable');
+  // Scope-policy invariant, enforced at the REPOSITORY boundary so no
+  // restore caller can bypass it: promotion (with its from_private
+  // acknowledgment) is the one door out of a private project. A restore
+  // record that would move an existing private row to global — or to any
+  // other project — is a second door unless equally acknowledged.
+  if (existing && existing.project !== null
+    && record.project !== existing.project
+    && isPrivateProject(existing.project)
+    && opts.allowPrivateScopeChange !== true) {
+    return 'skipped_private';
+  }
   db.prepare(`
     INSERT INTO memories (id, content, kind, project, tags, confidence, source, created_at,
                           expires_at, fingerprint, context, anchor,
@@ -173,6 +189,9 @@ export function restoreFile(db: Database.Database, file: PortableFile): void {
 export interface RestoreCounts {
   restored: number;
   overwritten: number;
+  /** Records refused because they would change an existing PRIVATE row's
+   *  project scope without acknowledgment (see restoreRecord). */
+  skippedPrivate: number;
   files: number;
 }
 
@@ -183,16 +202,20 @@ export function restoreDocument(
   db: Database.Database,
   records: ReadonlyArray<PortableRecord & { id: string }>,
   files: readonly PortableFile[],
+  opts: { allowPrivateScopeChange?: boolean } = {},
 ): RestoreCounts {
   let restored = 0;
   let overwritten = 0;
+  let skippedPrivate = 0;
   const run = db.transaction(() => {
     for (const record of records) {
-      if (restoreRecord(db, record) === 'inserted') restored++;
-      else overwritten++;
+      const outcome = restoreRecord(db, record, opts);
+      if (outcome === 'inserted') restored++;
+      else if (outcome === 'updated') overwritten++;
+      else skippedPrivate++;
     }
     for (const file of files) restoreFile(db, file);
   });
   run.immediate();
-  return { restored, overwritten, files: files.length };
+  return { restored, overwritten, skippedPrivate, files: files.length };
 }

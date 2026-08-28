@@ -7,6 +7,8 @@
 - Added scope controls: projects marked private in `~/.cairn/config.json` (env override `CAIRN_CONFIG_PATH`) never surface in other projects on any surface — briefings, prompt/pitfall injections, subagent context, and recall including graph enrichment.
 - Added `from_private` acknowledgment requirement to `cairn_promote` when promoting a memory out of a private project.
 - Added `scope: "project"` parameter to `cairn_recall` for project-only results (globals excluded).
+- Added session binding for explicit reads of private projects: `cairn_recall`, `cairn_export`, `cairn_expand`, cleanup/stats previews, and the briefing resource return private content only from a session inside that project.
+- Added `from_private` acknowledgment requirement to restore-mode `cairn_ingest` when a record would change a private memory's project scope.
 
 - Added `@cairn/contract`: the integration contract (client identity, hook events, route classification, memory-path grammar, portable round-trip format, client-adapter interfaces) as a zero-dependency types package, bundled into the npm tarball.
 - Added a client-neutral `/post-tool` hook route; `/codex-post-tool` remains served as a deprecated alias so existing trusted wiring keeps working.

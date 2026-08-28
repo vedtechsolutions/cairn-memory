@@ -3,7 +3,8 @@ import * as z from 'zod/v4';
 import type { MemoryRepository } from '../../db/memory-repository.js';
 import type { SessionCache } from '../../hooks/shared/session-cache.js';
 import { LIMITS, PROMOTION, type ContextMode, type LearnableKind, type MemoryKind, LEARNABLE_KINDS } from '../../constants/index.js';
-import { isPrivateProject } from '../../config/cairn-config.js';
+import { isPrivateProject, canReadPrivate } from '../../config/cairn-config.js';
+import { sessionProjectId } from '../../utils/session-project.js';
 import { isCritical } from './helpers.js';
 import { buildFileSection, buildRecordSection, parseExportDocument } from '../../memory-tool/round-trip.js';
 import { parseMarkdown } from '../../utils/markdown-parser.js';
@@ -29,9 +30,10 @@ export function registerPortabilityTools(
         project: z.string().max(LIMITS.MAX_STRING_PARAM).nullable().optional().describe('Project scope for v1 sections and v2 records without a project field (null for global)'),
         mode: z.enum(['learn', 'restore']).optional().describe('learn (default): gateway semantics. restore: strict upsert-by-id, no merge/boost/conflict detection'),
         dry_run: z.boolean().optional().describe('Preview parsed sections without writing to DB'),
+        from_private: z.boolean().optional().describe('Explicit acknowledgment when a restore record changes the project scope of an existing PRIVATE-project memory (same acknowledgment cairn_promote requires)'),
       }),
     },
-    async ({ content, project, mode, dry_run: dryRun }) => {
+    async ({ content, project, mode, dry_run: dryRun, from_private: fromPrivate }) => {
       const critical = isCritical(getMode());
       if (critical) return critical;
       const restoreMode = mode === 'restore';
@@ -93,7 +95,7 @@ export function registerPortabilityTools(
         // rolls the whole document back; the cache bumps only on commit.
         let counts;
         try {
-          counts = repo.restoreAll(parsed.records as Array<(typeof parsed.records)[number] & { id: string }>, parsed.files);
+          counts = repo.restoreAll(parsed.records as Array<(typeof parsed.records)[number] & { id: string }>, parsed.files, { allowPrivateScopeChange: fromPrivate === true });
         } catch (err) {
           return { content: [{ type: 'text' as const, text: `error: restore aborted, nothing was written — ${(err as Error).message}` }], isError: true };
         }
@@ -101,7 +103,13 @@ export function registerPortabilityTools(
         return {
           content: [{
             type: 'text' as const,
-            text: [`restored: ${counts.restored}`, `overwritten: ${counts.overwritten}`, `files: ${counts.files}`].join('\n'),
+            text: [
+              `restored: ${counts.restored}`, `overwritten: ${counts.overwritten}`,
+              ...(counts.skippedPrivate > 0
+                ? [`skipped: ${counts.skippedPrivate} record(s) would change a PRIVATE project's scope — re-run with from_private: true to acknowledge`]
+                : []),
+              `files: ${counts.files}`,
+            ].join('\n'),
           }],
         };
       }
@@ -185,13 +193,21 @@ export function registerPortabilityTools(
       // Resolve a bare project name to its full id; preserves undefined so the
       // unfiltered check below (free-form files ride along) still holds.
       const resolvedProject = repo.resolveProject(project);
-      const records = repo.exportPortable({
+      const allRecords = repo.exportPortable({
         project: resolvedProject,
         kind: kind as MemoryKind | undefined,
         // Pass through UNDEFINED when unfiltered: the SQL confidence
         // predicate must not silently swallow corrupt active rows.
         minConfidence,
       });
+      // Session-bound private reads: an export running OUTSIDE a private
+      // project must not carry that project's content (the unfiltered
+      // maintenance export would otherwise dump every private row). The
+      // exclusion is reported, never silent — a backup taken elsewhere
+      // must not look complete when it is not.
+      const sessionPid = sessionProjectId();
+      const records = allRecords.filter((r) => canReadPrivate(r.project ?? null, sessionPid));
+      const excludedPrivate = allRecords.length - records.length;
       // Free-form files ride along on UNFILTERED exports only — any
       // project, kind, or confidence filter asks for records, not files.
       const unfiltered = resolvedProject === undefined && kind === undefined && minConfidence === undefined;
@@ -206,6 +222,9 @@ export function registerPortabilityTools(
         `# Exported: ${new Date().toISOString()}`,
         `# Memories: ${records.length}`,
         `# Files: ${files.length}`,
+        ...(excludedPrivate > 0
+          ? [`# NOTE: ${excludedPrivate} record(s) from private project(s) excluded — export from within the project to include them`]
+          : []),
         '',
       ];
       for (const record of records) {

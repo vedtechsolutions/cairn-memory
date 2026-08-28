@@ -529,7 +529,11 @@ Create `~/.cairn/config.json` (override the path with `CAIRN_CONFIG_PATH`):
 }
 ```
 
-Project IDs are the `<name>-<hash>` slugs shown in briefings and `cairn_stats`. The file is read live — no restart needed — and an absent or invalid file simply means no scope restrictions. Promoting a memory out of a private project to global requires an explicit `from_private: true` acknowledgment on `cairn_promote`. `cairn_recall` also accepts `scope: "project"` to return only the given project's own memories, excluding globals.
+Project IDs are the `<name>-<hash>` slugs shown in briefings and `cairn_stats`. The file is read live — no restart needed. An absent file means no restrictions; an invalid file logs a warning and applies none (fix it to reactivate).
+
+What "private" enforces: automatic surfaces (briefings, prompt/pitfall injections, subagent context, predictive recall) never carry the project's content elsewhere, and explicit tool reads (`cairn_recall`, `cairn_export`, `cairn_expand`, cleanup/stats previews, the briefing resource) are **session-bound** — they return the private project's content only when the session's own working directory is that project. Naming the project as an argument from elsewhere is not enough. Moving content out is always an explicit act: `cairn_promote` and restore-mode `cairn_ingest` both require a `from_private: true` acknowledgment to change a private memory's scope. This is isolation for autonomous agents sharing one memory store — not access control against you: the database file is yours either way.
+
+`cairn_recall` also accepts `scope: "project"` (requires `project`) to return only that project's own memories, excluding globals.
 
 ## Hook Reference
 

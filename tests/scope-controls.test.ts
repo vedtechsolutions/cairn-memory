@@ -34,6 +34,8 @@ import { EdgeRepository } from '../src/db/edge-repository.js';
 import { SessionCache } from '../src/hooks/shared/session-cache.js';
 import { registerMemoryTools } from '../src/mcp/tools/memory-tools.js';
 import { registerPortabilityTools } from '../src/mcp/tools/portability-tools.js';
+import { registerStatsTools } from '../src/mcp/tools/stats-tool.js';
+import { registerResources } from '../src/mcp/resources.js';
 import { loadCairnConfig, isPrivateProject, resetConfigCacheForTests, cairnConfigPath } from '../src/config/cairn-config.js';
 import { passesCrossProjectGuard, surfacesInScopedRecall } from '../src/utils/cross-project-guard.js';
 import { compileBriefing, type BriefingContext } from '../src/hooks/shared/briefing-compiler.js';
@@ -44,6 +46,8 @@ import type { CachedHookContext } from '../src/hooks/shared/db-client.js';
 import type { UserPromptSubmitInput, PreToolUseInput, SubagentStartInput } from '../src/hooks/shared/hook-io.js';
 import type { ContextFingerprint } from '../src/utils/fingerprint.js';
 import type { ProjectContext } from '../src/utils/project-scanner.js';
+import { projectId } from '../src/utils/project-id.js';
+import { setSessionProjectForTests } from '../src/utils/session-project.js';
 
 const PRIVATE_PROJECT = 'clientwork-aaaa1111';
 const OTHER_PROJECT = 'openproj-bbbb2222';
@@ -87,8 +91,11 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  process.env.CAIRN_CONFIG_PATH = savedConfigPath;
+  // Assigning undefined would coerce to the string "undefined" — delete.
+  if (savedConfigPath === undefined) delete process.env.CAIRN_CONFIG_PATH;
+  else process.env.CAIRN_CONFIG_PATH = savedConfigPath;
   resetConfigCacheForTests();
+  setSessionProjectForTests(undefined);
   rmSync(configDir, { recursive: true, force: true });
 });
 
@@ -188,6 +195,14 @@ function seedPrivatePitfall(repo: MemoryRepository): void {
   });
 }
 
+// The hook handlers derive their project from cwd — seeding under any
+// other id makes an absence assertion pass against EMPTY output (the
+// original acceptance tests did exactly that; reviewer F8). Everything
+// below seeds under the cwd-derived id and pairs every absence assertion
+// with a positive control.
+const OPEN_CWD = '/tmp/openproj-scope';
+const OPEN_PID = projectId(OPEN_CWD);
+
 describe('hook surfaces never leak a private project cross-project', () => {
   let db: Database.Database;
   let client: CachedHookContext;
@@ -197,22 +212,24 @@ describe('hook surfaces never leak a private project cross-project', () => {
     client = makeHookClient(db);
     writeScopeConfig([PRIVATE_PROJECT]);
     seedPrivatePitfall(client.memoryRepo);
-    // A same-project memory proves each surface still renders content.
+    // A same-project memory proves each surface still renders content —
+    // anchored to billing.ts so the pitfall surface's relevance gate hits.
     client.memoryRepo.create({
       content: 'OPEN-PROJECT pitfall about hooks and billing handlers',
       kind: 'pitfall',
-      project: OTHER_PROJECT,
+      project: OPEN_PID,
       confidence: 0.9,
       fingerprint: OVERLAPPING_FP,
+      anchor: 'billing.ts',
     });
-    client.contextRepo.store(OTHER_PROJECT, TS_CONTEXT);
+    client.contextRepo.store(OPEN_PID, TS_CONTEXT);
   });
 
   afterEach(() => db.close());
 
   it('SURFACE 1 — session-start briefing', () => {
     const ctx: BriefingContext = {
-      project: OTHER_PROJECT,
+      project: OPEN_PID,
       sessionType: 'startup',
       interrupted: false,
       projectContext: TS_CONTEXT,
@@ -229,34 +246,36 @@ describe('hook surfaces never leak a private project cross-project', () => {
     const input = {
       session_id: 'scope-s1',
       transcript_path: null,
-      cwd: '/tmp/openproj',
+      cwd: OPEN_CWD,
       hook_event_name: 'UserPromptSubmit',
       prompt: 'fix the billing exports handler hooks bug',
     } as unknown as UserPromptSubmitInput;
     const result = handlePromptCheck(input, client);
     const text = JSON.stringify(result ?? {});
     assert.ok(!text.includes(PRIVATE_MARKER), 'private content must not appear in prompt injection');
+    assert.ok(text.includes('OPEN-PROJECT'), 'positive control: the surface renders same-project content');
   });
 
   it('SURFACE 3 — pitfall-check injection', () => {
     const input = {
       session_id: 'scope-s1',
       transcript_path: null,
-      cwd: '/tmp/openproj',
+      cwd: OPEN_CWD,
       hook_event_name: 'PreToolUse',
       tool_name: 'Edit',
-      tool_input: { file_path: '/tmp/openproj/src/hooks/billing.ts' },
+      tool_input: { file_path: `${OPEN_CWD}/src/hooks/billing.ts` },
     } as unknown as PreToolUseInput;
     const result = handlePitfallCheck(input, client);
     const text = JSON.stringify(result ?? {});
     assert.ok(!text.includes(PRIVATE_MARKER), 'private content must not appear in pitfall warnings');
+    assert.ok(text.includes('OPEN-PROJECT'), 'positive control: the surface renders same-project content');
   });
 
   it('SURFACE 4 — subagent context', () => {
     const input = {
       session_id: 'scope-s1',
       transcript_path: null,
-      cwd: '/tmp/openproj',
+      cwd: OPEN_CWD,
       hook_event_name: 'SubagentStart',
       agent_id: 'a1',
       agent_type: 'general',
@@ -264,6 +283,55 @@ describe('hook surfaces never leak a private project cross-project', () => {
     const result = handleSubagentContext(input, client);
     const text = JSON.stringify(result ?? {});
     assert.ok(!text.includes(PRIVATE_MARKER), 'private content must not appear in subagent context');
+    assert.ok(text.includes('OPEN-PROJECT'), 'positive control: the surface renders same-project content');
+  });
+
+  it('SURFACES 2+3 differential — the CO-RECALL bridge: a private row rides prediction into another project without the policy, and is blocked with it', () => {
+    // Cairn builds the bridge itself: a legitimate recall INSIDE the
+    // private project pairs the private row with a global; prediction
+    // then dereferences the private id by RAW id in another project —
+    // the one hook path where a cross-project row arrives unfetched.
+    const global_ = client.memoryRepo.create({
+      content: 'GLOBAL-BILLING pitfall validate billing handler hooks input',
+      kind: 'pitfall',
+      project: null,
+      confidence: 1.0,
+      fingerprint: OVERLAPPING_FP,
+      anchor: 'billing.ts',
+    });
+    const priv = client.memoryRepo.create({
+      content: PRIVATE_MARKER, kind: 'pitfall', project: PRIVATE_PROJECT,
+      confidence: 1.0, fingerprint: OVERLAPPING_FP,
+    });
+    // Twice: the prompt layer's MIN_CO_COUNT is 2 (pitfall needs 1).
+    client.memoryRepo.trackCoRecall('own-project-recall', [global_.id, priv.id]);
+    client.memoryRepo.trackCoRecall('own-project-recall-2', [global_.id, priv.id]);
+
+    const pitfallInput = {
+      session_id: 'scope-s2', transcript_path: null, cwd: OPEN_CWD,
+      hook_event_name: 'PreToolUse', tool_name: 'Edit',
+      tool_input: { file_path: `${OPEN_CWD}/src/hooks/billing.ts` },
+    } as unknown as PreToolUseInput;
+    const promptInput = {
+      session_id: 'scope-s2', transcript_path: null, cwd: OPEN_CWD,
+      hook_event_name: 'UserPromptSubmit',
+      prompt: 'fix the billing handler hooks validation bug',
+    } as unknown as UserPromptSubmitInput;
+
+    // WITHOUT the policy: the overlapping-fingerprint private row passes
+    // the guard and surfaces via prediction — the reachable leak.
+    removeScopeConfig();
+    const openPitfall = JSON.stringify(handlePitfallCheck(pitfallInput, client) ?? {});
+    assert.ok(openPitfall.includes(PRIVATE_MARKER),
+      'differential premise: without config, prediction surfaces the cross-project row on the pitfall surface');
+
+    // WITH the policy: blocked on both surfaces (this exercises the
+    // guard-module policy through a REAL surface, not just the unit test).
+    writeScopeConfig([PRIVATE_PROJECT]);
+    const closedPitfall = JSON.stringify(handlePitfallCheck({ ...pitfallInput, session_id: 'scope-s3' } as unknown as PreToolUseInput, client) ?? {});
+    assert.ok(!closedPitfall.includes(PRIVATE_MARKER), 'pitfall-surface prediction is guarded');
+    const closedPrompt = JSON.stringify(handlePromptCheck(promptInput, client) ?? {});
+    assert.ok(!closedPrompt.includes(PRIVATE_MARKER), 'prompt-surface prediction is guarded');
   });
 });
 
@@ -285,6 +353,10 @@ describe('MCP surfaces', () => {
     contextRepo.store(OTHER_PROJECT, TS_CONTEXT);
     registerMemoryTools(server, repo, () => 'normal', server.server, new EdgeRepository(db), sessionCache, undefined, contextRepo);
     registerPortabilityTools(server, repo, () => 'normal', sessionCache);
+    registerStatsTools(server, repo, new PlanRepository(db), new ReminderRepository(db), db, () => 'normal');
+    registerResources(server, new PlanRepository(db), repo, () => 'normal');
+    // The MCP session "runs in" the open project unless a test says otherwise.
+    setSessionProjectForTests(OTHER_PROJECT);
     client = new Client({ name: 'scope-test-client', version: '0.0.0' });
     const [ct, st] = InMemoryTransport.createLinkedPair();
     await Promise.all([server.connect(st), client.connect(ct)]);
@@ -316,8 +388,14 @@ describe('MCP surfaces', () => {
     const bare = await call('cairn_recall', { query: 'billing exports pitfall' });
     assert.ok(!bare.text.includes(PRIVATE_MARKER), 'blocked in a bare (unscoped) recall');
 
+    // Naming the project from OUTSIDE it is not consent (the `project`
+    // argument selects scope, the SESSION establishes standing):
+    const named = await call('cairn_recall', { query: 'billing exports pitfall', project: PRIVATE_PROJECT });
+    assert.ok(!named.text.includes(PRIVATE_MARKER), 'caller-supplied project cannot read a private project from elsewhere');
+
+    setSessionProjectForTests(PRIVATE_PROJECT);
     const own = await call('cairn_recall', { query: 'billing exports pitfall', project: PRIVATE_PROJECT });
-    assert.ok(own.text.includes(PRIVATE_MARKER), 'still recallable inside its own project');
+    assert.ok(own.text.includes(PRIVATE_MARKER), 'still recallable from a session inside the project');
   });
 
   it('SURFACE 5 differential — the reachable leak is GRAPH ENRICHMENT: a private row rides a 1-hop edge into another project\'s recall without config, and is blocked with it', async () => {
@@ -347,6 +425,80 @@ describe('MCP surfaces', () => {
     const projOnly = await call('cairn_recall', { query: 'WAL billing schema', project: OTHER_PROJECT, scope: 'project' });
     assert.ok(!projOnly.text.includes('GLOBAL-LESSON'), "scope:'project' excludes globals");
     assert.ok(projOnly.text.includes('OWN-ROW'), 'own rows still returned');
+
+    const noProject = await call('cairn_recall', { query: 'WAL billing schema', scope: 'project' });
+    assert.equal(noProject.isError, true, "scope:'project' without a project is a caller error, not a silent no-op");
+  });
+
+  it('cairn_expand redacts private rows for other sessions — no short-id content oracle', async () => {
+    const priv = repo.create({ content: PRIVATE_MARKER, kind: 'pitfall', project: PRIVATE_PROJECT, confidence: 0.9 });
+    writeScopeConfig([PRIVATE_PROJECT]);
+    const redacted = await call('cairn_expand', { ids: [`pit:${priv.id.slice(0, 8)}`] });
+    assert.ok(!redacted.text.includes(PRIVATE_MARKER), 'content must not be readable by short-id from elsewhere');
+    assert.match(redacted.text, /private project/);
+
+    setSessionProjectForTests(PRIVATE_PROJECT);
+    const own = await call('cairn_expand', { ids: [`pit:${priv.id.slice(0, 8)}`] });
+    assert.ok(own.text.includes(PRIVATE_MARKER), 'expand works from inside the project');
+  });
+
+  it('cairn_cleanup preview and cairn_stats health redact private content', async () => {
+    repo.create({ content: PRIVATE_MARKER, kind: 'pitfall', project: PRIVATE_PROJECT, confidence: 0.9 });
+    writeScopeConfig([PRIVATE_PROJECT]);
+    const preview = await call('cairn_cleanup', { action: 'preview', filter: { project: PRIVATE_PROJECT } });
+    assert.ok(!preview.text.includes(PRIVATE_MARKER), 'cleanup preview samples are redacted');
+    const health = await call('cairn_stats', { action: 'health' });
+    assert.ok(!health.text.includes(PRIVATE_MARKER), 'stats health previews are redacted');
+  });
+
+  it('cairn_export excludes private rows outside the project and SAYS so; includes them inside', async () => {
+    repo.create({ content: PRIVATE_MARKER, kind: 'pitfall', project: PRIVATE_PROJECT, confidence: 0.9 });
+    repo.create({ content: 'ordinary exported row', kind: 'fact', project: OTHER_PROJECT, confidence: 0.9 });
+    writeScopeConfig([PRIVATE_PROJECT]);
+
+    const outside = await call('cairn_export', {});
+    assert.ok(!outside.text.includes(PRIVATE_MARKER), 'unfiltered export must not carry private content');
+    assert.match(outside.text, /1 record\(s\) from private project\(s\) excluded/, 'exclusion is reported, never silent');
+
+    setSessionProjectForTests(PRIVATE_PROJECT);
+    const inside = await call('cairn_export', { project: PRIVATE_PROJECT });
+    assert.ok(inside.text.includes(PRIVATE_MARKER), 'export from within the project is complete');
+  });
+
+  it('the briefing resource refuses a private project from other sessions', async () => {
+    repo.create({ content: PRIVATE_MARKER, kind: 'pitfall', project: PRIVATE_PROJECT, confidence: 0.9 });
+    writeScopeConfig([PRIVATE_PROJECT]);
+    const res = await client.readResource({ uri: `cairn://briefing/${PRIVATE_PROJECT}` });
+    const text = (res.contents as Array<{ text?: string }>).map(c => c.text ?? '').join('\n');
+    assert.ok(!text.includes(PRIVATE_MARKER), 'resource must not render private content cross-session');
+    assert.match(text, /marked private/);
+
+    setSessionProjectForTests(PRIVATE_PROJECT);
+    const own = await client.readResource({ uri: `cairn://briefing/${PRIVATE_PROJECT}` });
+    const ownText = (own.contents as Array<{ text?: string }>).map(c => c.text ?? '').join('\n');
+    assert.ok(ownText.includes(PRIVATE_MARKER), 'resource renders from inside the project');
+  });
+
+  it('strict restore cannot move a private row out of its project without from_private (the second door, closed)', async () => {
+    const priv = repo.create({ content: PRIVATE_MARKER, kind: 'pitfall', project: PRIVATE_PROJECT, confidence: 0.9 });
+    writeScopeConfig([PRIVATE_PROJECT]);
+    // Build the restore doc with the REAL exporter (from inside the
+    // project), then flip its project to global — the exact record a
+    // backup-restore would replay after a scope edit.
+    setSessionProjectForTests(PRIVATE_PROJECT);
+    const exported = await call('cairn_export', { project: PRIVATE_PROJECT });
+    assert.ok(exported.text.includes(PRIVATE_MARKER), 'premise: export from inside is complete');
+    const doc = exported.text.replaceAll(`"project":${JSON.stringify(PRIVATE_PROJECT)}`, '"project":null');
+    assert.notEqual(doc, exported.text, 'premise: the doc actually changes the scope');
+    setSessionProjectForTests(OTHER_PROJECT);
+
+    const refused = await call('cairn_ingest', { content: doc, mode: 'restore' });
+    assert.match(refused.text, /skipped: 1.*from_private/s, 'scope change refused and reported');
+    assert.equal(repo.findById(priv.id)?.project, PRIVATE_PROJECT, 'row untouched');
+
+    const acked = await call('cairn_ingest', { content: doc, mode: 'restore', from_private: true });
+    assert.equal(acked.isError, false);
+    assert.equal(repo.findById(priv.id)?.project, null, 'acknowledged restore applies the scope change');
   });
 
   it('promotion out of a private project requires the from_private acknowledgment', async () => {

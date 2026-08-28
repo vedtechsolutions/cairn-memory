@@ -36,8 +36,15 @@ export function cairnConfigPath(): string {
   return process.env.CAIRN_CONFIG_PATH ?? join(homedir(), '.cairn', 'config.json');
 }
 
-interface ConfigCache { path: string; mtimeMs: number; config: CairnConfig }
+/** Cache identity is (path, mtime, size, inode): mtimeMs alone is lossy —
+ *  measured 1ms granularity lets a rapid rewrite (or a same-size atomic
+ *  replace) share a timestamp, which for THIS file means a stale privacy
+ *  policy served indefinitely. A very fresh mtime (within its granularity
+ *  of now) is additionally never cached, so back-to-back edits re-read. */
+interface ConfigCache { path: string; mtimeMs: number; size: number; ino: number; config: CairnConfig }
 let cache: ConfigCache | null = null;
+const MTIME_GRANULARITY_MS = 2;
+let warnedInvalidAt: number | null = null;
 
 function parseConfig(raw: string): CairnConfig {
   const parsed = JSON.parse(raw) as unknown;
@@ -55,23 +62,37 @@ function parseConfig(raw: string): CairnConfig {
 
 export function loadCairnConfig(): CairnConfig {
   const path = cairnConfigPath();
-  let mtimeMs: number;
-  try {
-    mtimeMs = statSync(path).mtimeMs;
-  } catch {
+  // throwIfNoEntry: the absent-file case is the COMMON case and must not
+  // pay exception cost on hot filters (measured ~15us/throw vs ~1us).
+  const st = statSync(path, { throwIfNoEntry: false });
+  if (!st) {
     // Absent (or unstatable) file IS the default config; drop any cache
     // so deleting the file reverts behavior immediately.
     cache = null;
     return EMPTY_CONFIG;
   }
-  if (cache && cache.path === path && cache.mtimeMs === mtimeMs) return cache.config;
+  if (cache && cache.path === path && cache.mtimeMs === st.mtimeMs
+    && cache.size === st.size && cache.ino === st.ino) {
+    return cache.config;
+  }
   let config: CairnConfig;
   try {
     config = parseConfig(readFileSync(path, 'utf-8'));
   } catch {
+    // PRESENT but unparseable must not degrade silently: an invalid file
+    // fails open (no restrictions), and for a privacy setting that needs
+    // a signal. Once per file version, not per access.
+    if (warnedInvalidAt !== st.mtimeMs) {
+      console.error(`[cairn] config at ${path} is invalid JSON — scope settings are INACTIVE until fixed`);
+      warnedInvalidAt = st.mtimeMs;
+    }
     config = EMPTY_CONFIG;
   }
-  cache = { path, mtimeMs, config };
+  if (Date.now() - st.mtimeMs >= MTIME_GRANULARITY_MS) {
+    cache = { path, mtimeMs: st.mtimeMs, size: st.size, ino: st.ino, config };
+  } else {
+    cache = null; // too fresh to fingerprint reliably — re-read next time
+  }
   return config;
 }
 
@@ -83,7 +104,21 @@ export function isPrivateProject(project: string | null): boolean {
   return loadCairnConfig().scope.privateProjects.has(project);
 }
 
+/**
+ * Session-binding for EXPLICIT reads: a private project's content is
+ * readable through MCP tools only when the session's own working project
+ * IS that project. This is preference isolation for an autonomous agent
+ * (keeping client work out of unrelated contexts), not access control —
+ * the DB file belongs to the same user either way.
+ */
+export function canReadPrivate(memoryProject: string | null, sessionProjectId: string | null): boolean {
+  if (!memoryProject) return true;
+  if (!isPrivateProject(memoryProject)) return true;
+  return memoryProject === sessionProjectId;
+}
+
 /** TEST-ONLY cache reset (config path changes between hermetic tests). */
 export function resetConfigCacheForTests(): void {
   cache = null;
+  warnedInvalidAt = null;
 }

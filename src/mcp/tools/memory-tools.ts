@@ -9,7 +9,8 @@ import { LEARNABLE_KINDS, LIMITS, BRIEFING_MODE, RELEVANCE, FINGERPRINT, type Co
 import { RERANK } from '../../constants/reranker-models.js';
 import { generateFingerprint } from '../../utils/fingerprint.js';
 import { surfacesInScopedRecall } from '../../utils/cross-project-guard.js';
-import { isPrivateProject } from '../../config/cairn-config.js';
+import { canReadPrivate } from '../../config/cairn-config.js';
+import { sessionProjectId } from '../../utils/session-project.js';
 import { projectId } from '../../utils/project-id.js';
 import type { ContextRepository } from '../../db/context-repository.js';
 import { isRerankEnabled, rerank } from '../../utils/reranker.js';
@@ -81,6 +82,9 @@ export function registerMemoryTools(
 
       // Resolve a bare project name (e.g. "cairn") to its full id for scoping.
       const resolvedProject = repo.resolveProject(project) ?? null;
+      if (scope === 'project' && !resolvedProject) {
+        return { content: [{ type: 'text' as const, text: "error: scope: 'project' requires a resolvable `project` argument" }], isError: true };
+      }
 
       const limit = modeAdjustedLimit(mode, maxResults);
 
@@ -113,12 +117,13 @@ export function registerMemoryTools(
 
       // Scope policy, applied UNCONDITIONALLY (unlike the fingerprint
       // guard below, which needs a project context): a private project's
-      // memories surface only in a recall scoped to that project — a BARE
-      // recall (no project) must not return them either.
-      results = results.filter(r => r.memory.project === resolvedProject || !isPrivateProject(r.memory.project));
-      // scope: 'project' — the caller wants only the project's own rows,
-      // no globals and nothing cross-project.
-      if (scope === 'project' && resolvedProject) {
+      // rows are readable only when THIS SESSION runs inside that project
+      // — naming the project from elsewhere, or a bare recall, gets
+      // nothing. The `project` argument selects scope; it is not consent.
+      const sessionPid = sessionProjectId();
+      results = results.filter(r => canReadPrivate(r.memory.project, sessionPid));
+      // scope: 'project' — only the project's own rows, no globals.
+      if (scope === 'project') {
         results = results.filter(r => r.memory.project === resolvedProject);
       }
 
@@ -171,8 +176,8 @@ export function registerMemoryTools(
         // Guard the supplemental neighbors too — a 1-hop edge must not smuggle
         // a mis-scoped global (or a private project's memory, or an
         // out-of-scope row under scope:'project') past the filters above.
-        results = results.filter(r => directIds.has(r.memory.id) || r.memory.project === resolvedProject || !isPrivateProject(r.memory.project));
-        if (scope === 'project' && resolvedProject) {
+        results = results.filter(r => directIds.has(r.memory.id) || canReadPrivate(r.memory.project, sessionPid));
+        if (scope === 'project') {
           results = results.filter(r => directIds.has(r.memory.id) || r.memory.project === resolvedProject);
         }
         if (queryFp) {
@@ -490,6 +495,14 @@ export function registerMemoryTools(
           lines.push(`[not found] ${rawId}`);
           continue;
         }
+        // Session-bound private reads: expand is the progressive-disclosure
+        // continuation of the briefing, and findByShortId accepts any
+        // unique prefix — without this check a 4-char prefix walk reads
+        // every private row's content from anywhere.
+        if (!canReadPrivate(memory.project, sessionProjectId())) {
+          lines.push(`[private] ${rawId}: belongs to a private project — open it from within that project`);
+          continue;
+        }
 
         const tags = memory.tags.length > 0 ? ` [${memory.tags.join(', ')}]` : '';
         const scope = memory.project ? `project=${memory.project}` : 'global';
@@ -541,8 +554,11 @@ export function registerMemoryTools(
         if (matches.length === 0) {
           return { content: [{ type: 'text', text: 'No memories match this filter.' }] };
         }
+        const previewPid = sessionProjectId();
         const sample = matches.slice(0, 5).map(m =>
-          `  • [${m.kind}] "${m.content.slice(0, 80)}" (conf: ${m.confidence.toFixed(2)})`
+          canReadPrivate(m.project, previewPid)
+            ? `  • [${m.kind}] "${m.content.slice(0, 80)}" (conf: ${m.confidence.toFixed(2)})`
+            : `  • [${m.kind}] [private project — content hidden] (conf: ${m.confidence.toFixed(2)})`
         );
         const lines = [
           `Would delete ${matches.length} memories (max ${LIMITS.CLEANUP_MAX_DELETE}).`,

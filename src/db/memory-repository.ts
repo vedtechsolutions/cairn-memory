@@ -270,8 +270,8 @@ export class MemoryRepository {
   }
 
   /** Strict restore-by-id: no merge, no boosts, no conflict detection */
-  restore(record: PortableRecord & { id: string }): 'inserted' | 'updated' {
-    return portability.restoreRecord(this.db, record);
+  restore(record: PortableRecord & { id: string }, opts: { allowPrivateScopeChange?: boolean } = {}): 'inserted' | 'updated' | 'skipped_private' {
+    return portability.restoreRecord(this.db, record, opts);
   }
 
   /** Upsert one free-form memory file — VFS path gate, then adapter caps */
@@ -280,8 +280,8 @@ export class MemoryRepository {
   }
 
   /** Strict-restore a whole document in ONE immediate transaction */
-  restoreAll(records: ReadonlyArray<PortableRecord & { id: string }>, files: readonly PortableFile[]): portability.RestoreCounts {
-    return portability.restoreDocument(this.db, records, files);
+  restoreAll(records: ReadonlyArray<PortableRecord & { id: string }>, files: readonly PortableFile[], opts: { allowPrivateScopeChange?: boolean } = {}): portability.RestoreCounts {
+    return portability.restoreDocument(this.db, records, files, opts);
   }
 
   /** Promote a project-scoped memory to global scope */
@@ -310,8 +310,8 @@ export class MemoryRepository {
     decayCandidates: number;
     neverRecalled: number;
     avgConfidence: number;
-    oldestMemory: { id: string; content: string; created_at: string } | null;
-    mostRecalled: { id: string; content: string; recall_count: number } | null;
+    oldestMemory: { id: string; content: string; created_at: string; project: string | null } | null;
+    mostRecalled: { id: string; content: string; recall_count: number; project: string | null } | null;
   } {
     return stats.getHealthMetrics(this.db);
   }
