@@ -43,7 +43,8 @@
     "test:build": "npm run build && npm test",
     "strip:publish": "find dist/src -name '*.map' -delete && find dist/src -name '*.d.ts' -delete && rm -rf dist/src/benchmark",
     "prepublishOnly": "npm run clean && npm run build && npm run strip:publish",
-    "dev": "tsc -b tsconfig.build.json --watch"
+    "dev": "tsc -b tsconfig.build.json --watch",
+    "prepack": "node scripts/verify-pack.mjs"
   },
   "engines": {
     "node": ">=20.0.0"

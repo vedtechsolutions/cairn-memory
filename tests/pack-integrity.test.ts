@@ -9,6 +9,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -44,5 +45,17 @@ describe('npm pack integrity', () => {
     // packages/ tree — only the node_modules copy ships.
     assert.ok(![...files].some((f) => f.startsWith('packages/')),
       'packages/ must not be packed directly (files list drift)');
+  });
+
+  it('the dependency pin tracks the workspace version exactly', () => {
+    // A drifted pin makes npm skip the workspace link and hit the
+    // registry for an unpublished name — loud at install, silent here
+    // without this guard (verify-pack.mjs enforces the same at prepack).
+    const root = JSON.parse(readFileSync(join(REPO, 'package.json'), 'utf-8')) as {
+      dependencies: Record<string, string>; bundleDependencies?: string[];
+    };
+    const contract = JSON.parse(readFileSync(join(REPO, 'packages', 'contract', 'package.json'), 'utf-8')) as { version: string };
+    assert.equal(root.dependencies['@cairn/contract'], contract.version);
+    assert.ok(root.bundleDependencies?.includes('@cairn/contract'));
   });
 });

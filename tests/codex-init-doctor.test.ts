@@ -23,7 +23,7 @@ process.env.CAIRN_CODEX_DIR = mkdtempSync(join(tmpdir(), 'cairn-codex-test-'));
 import {
   codexDir, codexHooksPath, codexConfigPath,
   codexHooks, codexHookCount, mergeCodexHooks,
-  codexMcpBlock, hasCairnMcpServer, countTrustedHooksIn, pruneHookState,
+  codexMcpBlock, hasCairnMcpServer, countTrustedHooksIn,
   runCodexInit, postToolRouteFor, POST_TOOL_ROUTE, LEGACY_POST_TOOL_ROUTE,
   parseTrustState, commandAt, trustedCommandsIn, pruneTrustKeys,
   type CodexHooksFile,
@@ -290,20 +290,6 @@ describe('config.toml scoped edits', () => {
     assert.deepEqual(countTrustedHooksIn('', hooksPath), { trusted: 0, disabled: 0 });
   });
 
-  it('pruneHookState removes exactly the sections for the given hooks file', () => {
-    const hooksPath = codexHooksPath();
-    const toml = [
-      'model = "gpt-x"',
-      `[hooks.state."${hooksPath}:stop:0:0"]`,
-      'trusted_hash = "sha256:cccc"',
-      `[hooks.state."/other/hooks.json:stop:0:0"]`,
-      'trusted_hash = "sha256:bbbb"',
-    ].join('\n');
-    const pruned = pruneHookState(toml, hooksPath);
-    assert.match(pruned, /^model = "gpt-x"/m);
-    assert.ok(!pruned.includes(`"${hooksPath}:`));
-    assert.ok(pruned.includes('/other/hooks.json'), 'foreign state kept');
-  });
 });
 
 describe('runCodexInit (hermetic end to end)', () => {

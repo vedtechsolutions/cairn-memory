@@ -322,22 +322,6 @@ export function countTrustedHooksIn(configToml: string, hooksJsonPath: string, f
   };
 }
 
-/** Drop [hooks.state] sections for a hooks file whose commands changed —
- *  Codex can never match those hashes again, and leaving them makes the
- *  trust count lie. Same scoped line editing as the reader. */
-export function pruneHookState(configToml: string, hooksJsonPath: string): string {
-  const lines = configToml.split('\n');
-  const kept: string[] = [];
-  for (let i = 0; i < lines.length; i++) {
-    if (lines[i].includes(`[hooks.state."${hooksJsonPath}:`)) {
-      while (i + 1 < lines.length && !lines[i + 1].trimStart().startsWith('[')) i++;
-      continue;
-    }
-    kept.push(lines[i]);
-  }
-  return kept.join('\n');
-}
-
 function atomicWrite(path: string, content: string): void {
   const tmp = `${path}.${process.pid}.tmp`;
   writeFileSync(tmp, content, 'utf-8');
