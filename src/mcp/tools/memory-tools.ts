@@ -4,8 +4,12 @@ import * as z from 'zod/v4';
 import type { MemoryRepository } from '../../db/memory-repository.js';
 import type { EdgeRepository } from '../../db/edge-repository.js';
 import type { SessionCache } from '../../hooks/shared/session-cache.js';
-import { LEARNABLE_KINDS, LIMITS, BRIEFING_MODE, RELEVANCE, type ContextMode } from '../../constants/index.js';
+import { LEARNABLE_KINDS, LIMITS, BRIEFING_MODE, RELEVANCE, FINGERPRINT, type ContextMode } from '../../constants/index.js';
 import { RERANK } from '../../constants/reranker-models.js';
+import { generateFingerprint } from '../../utils/fingerprint.js';
+import { surfacesInScopedRecall } from '../../utils/cross-project-guard.js';
+import { projectId } from '../../utils/project-id.js';
+import type { ContextRepository } from '../../db/context-repository.js';
 import { isRerankEnabled, rerank } from '../../utils/reranker.js';
 import { isCritical } from './helpers.js';
 import { sanitize } from '../../utils/validation.js';
@@ -51,6 +55,7 @@ export function registerMemoryTools(
   edgeRepo?: EdgeRepository,
   sessionCache?: SessionCache,
   rerankerImpl: RerankerImpl = { isEnabled: isRerankEnabled, rerank },
+  contextRepo?: ContextRepository,
 ): void {
   // --- cairn_recall ----------------------------------------------------------
 
@@ -94,29 +99,45 @@ export function registerMemoryTools(
       const rerankActive = rerankerImpl.isEnabled();
       const recallOptions = {
         project: resolvedProject,
-        maxResults: rerankActive ? Math.max(RERANK.CANDIDATES, limit) : limit,
-        ...(rerankActive ? { readOnly: true } : {}),
+        // Overfetch so the cross-project filter has headroom; always read-only
+        // so recall stats aren't bumped on candidates we may then drop.
+        maxResults: rerankActive ? Math.max(RERANK.CANDIDATES, limit) : limit * FINGERPRINT.CANDIDATE_MULTIPLIER,
+        readOnly: true,
       };
       let results = queryEmbedding
         ? repo.recallHybrid(query, queryEmbedding, recallOptions)
         : repo.recall(query, recallOptions);
 
-      let rerankFallback = false;
-      if (rerankActive) {
-        if (results.length > 1) {
-          const reordered = await rerankerImpl.rerank(query, results.map((r, i) => ({ id: r.memory.id, text: r.memory.content, rank: i })));
-          if (reordered === null) {
-            // Transient unavailability — degrade EXPLICITLY, never silently
-            rerankFallback = true;
-            console.error('[cairn] rerank unavailable — returning RRF order (labeled)');
-          } else {
-            const byId = new Map(results.map(r => [r.memory.id, r]));
-            results = reordered.map(c => byId.get(c.id)).filter((r): r is NonNullable<typeof r> => r !== undefined);
-          }
-        }
-        results = results.slice(0, limit);
-        repo.markRecalled(results.map(r => r.memory.id));
+      // Cross-project guard (same filter the hook/briefing paths apply): a
+      // global memory surfaces in a project-scoped recall only when its
+      // fingerprint overlaps the project's — blocking mis-scoped globals such
+      // as an Odoo pitfall stored global. The query fingerprint comes from the
+      // project's stored context, exactly as on the UserPromptSubmit path;
+      // absent context yields an empty fp → fail closed (block, never leak).
+      const queryFp = resolvedProject
+        ? generateFingerprint({ projectContext: contextRepo?.getLatest(resolvedProject) ?? null })
+        : null;
+      if (queryFp) {
+        results = results.filter(r => surfacesInScopedRecall(r.memory, resolvedProject, queryFp));
       }
+
+      let rerankFallback = false;
+      if (rerankActive && results.length > 1) {
+        const reordered = await rerankerImpl.rerank(query, results.map((r, i) => ({ id: r.memory.id, text: r.memory.content, rank: i })));
+        if (reordered === null) {
+          // Transient unavailability — degrade EXPLICITLY, never silently
+          rerankFallback = true;
+          console.error('[cairn] rerank unavailable — returning RRF order (labeled)');
+        } else {
+          const byId = new Map(results.map(r => [r.memory.id, r]));
+          results = reordered.map(c => byId.get(c.id)).filter((r): r is NonNullable<typeof r> => r !== undefined);
+        }
+      }
+      // Slice to the requested limit AFTER filtering/reranking, then mark
+      // exactly the surfaced set as recalled — once, for both branches, so a
+      // dropped candidate never gets a spurious recall bump.
+      results = results.slice(0, limit);
+      repo.markRecalled(results.map(r => r.memory.id));
 
       // Track co-recall for prediction
       if (results.length >= 2) {
@@ -133,6 +154,11 @@ export function registerMemoryTools(
       // Enrich with 1-hop graph neighbors (supplemental related memories)
       if (results.length > 0 && mode === 'normal') {
         results = repo.enrichWithGraphNeighbors(results, 2);
+        // Guard the supplemental neighbors too — a 1-hop edge must not smuggle
+        // a mis-scoped global past the cross-project filter above.
+        if (queryFp) {
+          results = results.filter(r => directIds.has(r.memory.id) || surfacesInScopedRecall(r.memory, resolvedProject, queryFp));
+        }
       }
 
       if (results.length === 0) {
@@ -224,7 +250,17 @@ export function registerMemoryTools(
       const dateCheck = detectRelativeDates(content);
 
       // Kind-specific scope: user_profile is always global
-      const effectiveProject = kind === 'user_profile' ? null : (project ?? null);
+      // Default scope: user_profile is always global; corrections default
+      // global (per the memory-scoping rules); everything else defaults to the
+      // CURRENT project — this MCP server runs in the project's cwd — so a
+      // project-specific pitfall/fact never silently lands in global scope (the
+      // cross-project leak Codex hit). An explicit project (including null for
+      // global) is always respected.
+      const effectiveProject = kind === 'user_profile'
+        ? null
+        : project !== undefined
+          ? project
+          : (kind === 'correction' ? null : projectId(process.cwd()));
 
       // Build structured context if provided
       const context = (why || howToApply) ? { why, how_to_apply: howToApply } : undefined;

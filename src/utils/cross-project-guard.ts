@@ -142,6 +142,40 @@ export function passesCrossProjectGuard(
 }
 
 /**
+ * Scoping filter for the ACTIVE `cairn_recall` tool — deliberately MORE
+ * permissive than `passesCrossProjectGuard` (which is tuned for conservative
+ * passive injection). The agent explicitly queried, so a general global lesson
+ * SHOULD surface. The only global we block is one that carries ANOTHER
+ * project's fingerprint (e.g. a project memory promoted to global) and does not
+ * overlap the current query:
+ *
+ *   - same-project memory           → always surfaces
+ *   - fingerprinted global          → surfaces only if the fingerprint overlaps
+ *                                     the query (catches a promoted mis-scope)
+ *   - fingerprint-less global       → a general lesson / user preference the
+ *                                     agent asked for → surfaces
+ *
+ * NOTE: a code anchor is NOT a project-specificity signal — it is auto-extracted
+ * from almost any content — so it is deliberately not consulted here. The real
+ * defense against a fingerprint-less mis-scoped global is at write time: see
+ * cairn_learn's default scoping (omitted project → the current project, not
+ * global).
+ *
+ * Applied ONLY to project-scoped recalls (the caller skips it when no project is
+ * given — a bare recall legitimately returns globals). So the fingerprint-overlap
+ * catch fires only when there is a current project to compare against.
+ */
+export function surfacesInScopedRecall(
+  memory: Pick<Memory, 'project' | 'fingerprint'>,
+  currentProject: string | null,
+  queryFp: ContextFingerprint,
+): boolean {
+  if (memory.project === currentProject) return true;
+  if (memory.fingerprint) return fingerprintOverlap(memory.fingerprint, queryFp) >= PROACTIVE.CROSS_PROJECT_MIN_OVERLAP;
+  return true;
+}
+
+/**
  * Same-project relevance gate for file-specific fingerprint injections.
  *
  * Even within one project, a memory authored against `src/db/connection.ts`
