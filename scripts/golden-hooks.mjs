@@ -87,6 +87,8 @@ for (const c of CASES) {
       CAIRN_STATE_PATH: join(work, `state-${captured}.json`),
       CAIRN_QUERY_CWD: '/x',
       CAIRN_CLIENT: client ?? '',
+      // Scope config must never shape golden captures (absent = default).
+      CAIRN_CONFIG_PATH: join(work, 'no-config.json'),
     };
     delete env.CAIRN_TZ;
     const proc = spawnSync(process.execPath, [join(HOOKS, c.entry)], {

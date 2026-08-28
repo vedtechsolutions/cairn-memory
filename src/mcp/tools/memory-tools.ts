@@ -9,6 +9,7 @@ import { LEARNABLE_KINDS, LIMITS, BRIEFING_MODE, RELEVANCE, FINGERPRINT, type Co
 import { RERANK } from '../../constants/reranker-models.js';
 import { generateFingerprint } from '../../utils/fingerprint.js';
 import { surfacesInScopedRecall } from '../../utils/cross-project-guard.js';
+import { isPrivateProject } from '../../config/cairn-config.js';
 import { projectId } from '../../utils/project-id.js';
 import type { ContextRepository } from '../../db/context-repository.js';
 import { isRerankEnabled, rerank } from '../../utils/reranker.js';
@@ -70,9 +71,10 @@ export function registerMemoryTools(
         query: z.string().max(LIMITS.MAX_STRING_PARAM).describe('What you are about to do — used to find relevant memories'),
         project: z.string().max(LIMITS.MAX_STRING_PARAM).optional().describe('Scope to a specific project ID'),
         max_results: z.number().int().positive().optional().describe('Max results (default: 5)'),
+        scope: z.enum(['all', 'project']).optional().describe("Result scope: 'all' (default) includes relevant globals; 'project' returns ONLY the given project's own memories"),
       }),
     },
-    async ({ query, project, max_results: maxResults }) => {
+    async ({ query, project, max_results: maxResults, scope }) => {
       const mode = getMode();
       const critical = isCritical(mode);
       if (critical) return critical;
@@ -108,6 +110,17 @@ export function registerMemoryTools(
       let results = queryEmbedding
         ? repo.recallHybrid(query, queryEmbedding, recallOptions)
         : repo.recall(query, recallOptions);
+
+      // Scope policy, applied UNCONDITIONALLY (unlike the fingerprint
+      // guard below, which needs a project context): a private project's
+      // memories surface only in a recall scoped to that project — a BARE
+      // recall (no project) must not return them either.
+      results = results.filter(r => r.memory.project === resolvedProject || !isPrivateProject(r.memory.project));
+      // scope: 'project' — the caller wants only the project's own rows,
+      // no globals and nothing cross-project.
+      if (scope === 'project' && resolvedProject) {
+        results = results.filter(r => r.memory.project === resolvedProject);
+      }
 
       // Cross-project guard (same filter the hook/briefing paths apply): a
       // global memory surfaces in a project-scoped recall only when its
@@ -156,7 +169,12 @@ export function registerMemoryTools(
       if (results.length > 0 && mode === 'normal') {
         results = repo.enrichWithGraphNeighbors(results, 2);
         // Guard the supplemental neighbors too — a 1-hop edge must not smuggle
-        // a mis-scoped global past the cross-project filter above.
+        // a mis-scoped global (or a private project's memory, or an
+        // out-of-scope row under scope:'project') past the filters above.
+        results = results.filter(r => directIds.has(r.memory.id) || r.memory.project === resolvedProject || !isPrivateProject(r.memory.project));
+        if (scope === 'project' && resolvedProject) {
+          results = results.filter(r => directIds.has(r.memory.id) || r.memory.project === resolvedProject);
+        }
         if (queryFp) {
           results = results.filter(r => directIds.has(r.memory.id) || surfacesInScopedRecall(r.memory, resolvedProject, queryFp));
         }

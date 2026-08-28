@@ -12,6 +12,7 @@
  */
 import type { Memory } from '../db/memory-repository.js';
 import { fingerprintOverlap, type ContextFingerprint } from './fingerprint.js';
+import { isPrivateProject } from '../config/cairn-config.js';
 import { PROACTIVE } from '../constants/index.js';
 import { basename } from 'node:path';
 
@@ -136,6 +137,10 @@ export function passesCrossProjectGuard(
   queryFp: ContextFingerprint,
 ): boolean {
   if (memory.project === currentProject) return true;
+  // Scope policy (config.json): a PRIVATE project's memories never cross
+  // out, whatever their fingerprint says. Policy lives here in the guard
+  // MODULE because every passive surface funnels through these functions.
+  if (isPrivateProject(memory.project)) return false;
   if (!memory.fingerprint) return false;
   const overlap = fingerprintOverlap(memory.fingerprint, queryFp);
   return overlap >= PROACTIVE.CROSS_PROJECT_MIN_OVERLAP;
@@ -171,6 +176,11 @@ export function surfacesInScopedRecall(
   queryFp: ContextFingerprint,
 ): boolean {
   if (memory.project === currentProject) return true;
+  // Scope policy: private-project memories stay private even against an
+  // EXPLICIT recall from another project — an agent asking is not the
+  // owner consenting (the deliberate asymmetry vs. this function's
+  // otherwise-permissive stance).
+  if (isPrivateProject(memory.project)) return false;
   if (memory.fingerprint) return fingerprintOverlap(memory.fingerprint, queryFp) >= PROACTIVE.CROSS_PROJECT_MIN_OVERLAP;
   return true;
 }

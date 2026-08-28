@@ -514,6 +514,23 @@ Test-environment overrides (all set automatically by `tests/hermetic-env.cjs`):
 - Embeddings: 384-dim via `@huggingface/transformers` (all-MiniLM-L6-v2, q8) — selected from the model registry (`src/constants/embedding-models.ts`) via `CAIRN_EMBEDDING_MODEL` (default `minilm-l6`; challengers `nomic-v1.5` / `nomic-v1.5-256` / `embeddinggemma-300m`). Schema v26 tags every stored vector with its model: vector reads filter on the active model, and after a model switch the backfill worker re-embeds mismatched rows while FTS+RRF carry retrieval
 - Reranking (opt-in): `CAIRN_RERANK=1` enables a cross-encoder stage on `cairn_recall` (RRF top-20 → rerank → top-k; MCP server only); model via `CAIRN_RERANK_MODEL` (default `jina-turbo-v1`, registry in `src/constants/reranker-models.ts`)
 
+## Scope Controls
+
+Mark a project **private** and its memories never surface in any other project — not in briefings, prompt or pitfall injections, subagent context, or `cairn_recall` (including graph-neighbor enrichment). Inside the project everything works normally.
+
+Create `~/.cairn/config.json` (override the path with `CAIRN_CONFIG_PATH`):
+
+```json
+{
+  "v": 1,
+  "scope": {
+    "privateProjects": ["clientwork-aaaa1111"]
+  }
+}
+```
+
+Project IDs are the `<name>-<hash>` slugs shown in briefings and `cairn_stats`. The file is read live — no restart needed — and an absent or invalid file simply means no scope restrictions. Promoting a memory out of a private project to global requires an explicit `from_private: true` acknowledgment on `cairn_promote`. `cairn_recall` also accepts `scope: "project"` to return only the given project's own memories, excluding globals.
+
 ## Hook Reference
 
 | Hook | Event | Matcher | Purpose |

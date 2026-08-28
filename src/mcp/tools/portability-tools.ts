@@ -3,6 +3,7 @@ import * as z from 'zod/v4';
 import type { MemoryRepository } from '../../db/memory-repository.js';
 import type { SessionCache } from '../../hooks/shared/session-cache.js';
 import { LIMITS, PROMOTION, type ContextMode, type LearnableKind, type MemoryKind, LEARNABLE_KINDS } from '../../constants/index.js';
+import { isPrivateProject } from '../../config/cairn-config.js';
 import { isCritical } from './helpers.js';
 import { buildFileSection, buildRecordSection, parseExportDocument } from '../../memory-tool/round-trip.js';
 import { parseMarkdown } from '../../utils/markdown-parser.js';
@@ -224,12 +225,13 @@ export function registerPortabilityTools(
     'cairn_promote',
     {
       title: 'Promote to Global',
-      description: 'Promote a project-scoped memory to global scope so it surfaces in all projects. Requires confidence >= 0.7 and kind must be pitfall or decision.',
+      description: 'Promote a project-scoped memory to global scope so it surfaces in all projects. Requires confidence >= 0.7 and kind must be pitfall or decision. Promoting from a project marked private in the scope config requires from_private: true.',
       inputSchema: z.object({
         id: z.string().describe('Memory ID to promote to global scope'),
+        from_private: z.boolean().optional().describe('Explicit acknowledgment when promoting a memory OUT of a private project (its content becomes visible in every project)'),
       }),
     },
-    async ({ id }) => {
+    async ({ id, from_private: fromPrivate }) => {
       const critical = isCritical(getMode());
       if (critical) return critical;
 
@@ -252,6 +254,14 @@ export function registerPortabilityTools(
 
       if (memory.confidence < PROMOTION.MIN_CONFIDENCE) {
         return { content: [{ type: 'text' as const, text: `error: confidence too low (${memory.confidence.toFixed(2)} < ${PROMOTION.MIN_CONFIDENCE.toFixed(2)})` }], isError: true };
+      }
+
+      // Scope policy: promotion is the ONE door out of a private project —
+      // a global memory surfaces everywhere, which is exactly what private
+      // means to prevent. Requires an explicit acknowledgment, never a
+      // silent escape.
+      if (isPrivateProject(memory.project) && fromPrivate !== true) {
+        return { content: [{ type: 'text' as const, text: `error: project "${memory.project}" is marked private in the scope config — promoting makes this memory visible in ALL projects. Re-run with from_private: true to acknowledge.` }], isError: true };
       }
 
       const ok = repo.promote(id);
