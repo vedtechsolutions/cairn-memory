@@ -116,14 +116,17 @@ export async function handleCodexPostTool(
     // The REAL error text must be the first line: the classifier derives its
     // errorKey from it, and a fixed "Exit code N" preamble would collapse
     // every codex failure into one key — dedup would then suppress learning
-    // after the first. The exit code trails; it only leads when the command
-    // produced no output at all (error-learning skips empty errors).
+    // after the first. No exit-code trailer either: a lowercase "(exit code
+    // N)" matches LEARNABLE_ERROR_PATTERNS' process pattern and would make
+    // EVERY failure "learnable", storing junk pitfalls distilled from
+    // arbitrary output (measured: 60/105 real failures vs 17 content-driven).
+    // The exit code travels structurally in exit_code; the bare text form is
+    // used only when the command produced no output at all (error-learning
+    // skips empty errors).
     const trimmedError = errorText.trim();
     const failure: PostToolUseFailureInput = {
       ...input,
-      error: trimmedError
-        ? `${trimmedError}\n(exit code ${exitCode ?? 'unknown'})`
-        : `Exit code ${exitCode ?? 'unknown'}`,
+      error: trimmedError || `Exit code ${exitCode ?? 'unknown'}`,
       exit_code: exitCode ?? undefined,
     };
     await handleErrorLearning(failure, client);

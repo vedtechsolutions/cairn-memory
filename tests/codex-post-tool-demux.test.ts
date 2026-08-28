@@ -12,6 +12,7 @@ import { join } from 'node:path';
 import { findRolloutToolRecord } from '../src/hooks/shared/rollout-lookup.js';
 import { demuxOutcome, handleCodexPostTool, isToolSeen } from '../src/hooks/handlers/codex-post-tool-handler.js';
 import { createHookDbClient, type HookDbClient } from '../src/hooks/shared/db-client.js';
+import { classifyError } from '../src/utils/error-classifier.js';
 
 // Classifier dedup state persists across runs (by design) — every learnable
 // error in these tests carries a per-run tag so keys never collide.
@@ -146,6 +147,55 @@ describe('demuxOutcome', () => {
   it('apply_patch with no record and no parseable exit line is unknown', () => {
     const o = demuxOutcome({ tool_name: 'apply_patch', tool_response: 'weird output' }, null);
     assert.equal(o.failed, null);
+  });
+});
+
+describe('error synthesis (classifier-facing contract)', () => {
+  it('two DIFFERENT codex failures produce two distinct errorKeys — keys never collapse', () => {
+    // Regression for the "Exit code N" preamble bug: a fixed first line gave
+    // every codex failure the same classifier errorKey, so session error
+    // counts lumped everything into one escalation bucket and dedup
+    // suppressed all learning after the first pitfall. The synthesis now
+    // leads with the real error text.
+    const textA = `error TS2988: KEYS-A-${RUN} widget frobnicator misaligned in widget.ts`;
+    const textB = `error TS2987: KEYS-B-${RUN} sprocket assembler overheated in sprocket.ts`;
+
+    // New format (real text leads): distinct keys.
+    const keyA = classifyError(textA).errorKey;
+    const keyB = classifyError(textB).errorKey;
+    assert.ok(keyA && keyB);
+    assert.notEqual(keyA, keyB, 'distinct failures keep distinct classifier keys');
+
+    // The OLD preamble format would have collapsed both into one key —
+    // this is the documented bug shape, asserted so it can never return.
+    const oldA = classifyError(`Exit code 2\n${textA}`).errorKey;
+    const oldB = classifyError(`Exit code 2\n${textB}`).errorKey;
+    assert.equal(oldA, oldB, 'the old preamble format collapses keys (the bug)');
+  });
+
+  it('a failure with no learnable error pattern routes but stores NO pitfall', async () => {
+    // Regression for the "(exit code N)" trailer bug: the lowercase trailer
+    // matched a learnable pattern and turned every failure into a junk
+    // pitfall distilled from ordinary output.
+    const client: HookDbClient = createHookDbClient(':memory:');
+    try {
+      const p = join(dir, 'unlearnable.jsonl');
+      writeFileSync(p, rolloutLine({
+        id: 'exec-plain-fail', type: 'CommandExecution', status: 'failed', exit_code: 3,
+        aggregated_output: `> cairn-memory@5.2.0 test UNLEARN-${RUN}\nordinary build output, no error signature\n`,
+      }));
+      const before = (client.db.prepare("SELECT COUNT(*) n FROM memories WHERE kind='pitfall'").get() as { n: number }).n;
+      const result = await handleCodexPostTool({
+        session_id: 'unlearn-s1', transcript_path: p, cwd: '/opt/cairn',
+        hook_event_name: 'PostToolUse', client_name: 'codex', tool_name: 'Bash',
+        tool_input: { command: 'npm test' }, tool_use_id: 'exec-plain-fail', tool_response: '',
+      }, { ...client, cache: undefined });
+      assert.equal(result.action, 'error-routed', 'routing is still correct');
+      const after = (client.db.prepare("SELECT COUNT(*) n FROM memories WHERE kind='pitfall'").get() as { n: number }).n;
+      assert.equal(after, before, 'no junk pitfall stored from unlearnable output');
+    } finally {
+      client.close();
+    }
   });
 });
 
