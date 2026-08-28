@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [5.3.0] - 2026-08-28
+
 ### Added — Codex parity step 5: zero-config wiring + per-agent doctor
 
 - **`cairn init` now wires Codex automatically** when `~/.codex` exists: generates `hooks.json` from the install's resolved relay (all ten events, `--client codex`, Codex's 3s SessionEnd cap respected, context limits explicit), merges idempotently with any non-Cairn hooks preserved, and registers the MCP server in `config.toml` via a scoped append — no TOML dependency. Prints exactly what the one-time trust review will show.
