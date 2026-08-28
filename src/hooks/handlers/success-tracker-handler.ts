@@ -142,7 +142,7 @@ function handleSuccessTrackerBusiness(input: PostToolUseInput, client: CachedHoo
       // Tokens-saved report: each verified impact (surfaced lesson +
       // confirmed success) counts as one PROXY unit — the report labels
       // these as estimates, never as measurements.
-      recordRollup(client.db, input.session_id, ROLLUP_METRICS.IMPACT_PROXY, 'success-tracker', verifiedImpacts * ROLLUP.IMPACT_PROXY_TOKENS);
+      recordRollup(client.db, input.session_id, ROLLUP_METRICS.IMPACT_PROXY, 'success-tracker', verifiedImpacts * ROLLUP.IMPACT_PROXY_TOKENS, verifiedImpacts);
     }
 
     tracker.lastEditPath = filePath ?? null;

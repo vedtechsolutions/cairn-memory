@@ -177,9 +177,11 @@ export function handlePitfallCheck(input: PreToolUseInput, client: CachedHookCon
   const capped = warnings.slice(0, PROACTIVE.MAX_WARNINGS_PER_CALL);
 
   let outputStr: string | null = null;
+  let injectedContext: string | null = null;
   if (capped.length > 0) {
     const formatted = capped.map(w => `  - ${w}`).join('\n');
     const context = `[CAIRN] Pitfalls for ${fileLabel}:\n${formatted}`;
+    injectedContext = context;
     // Warnings are advisory: clients whose engines reject an explicit
     // "allow" (capability emitsPermissionDecision=false) get context alone.
     outputStr = JSON.stringify({
@@ -208,8 +210,11 @@ export function handlePitfallCheck(input: PreToolUseInput, client: CachedHookCon
     client.cache.setSkipGate(skipGateKey, null);
   }
 
-  if (outputStr) {
-    recordRollup(client.db, input.session_id, ROLLUP_METRICS.INJECTED, 'pitfall-check', estimateTokensFast(outputStr));
+  if (injectedContext) {
+    // Cost = what the MODEL receives (additionalContext), not the JSON
+    // transport envelope around it (review: envelope inflated a short
+    // warning from 18 to 44 recorded tokens).
+    recordRollup(client.db, input.session_id, ROLLUP_METRICS.INJECTED, 'pitfall-check', estimateTokensFast(injectedContext));
   }
   return { output: outputStr, pitfallsSurfaced: capped.length };
 }

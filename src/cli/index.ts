@@ -26,7 +26,18 @@ switch (command) {
     try {
       const { runReport } = await import('./report.js');
       const daysArg = process.argv.find((a) => a.startsWith('--days='));
-      const days = daysArg ? Math.max(1, parseInt(daysArg.slice(7), 10) || 0) : undefined;
+      let days: number | undefined;
+      if (daysArg) {
+        const raw = daysArg.slice(7);
+        const parsed = Number(raw);
+        // Reject rather than silently reinterpret: '--days=abc' reporting
+        // one day (or a huge N reporting nothing) misleads.
+        if (!Number.isInteger(parsed) || parsed < 1 || parsed > 3650) {
+          console.error(`cairn report: --days must be an integer between 1 and 3650 (got "${raw}")`);
+          process.exit(1);
+        }
+        days = parsed;
+      }
       process.exit(await runReport(days));
     } catch (err) {
       console.error(`cairn report: failed — ${(err as Error).message}`);

@@ -3,6 +3,9 @@
  * Pure business logic: no stdin/stdout/process.exit.
  */
 import type { FileChangedInput } from '../shared/hook-io.js';
+import { recordRollup } from '../../db/telemetry-rollup.js';
+import { ROLLUP_METRICS } from '../../constants/index.js';
+import { estimateTokensFast } from '../../utils/tokens.js';
 import type { HookDbClient } from '../shared/db-client.js';
 import { projectId } from '../../utils/project-id.js';
 import { recordGovernanceEventFailOpen } from '../../governance/recorder.js';
@@ -35,10 +38,12 @@ function handleFileChangedBusiness(input: FileChangedInput, client: HookDbClient
 
   if (reminders.length > 0) {
     const lines = reminders.map(r => `[CAIRN] Reminder: ${r.action}`);
+    const context = lines.join('\n');
+    recordRollup(client.db, input.session_id, ROLLUP_METRICS.INJECTED, 'file-changed', estimateTokensFast(context));
     const output = JSON.stringify({
       hookSpecificOutput: {
         hookEventName: 'FileChanged',
-        additionalContext: lines.join('\n'),
+        additionalContext: context,
       },
     });
     return { output, remindersTriggered: reminders.length };

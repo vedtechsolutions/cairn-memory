@@ -476,7 +476,7 @@ export function handleSessionStart(
   // Tokens-saved report: what Cairn injects is a COST — recorded from the
   // emitted text so the report's cost column is the same thing the agent
   // actually paid for.
-  recordRollup(client.db, input.session_id, ROLLUP_METRICS.INJECTED, 'session-start', estimateTokensFast(output));
+  recordRollup(client.db, sessionId, ROLLUP_METRICS.INJECTED, 'session-start', estimateTokensFast(output));
 
   return {
     // Codex only injects the JSON hookSpecificOutput contract; Claude

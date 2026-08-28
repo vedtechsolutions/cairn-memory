@@ -16,6 +16,7 @@
  */
 import type { PostToolUseFailureInput } from '../shared/hook-io.js';
 import { recordRollup } from '../../db/telemetry-rollup.js';
+import { estimateTokensFast } from '../../utils/tokens.js';
 import { ROLLUP, ROLLUP_METRICS } from '../../constants/index.js';
 import type { CachedHookContext } from '../shared/db-client.js';
 import { capabilitiesOf, originClientOf } from '../shared/client-adapter.js';
@@ -189,7 +190,7 @@ function handleErrorLearningBusiness(input: PostToolUseFailureInput, client: Cac
               // Report proxy: the warning was RIGHT (the error proves it),
               // so it still counts — once, not twice: double credit is a
               // confidence policy, not evidence of double value.
-              recordRollup(client.db, input.session_id, ROLLUP_METRICS.IMPACT_PROXY, 'error-learning', ROLLUP.IMPACT_PROXY_TOKENS);
+              recordRollup(client.db, input.session_id, ROLLUP_METRICS.IMPACT_PROXY, 'error-learning', ROLLUP.IMPACT_PROXY_TOKENS, 1);
               continue;
             }
           }
@@ -223,7 +224,7 @@ function handleErrorLearningBusiness(input: PostToolUseFailureInput, client: Cac
     if (sessionCount === 2 && classification.errorKey) {
       const filePath = input.tool_input.file_path as string | undefined;
       return {
-        output: buildOutputJson('PostToolUseFailure', buildWarningMessage(errorText, filePath)),
+        output: buildOutputJson('PostToolUseFailure', buildWarningMessage(errorText, filePath), client, input.session_id),
         action: 'warning',
         sessionCount,
         surfacedProcessed,
@@ -237,7 +238,7 @@ function handleErrorLearningBusiness(input: PostToolUseFailureInput, client: Cac
     return {
       output: buildOutputJson('PostToolUseFailure', buildEscalationMessage(
         sessionCount, input.tool_name, classification.tags, errorText,
-      )),
+      ), client, input.session_id),
       action: 'escalation',
       sessionCount,
       category: classification.tags[0] ?? 'unknown',
@@ -312,7 +313,7 @@ function handleErrorLearningBusiness(input: PostToolUseFailureInput, client: Cac
     const mem = client.memoryRepo.findById(result.id);
     if (mem) {
       return {
-        output: buildOutputJson('PostToolUseFailure', `[CAIRN] Repeated error. Previous lesson: "${mem.content}"`),
+        output: buildOutputJson('PostToolUseFailure', `[CAIRN] Repeated error. Previous lesson: "${mem.content}"`, client, input.session_id),
         action: 'learned-deduped',
         sessionCount,
         surfacedProcessed,
@@ -342,7 +343,7 @@ function handleErrorLearningBusiness(input: PostToolUseFailureInput, client: Cac
   } catch { /* best-effort */ }
 
   return {
-    output: buildOutputJson('PostToolUseFailure', `[CAIRN] ${lesson}`),
+    output: buildOutputJson('PostToolUseFailure', `[CAIRN] ${lesson}`, client, input.session_id),
     action: 'learned-new',
     sessionCount,
     surfacedProcessed,
@@ -351,7 +352,15 @@ function handleErrorLearningBusiness(input: PostToolUseFailureInput, client: Cac
 
 // --- Helpers ---
 
-function buildOutputJson(hookEventName: string, context: string): string {
+/** Every model-visible injection from this handler funnels here, so the
+ *  report's cost column counts ALL of them — this handler also credits
+ *  itself impact-proxy gross, and counting the credit while skipping the
+ *  cost would bias the net in Cairn's favor (review). Cost = the context
+ *  the model receives, not the JSON envelope. */
+function buildOutputJson(hookEventName: string, context: string, client?: CachedHookContext, sessionId?: string): string {
+  if (client && sessionId) {
+    recordRollup(client.db, sessionId, ROLLUP_METRICS.INJECTED, 'error-learning', estimateTokensFast(context));
+  }
   return JSON.stringify({
     hookSpecificOutput: {
       hookEventName,

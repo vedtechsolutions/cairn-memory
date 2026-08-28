@@ -22,13 +22,17 @@ export async function runReport(days: number = ROLLUP.REPORT_DAYS): Promise<numb
   const Database = (await import('better-sqlite3')).default;
   const db = new Database(path, { readonly: true });
   try {
-    let report;
-    try {
-      report = computeRollupReport(db, days);
-    } catch {
+    // Distinguish 'table absent' (pre-v30 — honest degrade) from every
+    // OTHER failure (corruption, lock, future schema): conflating them
+    // would report a real error as a version message (review P3).
+    const hasTable = db.prepare(
+      "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'telemetry_rollup'",
+    ).get() !== undefined;
+    if (!hasTable) {
       console.log('cairn report — no rollup data (database predates schema v30; data accrues from the next session).');
       return 0;
     }
+    const report = computeRollupReport(db, days);
 
     console.log(`cairn report — tokens saved, last ${report.days} days\n`);
     if (report.gross === 0 && report.cost === 0) {
@@ -39,7 +43,12 @@ export async function runReport(days: number = ROLLUP.REPORT_DAYS): Promise<numb
 
     console.log(`  Gross savings:   ${fmt(report.gross)} tokens`);
     console.log(`    compact-saved: ${fmt(report.compactSaved)}  (client-reported by your agent)`);
-    console.log(`    impact-proxy:  ${fmt(report.impactProxy)}  (ESTIMATE: ${report.impactEvents} verified impact${report.impactEvents === 1 ? '' : 's'} × ${ROLLUP.IMPACT_PROXY_TOKENS} tokens)`);
+    // Only show the ×rate arithmetic when it actually reproduces the
+    // total — rows written under an older tuning constant must not be
+    // relabeled at the current rate.
+    const rateLabel = report.impactProxy === report.impactEvents * ROLLUP.IMPACT_PROXY_TOKENS
+      ? ` × ${ROLLUP.IMPACT_PROXY_TOKENS} tokens` : ' (mixed rates)';
+    console.log(`    impact-proxy:  ${fmt(report.impactProxy)}  (ESTIMATE: ${report.impactEvents} verified impact${report.impactEvents === 1 ? '' : 's'}${rateLabel})`);
     console.log(`  Injection cost:  ${fmt(report.cost)} tokens`);
     for (const [surface, tokens] of Object.entries(report.costBySurface).sort((a, b) => b[1] - a[1])) {
       console.log(`    ${surface.padEnd(16)} ${fmt(tokens)}`);
@@ -53,8 +62,8 @@ export async function runReport(days: number = ROLLUP.REPORT_DAYS): Promise<numb
       }
       console.log('');
     }
-    console.log('  Notes: impact-proxy is an estimate, not a measurement. Disable');
-    console.log('  recording with {"report":{"rollup":false}} in ~/.cairn/config.json.');
+    console.log('  Notes: impact-proxy is an estimate, not a measurement; days are UTC.');
+    console.log('  Disable recording with {"report":{"rollup":false}} in ~/.cairn/config.json or CAIRN_ROLLUP=0.');
     return 0;
   } finally {
     db.close();

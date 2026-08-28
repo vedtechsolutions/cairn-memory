@@ -241,6 +241,7 @@ CREATE TABLE IF NOT EXISTS telemetry_rollup (
   metric TEXT NOT NULL,
   surface TEXT NOT NULL DEFAULT '',
   tokens INTEGER NOT NULL,
+  events INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 )`;
 

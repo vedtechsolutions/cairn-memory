@@ -6,23 +6,28 @@
  * async: true — observability only, no blocking, no stdout.
  */
 import { readStdinJson, type PostCompactInput } from './shared/hook-io.js';
-import { updateTracker } from './shared/edit-tracker.js';
+import { createHookDbClient } from './shared/db-client.js';
+import { handlePostCompact } from './handlers/postcompact-handler.js';
 import { recordTelemetry } from './shared/hook-telemetry.js';
 
 const _startTime = Date.now();
 try {
   const input = readStdinJson<PostCompactInput>();
 
-  const tracker = updateTracker(input.session_id, t => {
-    t.lastCompactAt = Date.now();
-    t.lastCompactSessionId = input.session_id;
-    t.lastCompactTokensSaved = input.tokens_saved ?? 0;
-  });
-
-  recordTelemetry('postcompact', input.trigger ?? 'auto', _startTime, true, undefined, {
-    tokensSaved: tracker.lastCompactTokensSaved,
-    sessionId: input.session_id,
-  });
+  // Delegate to the SHARED handler (same as the daemon route) — a second
+  // standalone implementation is exactly how the daemon-vs-fallback paths
+  // drift: this one updated the tracker but never recorded the report's
+  // client-reported gross row (review finding).
+  const client = createHookDbClient(process.env.CAIRN_DB_PATH ?? undefined);
+  try {
+    const result = handlePostCompact(input, client);
+    recordTelemetry('postcompact', input.trigger ?? 'auto', _startTime, true, undefined, {
+      tokensSaved: result.tokensSaved,
+      sessionId: input.session_id,
+    }, client.db);
+  } finally {
+    client.close();
+  }
 } catch (err) {
   recordTelemetry('postcompact', 'error', _startTime, false, String(err));
   console.error('[cairn] PostCompact hook error:', err);

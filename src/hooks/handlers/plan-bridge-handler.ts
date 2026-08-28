@@ -3,6 +3,9 @@
  * Pure business logic: no stdin/stdout/process.exit.
  */
 import type { PostToolUseInput } from '../shared/hook-io.js';
+import { recordRollup } from '../../db/telemetry-rollup.js';
+import { ROLLUP_METRICS } from '../../constants/index.js';
+import { estimateTokensFast } from '../../utils/tokens.js';
 import type { HookDbClient, CachedHookContext } from '../shared/db-client.js';
 import { loadTracker } from '../shared/edit-tracker.js';
 import { projectId } from '../../utils/project-id.js';
@@ -80,5 +83,6 @@ function createCairnPlan(
   client.planRepo.create({ project, name: planContent.name, steps });
 
   const msg = `[CAIRN] Plan auto-persisted: "${planContent.name}" (${steps.length} steps). Survives compaction. Use cairn_plan(step) to track progress.`;
+  recordRollup(client.db, input.session_id, ROLLUP_METRICS.INJECTED, 'plan-bridge', estimateTokensFast(msg));
   return { output: msg, action: 'created', steps: steps.length };
 }

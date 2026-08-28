@@ -138,7 +138,7 @@ try {
           }
         }
         // Tokens-saved report proxy (see success-tracker-handler twin).
-        recordRollup(client.db, input.session_id, ROLLUP_METRICS.IMPACT_PROXY, 'success-tracker', verifiedImpacts * ROLLUP.IMPACT_PROXY_TOKENS);
+        recordRollup(client.db, input.session_id, ROLLUP_METRICS.IMPACT_PROXY, 'success-tracker', verifiedImpacts * ROLLUP.IMPACT_PROXY_TOKENS, verifiedImpacts);
 
         client.close();
       }

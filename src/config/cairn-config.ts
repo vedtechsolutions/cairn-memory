@@ -59,41 +59,50 @@ const MTIME_GRANULARITY_MS = 2;
  *  rather than silent or spammy. */
 let warnedIdentity: string | null = null;
 
-/** Parse, distinguishing "no scope configured" (a legal minimal file)
- *  from a WRONG-SHAPED scope block (a typo like private_projects, or a
- *  string where a list belongs) — the latter silently deactivating every
- *  private project is the likelier user error and must warn. */
-function parseConfig(raw: string): CairnConfig | 'bad-shape' {
+/**
+ * Parse with INDEPENDENT section degradation: a malformed `report` block
+ * must never deactivate the `scope` privacy settings (review blocker: a
+ * one-character `rollups` typo in the cosmetic block silently turned off
+ * every private project), and vice versa. Each section distinguishes
+ * "not configured" (legal, silent) from "present but wrong-shaped"
+ * (falls back to ITS default, warning names the section). Unknown
+ * TOP-LEVEL keys are ignored per the additive contract.
+ */
+function parseConfig(raw: string): { config: CairnConfig; badSections: string[] } {
   const parsed = JSON.parse(raw) as unknown;
-  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return 'bad-shape';
-  const scope = (parsed as { scope?: unknown }).scope;
-  if (scope === undefined) {
-    const reportOnly = parseReport((parsed as { report?: unknown }).report);
-    if (reportOnly === 'bad-shape') return 'bad-shape';
-    return { scope: EMPTY_CONFIG.scope, report: reportOnly };
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return { config: EMPTY_CONFIG, badSections: ['(document)'] };
   }
-  if (scope === null || typeof scope !== 'object') return 'bad-shape';
+  const badSections: string[] = [];
+  const scope = parseScope((parsed as { scope?: unknown }).scope);
+  if (scope === 'bad-shape') badSections.push('scope');
   const report = parseReport((parsed as { report?: unknown }).report);
-  if (report === 'bad-shape') return 'bad-shape';
-  const list = (scope as { privateProjects?: unknown }).privateProjects;
+  if (report === 'bad-shape') badSections.push('report');
+  return {
+    config: {
+      scope: scope === 'bad-shape' ? EMPTY_CONFIG.scope : scope,
+      report: report === 'bad-shape' ? EMPTY_CONFIG.report : report,
+    },
+    badSections,
+  };
+}
+
+/** scope block: absent or deliberately empty = no restrictions; a
+ *  NON-empty block without a well-formed privateProjects list is almost
+ *  certainly a typo — and a typo silently deactivating every private
+ *  project is the failure the warning exists for. */
+function parseScope(raw: unknown): CairnScopeConfig | 'bad-shape' {
+  if (raw === undefined) return EMPTY_CONFIG.scope;
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return 'bad-shape';
+  const list = (raw as { privateProjects?: unknown }).privateProjects;
   if (list === undefined) {
-    // A deliberately empty scope block is legal; a NON-empty one without
-    // privateProjects is almost certainly a typo (private_projects,
-    // privateProject) — and a typo silently deactivating every private
-    // project is the failure this warning exists for.
-    if (Object.keys(scope as object).length !== 0) return 'bad-shape';
-    return { scope: EMPTY_CONFIG.scope, report };
+    return Object.keys(raw as object).length === 0 ? EMPTY_CONFIG.scope : 'bad-shape';
   }
   if (!Array.isArray(list)) return 'bad-shape';
   // Non-string members mean a malformed file, not ignorable noise — being
   // silently filtered to an empty set is the same fail-open as a typo.
   if (list.some((p) => typeof p !== 'string')) return 'bad-shape';
-  return {
-    scope: {
-      privateProjects: new Set(list.filter((p): p is string => p.length > 0)),
-    },
-    report,
-  };
+  return { privateProjects: new Set(list.filter((p): p is string => p.length > 0)) };
 }
 
 /** report block: absent = defaults; a literal rollup:false disables; any
@@ -142,20 +151,19 @@ export function loadCairnConfig(): CairnConfig {
   let problem: string | null = null;
   try {
     const parsed = parseConfig(readFileSync(path, 'utf-8'));
-    if (parsed === 'bad-shape') {
-      problem = 'has an unrecognized shape (expected { "scope": { "privateProjects": ["<id>"] } })';
-      config = EMPTY_CONFIG;
-    } else {
-      config = parsed;
+    config = parsed.config;
+    if (parsed.badSections.length > 0) {
+      problem = `has an unrecognized ${parsed.badSections.join(' and ')} section — those settings are INACTIVE until fixed (other sections still apply)`;
     }
   } catch {
-    problem = 'is invalid JSON';
+    problem = 'is invalid JSON — ALL settings are INACTIVE until fixed';
     config = EMPTY_CONFIG;
   }
   // PRESENT but broken must not degrade silently — one warning per file
-  // version (a privacy setting failing open needs a signal).
+  // version, NAMING the broken section (a warning pointing at the wrong
+  // block is worse than none).
   if (problem !== null && warnedIdentity !== identity) {
-    console.error(`[cairn] config at ${path} ${problem} — scope settings are INACTIVE until fixed`);
+    console.error(`[cairn] config at ${path} ${problem}`);
     warnedIdentity = identity;
   }
   if (Date.now() - st.mtimeMs >= MTIME_GRANULARITY_MS) {
