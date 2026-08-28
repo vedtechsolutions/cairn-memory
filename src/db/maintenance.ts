@@ -3,7 +3,7 @@
  * Called periodically or on session start.
  */
 import type Database from 'better-sqlite3';
-import { CONFIDENCE, LIMITS, STALENESS, CONSOLIDATION, DECAY } from '../constants/index.js';
+import { CONFIDENCE, LIMITS, STALENESS, CONSOLIDATION, DECAY, ROLLOUT_TAILER } from '../constants/index.js';
 import { now, buildFtsQuery, tokenOverlap } from '../utils/index.js';
 import type { ContextFingerprint } from '../utils/fingerprint.js';
 import { MemoryRepository, type Memory } from './memory-repository.js';
@@ -562,6 +562,17 @@ export function runMaintenance(
   // Retention is a hard evidence ceiling, so this cheap indexed cleanup runs
   // even when the broader decay/consolidation sweep is rate-gated.
   const governanceCleanup = cleanupGovernanceEvidence(db, { nowMs });
+
+  // Codex hook/tailer dedup markers (parity Slice B): pruned HERE — not in
+  // the tailer — because the hook path writes them on every hosting mode
+  // (MCP-embedded socket included) while the tailer only runs in the
+  // standalone daemon. Runs pre-gate: one row per codex tool call adds up.
+  try {
+    const markerCutoff = new Date(nowMs - ROLLOUT_TAILER.MARKER_TTL_MS).toISOString();
+    db.prepare(
+      "DELETE FROM maintenance_meta WHERE key LIKE 'codex_seen:%' AND value < ?",
+    ).run(markerCutoff);
+  } catch { /* best-effort */ }
 
   const lastRun = getLastMaintenanceMs(db);
   const minIntervalMs = DECAY.MAINTENANCE_MIN_INTERVAL_HOURS * 3_600_000;

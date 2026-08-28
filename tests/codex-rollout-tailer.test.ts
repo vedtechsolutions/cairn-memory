@@ -12,6 +12,10 @@ import { join } from 'node:path';
 import { createHookDbClient, type HookDbClient } from '../src/hooks/shared/db-client.js';
 import { startRolloutTailer } from '../src/daemon/rollout-tailer.js';
 
+// Classifier dedup state persists across runs (by design) — every learnable
+// error in these tests carries a per-run tag so keys never collide.
+const RUN = Math.random().toString(36).slice(2, 8);
+
 let root: string;
 let dayDir: string;
 let client: HookDbClient;
@@ -62,26 +66,26 @@ describe('rollout tailer', () => {
   it('starts at EOF on first sight, then routes appended failures to a codex pitfall', async () => {
     const f = join(dayDir, 'rollout-2026-08-28T00-00-01-tailer-a.jsonl');
     writeFileSync(f, metaLine('tailer-sess-a') +
-      failedCommandLine('exec-historic', 'error TS2998: historic — must NOT be captured'));
+      failedCommandLine('exec-historic', `error TS2998: HIST-${RUN} historic — must NOT be captured`));
 
     const tailer = startRolloutTailer({ ...client, cache: undefined });
     try {
       // Tick 1: registration only — the historic failure is behind EOF.
       assert.equal(await tailer.tick(), 0);
 
-      appendFileSync(f, failedCommandLine('exec-live-1', 'error TS2997: TAILER-A live type mismatch in tailer-check.ts'));
+      appendFileSync(f, failedCommandLine('exec-live-1', `error TS2997: TAILER-A-${RUN} live type mismatch in tailer-check.ts`));
       const processed = await tailer.tick();
       assert.equal(processed, 1);
 
       const rows = client.db.prepare(
-        "SELECT origin_client, content FROM memories WHERE kind='pitfall' AND content LIKE '%TS2997%'",
-      ).all() as Array<{ origin_client: string; content: string }>;
+        "SELECT origin_client, content FROM memories WHERE kind='pitfall' AND content LIKE '%TAILER-A-' || ? || '%'",
+      ).all(RUN) as Array<{ origin_client: string; content: string }>;
       assert.equal(rows.length, 1);
       assert.equal(rows[0].origin_client, 'codex');
 
       const historic = client.db.prepare(
-        "SELECT COUNT(*) AS n FROM memories WHERE content LIKE '%TS2998%'",
-      ).get() as { n: number };
+        "SELECT COUNT(*) AS n FROM memories WHERE content LIKE '%HIST-' || ? || '%'",
+      ).get(RUN) as { n: number };
       assert.equal(historic.n, 0);
     } finally {
       tailer.stop();
@@ -96,11 +100,11 @@ describe('rollout tailer', () => {
       await tailer.tick(); // register at EOF
       client.db.prepare('INSERT OR REPLACE INTO maintenance_meta (key, value) VALUES (?, ?)')
         .run('codex_seen:exec-hook-handled', new Date().toISOString());
-      appendFileSync(f, failedCommandLine('exec-hook-handled', 'error TS2996: TAILER-B already handled by hook'));
+      appendFileSync(f, failedCommandLine('exec-hook-handled', `error TS2996: TAILER-B-${RUN} already handled by hook`));
       assert.equal(await tailer.tick(), 0);
       const rows = client.db.prepare(
-        "SELECT COUNT(*) AS n FROM memories WHERE content LIKE '%TS2996%'",
-      ).get() as { n: number };
+        "SELECT COUNT(*) AS n FROM memories WHERE content LIKE '%TAILER-B-' || ? || '%'",
+      ).get(RUN) as { n: number };
       assert.equal(rows.n, 0);
     } finally {
       tailer.stop();
@@ -113,8 +117,81 @@ describe('rollout tailer', () => {
     const tailer = startRolloutTailer({ ...client, cache: undefined });
     try {
       await tailer.tick();
-      appendFileSync(f, failedCommandLine('exec-subagent', 'error TS2995: TAILER-C subagent failure'));
+      appendFileSync(f, failedCommandLine('exec-subagent', `error TS2995: TAILER-C-${RUN} subagent failure`));
       assert.equal(await tailer.tick(), 0);
+    } finally {
+      tailer.stop();
+    }
+  });
+
+  it('captures a failure whose line exceeds the lookup window (pre-resolved record path)', async () => {
+    // Regression for review fix 3: the tailer passes the record it parsed
+    // instead of re-looking it up in a tail window it may have outrun.
+    const f = join(dayDir, 'rollout-2026-08-28T00-00-05-tailer-e.jsonl');
+    writeFileSync(f, metaLine('tailer-sess-e'));
+    const tailer = startRolloutTailer({ ...client, cache: undefined });
+    try {
+      await tailer.tick();
+      // Lexically distant from the other tests' errors — similar wording
+      // would dedup-merge into an earlier pitfall in this shared DB and the
+      // row assertion below would see nothing.
+      const bigOutput = `error TS2992: TAILER-E-${RUN} colossal aggregated payload exceeded scanning window budget in window-scan.ts\n` + 'y'.repeat(700 * 1024);
+      appendFileSync(f, JSON.stringify({
+        timestamp: new Date().toISOString(), type: 'event_msg',
+        payload: { type: 'item_completed', item: { item: {
+          id: 'exec-big-tail', type: 'CommandExecution', status: 'failed',
+          exit_code: 2, command: ['tsc'], aggregated_output: bigOutput,
+        } } },
+      }) + '\n');
+      assert.equal(await tailer.tick(), 1);
+      const rows = client.db.prepare(
+        "SELECT origin_client FROM memories WHERE kind='pitfall' AND content LIKE '%TAILER-E-' || ? || '%'",
+      ).all(RUN) as Array<{ origin_client: string }>;
+      assert.equal(rows.length, 1);
+      assert.equal(rows[0].origin_client, 'codex');
+    } finally {
+      tailer.stop();
+    }
+  });
+
+  it('recovers a file first seen EMPTY once its session_meta flushes', async () => {
+    // Regression for review fix 4: an unreadable meta at first sight must
+    // not skip the session permanently.
+    const f = join(dayDir, 'rollout-2026-08-28T00-00-06-tailer-f.jsonl');
+    writeFileSync(f, ''); // Codex created the file; nothing flushed yet
+    const tailer = startRolloutTailer({ ...client, cache: undefined });
+    try {
+      assert.equal(await tailer.tick(), 0); // registers, meta unresolved
+      appendFileSync(f, metaLine('tailer-sess-f') +
+        failedCommandLine('exec-after-empty', `error TS2991: TAILER-F-${RUN} failure after empty first sight`));
+      assert.equal(await tailer.tick(), 1);
+      const rows = client.db.prepare(
+        "SELECT COUNT(*) AS n FROM memories WHERE content LIKE '%TAILER-F-' || ? || '%'",
+      ).get(RUN) as { n: number };
+      assert.equal(rows.n, 1);
+    } finally {
+      tailer.stop();
+    }
+  });
+
+  it('tails failed FileChange records as apply_patch events', async () => {
+    const f = join(dayDir, 'rollout-2026-08-28T00-00-07-tailer-g.jsonl');
+    writeFileSync(f, metaLine('tailer-sess-g'));
+    const tailer = startRolloutTailer({ ...client, cache: undefined });
+    try {
+      await tailer.tick();
+      appendFileSync(f, JSON.stringify({
+        timestamp: new Date().toISOString(), type: 'event_msg',
+        payload: { type: 'item_completed', item: { item: {
+          id: 'exec-patch-fail', type: 'FileChange', status: 'failed',
+          aggregated_output: `error TS2990: TAILER-G-${RUN} patch context mismatch in patched.ts`,
+        } } },
+      }) + '\n');
+      assert.equal(await tailer.tick(), 1);
+      const rows = client.db.prepare(
+        "SELECT COUNT(*) AS n FROM memories WHERE content LIKE '%TAILER-G-' || ? || '%'",
+      ).get(RUN) as { n: number };
+      assert.equal(rows.n, 1);
     } finally {
       tailer.stop();
     }
@@ -126,7 +203,7 @@ describe('rollout tailer', () => {
     const tailer = startRolloutTailer({ ...client, cache: undefined });
     try {
       await tailer.tick();
-      const full = failedCommandLine('exec-torn', 'error TS2994: TAILER-D torn line');
+      const full = failedCommandLine('exec-torn', `error TS2994: TAILER-D-${RUN} torn line`);
       appendFileSync(f, full.slice(0, 40)); // torn mid-write
       assert.equal(await tailer.tick(), 0);
       appendFileSync(f, full.slice(40)); // writer finishes the line

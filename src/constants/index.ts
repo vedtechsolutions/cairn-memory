@@ -240,6 +240,8 @@ export const LIMITS = {
   CLEANUP_MAX_DELETE: 100,
   PITFALL_MAX_FOR_READ: 1,
   SUCCESS_MIN_TOOL_CHAIN: 2,
+  /** Rolling per-session tool-chain window kept in the tracker. */
+  TOOL_CHAIN_MAX: 20,
   BRIEFING_MAX_USER_PROFILES: 3,
   /** Auto-archive active plans with all steps pending after this many hours */
   PLAN_UNTOUCHED_ARCHIVE_HOURS: 2,
@@ -900,6 +902,10 @@ export const ROLLOUT_LOOKUP = {
    *  contractual — total retry budget stays within the brief's ≤500 ms. */
   MAX_ATTEMPTS: 4,
   RETRY_DELAY_MS: 150,
+  /** Window growth factors per scan pass: a single rollout line can exceed
+   *  the base window (local corpus p99 = 401 KB, max 1.88 MB) and a cut-off
+   *  id can never match, so a miss grows the window before any retry. */
+  WINDOW_GROWTH: [1, 4, 16],
   /** Cap on output text carried into error synthesis / classification. */
   OUTPUT_MAX_CHARS: 2000,
 } as const;

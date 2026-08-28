@@ -474,6 +474,8 @@ Test-environment overrides (all set automatically by `tests/hermetic-env.cjs`):
 | `CAIRN_STATE_PATH` | `cairn-state.json` location (default `~/.claude/cairn-state.json`) |
 | `CAIRN_QUERY_CWD` | Pins the briefing query-fingerprint cwd signal (A1 checkout-name neutrality) |
 | `CAIRN_ALLOW_TMP_TRANSCRIPTS` | Admits the OS tmpdir into the transcript-path allowlist (tests only) |
+| `CAIRN_TAILER` | `0` disables the daemon's Codex rollout tailer (capture fallback) |
+| `CAIRN_CODEX_SESSIONS_DIR` | Overrides `~/.codex/sessions` for the rollout tailer (tests) |
 
 ## Database
 

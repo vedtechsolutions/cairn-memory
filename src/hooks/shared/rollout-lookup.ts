@@ -33,17 +33,31 @@ interface RolloutItem {
 
 /** Read the tail of a rollout file (items append; the record for a
  *  just-completed tool call is near the end). */
-function readTail(path: string): string {
+function readTail(path: string, tailBytes: number): { text: string; reachedStart: boolean } {
   const fd = openSync(path, 'r');
   try {
     const size = fstatSync(fd).size;
-    const start = Math.max(0, size - ROLLOUT_LOOKUP.TAIL_BYTES);
+    const start = Math.max(0, size - tailBytes);
     const buf = Buffer.alloc(size - start);
     readSync(fd, buf, 0, buf.length, start);
-    return buf.toString('utf-8');
+    return { text: buf.toString('utf-8'), reachedStart: start === 0 };
   } finally {
     closeSync(fd);
   }
+}
+
+/** One full scan pass: grow the window on a miss before spending a retry —
+ *  a single CommandExecution line can exceed the base window (observed
+ *  p99 = 401 KB, max 1.88 MB locally), and a cut-off id can NEVER match,
+ *  so retrying the same window would burn the whole budget for nothing. */
+function scanFile(path: string, toolUseId: string): RolloutToolRecord | null {
+  for (const factor of ROLLOUT_LOOKUP.WINDOW_GROWTH) {
+    const { text, reachedStart } = readTail(path, ROLLOUT_LOOKUP.TAIL_BYTES * factor);
+    const record = scanForRecord(text, toolUseId);
+    if (record) return record;
+    if (reachedStart) return null; // whole file scanned — growing is pointless
+  }
+  return null;
 }
 
 function scanForRecord(text: string, toolUseId: string): RolloutToolRecord | null {
@@ -92,7 +106,7 @@ export async function findRolloutToolRecord(
     if (attempt > 0) await sleep(ROLLOUT_LOOKUP.RETRY_DELAY_MS);
     try {
       if (!existsSync(transcriptPath)) continue;
-      const record = scanForRecord(readTail(transcriptPath), toolUseId);
+      const record = scanFile(transcriptPath, toolUseId);
       if (record) return record;
     } catch {
       // unreadable file this attempt — retry, then give up as unknown

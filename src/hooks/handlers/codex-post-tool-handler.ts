@@ -16,11 +16,11 @@ import { findRolloutToolRecord, type RolloutToolRecord } from '../shared/rollout
 import { handleErrorLearning } from './error-learning-handler.js';
 import { handleSuccessTracker } from './success-tracker-handler.js';
 import { loadTracker, saveTracker } from '../shared/edit-tracker.js';
-import { ROLLOUT_LOOKUP } from '../../constants/index.js';
+import { LIMITS, ROLLOUT_LOOKUP } from '../../constants/index.js';
 
 export interface CodexPostToolResult {
   output: null;
-  action: 'error-routed' | 'success-routed' | 'unknown-outcome' | 'skipped';
+  action: 'error-routed' | 'success-routed' | 'success-untracked' | 'unknown-outcome' | 'skipped';
   exitCode: number | null;
 }
 
@@ -38,17 +38,23 @@ export interface DemuxOutcome {
 }
 
 /** Pure outcome decision: rollout record first, apply_patch text fallback
- *  second, unknown otherwise. Never infers success from a missing record. */
+ *  second, unknown otherwise. FAIL-SAFE in both directions: a missing
+ *  record is never success, and only the literal status "completed" (with
+ *  a zero/absent exit code) is — a novel status a future Codex might add
+ *  routes to unknown, and a non-zero exit code routes to failure whatever
+ *  the status says. */
 export function demuxOutcome(
   input: Pick<PostToolUseInput, 'tool_name' | 'tool_response'>,
   record: RolloutToolRecord | null,
 ): DemuxOutcome {
   if (record) {
-    return {
-      failed: record.status === 'failed',
-      exitCode: record.exitCode,
-      errorText: record.outputText,
-    };
+    if (record.status === 'failed' || (record.exitCode !== null && record.exitCode !== 0)) {
+      return { failed: true, exitCode: record.exitCode, errorText: record.outputText };
+    }
+    if (record.status === 'completed') {
+      return { failed: false, exitCode: record.exitCode, errorText: record.outputText };
+    }
+    return { failed: null, exitCode: record.exitCode, errorText: '' };
   }
   if (input.tool_name === 'apply_patch') {
     const match = APPLY_PATCH_EXIT_RE.exec(String(input.tool_response ?? ''));
@@ -65,7 +71,8 @@ export function demuxOutcome(
 }
 
 /** Hook-vs-tailer dedup markers in maintenance_meta (value = ISO timestamp,
- *  pruned by the tailer after MARKER_TTL_MS). */
+ *  pruned by runMaintenance after MARKER_TTL_MS — maintenance runs on every
+ *  hosting mode, the tailer only in the standalone daemon). */
 export function isToolSeen(db: Database.Database, toolUseId: string): boolean {
   try {
     return db.prepare(
@@ -86,32 +93,49 @@ function markToolSeen(db: Database.Database, toolUseId: string | undefined): voi
 export async function handleCodexPostTool(
   input: PostToolUseInput,
   client: CachedHookContext,
+  /** Pre-resolved rollout record (the tailer already parsed the line it is
+   *  routing — re-looking it up in a tail window the tailer may have
+   *  outrun would silently demote it to unknown). undefined = look up. */
+  preResolved?: RolloutToolRecord | null,
 ): Promise<CodexPostToolResult> {
   if (!DEMUX_TOOLS.includes(input.tool_name)) {
     return { output: null, action: 'skipped', exitCode: null };
   }
 
-  const record = await findRolloutToolRecord(input.transcript_path, input.tool_use_id);
+  const record = preResolved !== undefined
+    ? preResolved
+    : await findRolloutToolRecord(input.transcript_path, input.tool_use_id);
   const { failed, exitCode, errorText } = demuxOutcome(input, record);
 
   if (failed === true) {
+    // Claim the id BEFORE dispatching: a tailer tick landing mid-routing
+    // would otherwise double-count the error (escalation fires early, the
+    // investigation chain gets a duplicate attempt). A lost record on a
+    // throw is the better failure — routing is already best-effort.
+    markToolSeen(client.db, input.tool_use_id);
+    // The REAL error text must be the first line: the classifier derives its
+    // errorKey from it, and a fixed "Exit code N" preamble would collapse
+    // every codex failure into one key — dedup would then suppress learning
+    // after the first. The exit code trails; it only leads when the command
+    // produced no output at all (error-learning skips empty errors).
+    const trimmedError = errorText.trim();
     const failure: PostToolUseFailureInput = {
       ...input,
-      // Exit-code preamble keeps the text non-empty (error-learning skips
-      // empty errors) and gives the classifier a stable anchor even when
-      // the command produced no output.
-      error: `Exit code ${exitCode ?? 'unknown'}\n${errorText}`.trim(),
+      error: trimmedError
+        ? `${trimmedError}\n(exit code ${exitCode ?? 'unknown'})`
+        : `Exit code ${exitCode ?? 'unknown'}`,
       exit_code: exitCode ?? undefined,
     };
     await handleErrorLearning(failure, client);
-    markToolSeen(client.db, input.tool_use_id);
     return { output: null, action: 'error-routed', exitCode };
   }
 
   if (failed === false) {
-    await handleSuccessTracker(input, client);
     markToolSeen(client.db, input.tool_use_id);
-    return { output: null, action: 'success-routed', exitCode };
+    const tracked = await handleSuccessTracker(input, client);
+    // 'success-untracked' = confirmed success but nothing recorded (e.g.
+    // apply_patch is outside success-tracker's tool gate until D8 lands).
+    return { output: null, action: tracked.tracked ? 'success-routed' : 'success-untracked', exitCode };
   }
 
   // Outcome unknown — keep the tool chain continuous without asserting an
@@ -122,8 +146,8 @@ export async function handleCodexPostTool(
   try {
     const tracker = client.cache?.getTracker(input.session_id) ?? loadTracker(input.session_id);
     tracker.toolChain.push({ tool: input.tool_name, timestamp: Date.now() });
-    if (tracker.toolChain.length > 20) {
-      tracker.toolChain = tracker.toolChain.slice(-20);
+    if (tracker.toolChain.length > LIMITS.TOOL_CHAIN_MAX) {
+      tracker.toolChain = tracker.toolChain.slice(-LIMITS.TOOL_CHAIN_MAX);
     }
     if (client.cache) {
       client.cache.setTracker(input.session_id, tracker);

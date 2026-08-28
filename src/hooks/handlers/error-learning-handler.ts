@@ -27,6 +27,7 @@ import {
   ESCALATION_ALTERNATIVES,
   ESCALATION_FALLBACK,
   ESCALATION_TOOL_ALTERNATIVES,
+  LIMITS,
   PROACTIVE,
 } from '../../constants/index.js';
 import { generateFingerprint } from '../../utils/fingerprint.js';
@@ -104,8 +105,8 @@ function handleErrorLearningBusiness(input: PostToolUseFailureInput, client: Cac
         };
         tracker.toolChain.push(failEvent);
       }
-      if (tracker.toolChain.length > 20) {
-        tracker.toolChain = tracker.toolChain.slice(-20);
+      if (tracker.toolChain.length > LIMITS.TOOL_CHAIN_MAX) {
+        tracker.toolChain = tracker.toolChain.slice(-LIMITS.TOOL_CHAIN_MAX);
       }
     };
 

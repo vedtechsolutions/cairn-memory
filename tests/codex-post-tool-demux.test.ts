@@ -10,7 +10,12 @@ import { mkdtempSync, writeFileSync, rmSync, appendFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { findRolloutToolRecord } from '../src/hooks/shared/rollout-lookup.js';
-import { demuxOutcome } from '../src/hooks/handlers/codex-post-tool-handler.js';
+import { demuxOutcome, handleCodexPostTool, isToolSeen } from '../src/hooks/handlers/codex-post-tool-handler.js';
+import { createHookDbClient, type HookDbClient } from '../src/hooks/shared/db-client.js';
+
+// Classifier dedup state persists across runs (by design) — every learnable
+// error in these tests carries a per-run tag so keys never collide.
+const RUN = Math.random().toString(36).slice(2, 8);
 
 let dir: string;
 before(() => { dir = mkdtempSync(join(tmpdir(), 'cairn-rollout-')); });
@@ -105,6 +110,22 @@ describe('demuxOutcome', () => {
     assert.equal(o.exitCode, null);
   });
 
+  it('FAIL-SAFE: a novel status routes to unknown, and a non-zero exit code to failure regardless of status', () => {
+    // Regression for review fix 1: `aborted` (exit 130) must never be success.
+    const aborted = demuxOutcome({ tool_name: 'Bash', tool_response: 'interrupted' },
+      { kind: 'command', status: 'aborted', exitCode: 130, outputText: 'interrupted' });
+    assert.equal(aborted.failed, true);
+    assert.equal(aborted.exitCode, 130);
+
+    const novel = demuxOutcome({ tool_name: 'Bash', tool_response: 'x' },
+      { kind: 'command', status: 'unknown', exitCode: null, outputText: 'x' });
+    assert.equal(novel.failed, null);
+
+    const completedNonZero = demuxOutcome({ tool_name: 'Bash', tool_response: 'x' },
+      { kind: 'command', status: 'completed', exitCode: 7, outputText: 'x' });
+    assert.equal(completedNonZero.failed, true);
+  });
+
   it('apply_patch falls back to the embedded "Exit code: N" line', () => {
     const ok = demuxOutcome({
       tool_name: 'apply_patch',
@@ -125,5 +146,44 @@ describe('demuxOutcome', () => {
   it('apply_patch with no record and no parseable exit line is unknown', () => {
     const o = demuxOutcome({ tool_name: 'apply_patch', tool_response: 'weird output' }, null);
     assert.equal(o.failed, null);
+  });
+});
+
+describe('handleCodexPostTool (hook path, end to end)', () => {
+  it('routes a large-record failure via the growing tail window and WRITES the seen-marker', async () => {
+    // Regression for review fixes 2 (window growth) and the untested marker
+    // write: the failed record's own line exceeds the base window.
+    const client: HookDbClient = createHookDbClient(':memory:');
+    try {
+      const p = join(dir, 'bigline.jsonl');
+      const bigOutput = `error TS2993: DEMUX-E2E-${RUN} type mismatch in bigline-check.ts\n` + 'x'.repeat(700 * 1024);
+      writeFileSync(p, rolloutLine({
+        id: 'exec-big-fail', type: 'CommandExecution', status: 'failed',
+        exit_code: 2, aggregated_output: bigOutput,
+      }));
+
+      const result = await handleCodexPostTool({
+        session_id: 'demux-e2e-session',
+        transcript_path: p,
+        cwd: '/opt/cairn',
+        hook_event_name: 'PostToolUse',
+        client_name: 'codex',
+        tool_name: 'Bash',
+        tool_input: { command: 'tsc' },
+        tool_use_id: 'exec-big-fail',
+        tool_response: `error TS2993: DEMUX-E2E-${RUN} type mismatch in bigline-check.ts\n`,
+      }, { ...client, cache: undefined });
+
+      assert.equal(result.action, 'error-routed');
+      assert.equal(result.exitCode, 2);
+      assert.equal(isToolSeen(client.db, 'exec-big-fail'), true, 'seen-marker written');
+      const rows = client.db.prepare(
+        "SELECT origin_client FROM memories WHERE kind='pitfall' AND content LIKE '%DEMUX-E2E-' || ? || '%'",
+      ).all(RUN) as Array<{ origin_client: string }>;
+      assert.equal(rows.length, 1);
+      assert.equal(rows[0].origin_client, 'codex');
+    } finally {
+      client.close();
+    }
   });
 });

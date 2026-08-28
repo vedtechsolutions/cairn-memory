@@ -15,24 +15,30 @@
  * Deliberately NOT covered (documented): historical backfill (first sight
  * of a file starts at EOF), subagent/guardian threads, code-mode
  * custom_tool_call failures (no item_completed exists — research addendum
- * 3), and token-count enrichment (recorded follow-up).
+ * 3), token-count enrichment (recorded follow-up), and event timestamps —
+ * routed tool events are stamped at routing time, up to one tick late, so
+ * toolChain recency heuristics are advisory-skewed for tailed records.
  */
 import { readdirSync, statSync, openSync, readSync, closeSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
-import type Database from 'better-sqlite3';
 import type { CachedHookContext } from '../hooks/shared/db-client.js';
 import type { PostToolUseInput } from '../hooks/shared/hook-io.js';
 import { handleCodexPostTool, isToolSeen } from '../hooks/handlers/codex-post-tool-handler.js';
+import type { RolloutToolRecord } from '../hooks/shared/rollout-lookup.js';
 import { CLIENT_CODEX } from '../constants/clients.js';
-import { ROLLOUT_TAILER } from '../constants/index.js';
+import { ROLLOUT_LOOKUP, ROLLOUT_TAILER } from '../constants/index.js';
 
 interface FileState {
   offset: number;
   sessionId: string | null;
   cwd: string;
-  /** Subagent/guardian or unparseable-meta files are skipped entirely. */
+  /** Subagent/guardian threads are skipped entirely. */
   skip: boolean;
+  /** False while the session_meta first line is not yet readable (torn or
+   *  zero-length file at first sight) — re-evaluated each tick until it
+   *  resolves, so an early-sighted session is never permanently skipped. */
+  metaResolved: boolean;
 }
 
 interface TailerHandle { stop(): void; tick(): Promise<number>; }
@@ -67,12 +73,17 @@ function readRange(path: string, start: number, end: number): string {
   }
 }
 
-/** First line of a rollout is session_meta — id, cwd, source (subagent). */
-function readSessionMeta(path: string): Pick<FileState, 'sessionId' | 'cwd' | 'skip'> {
+/** First line of a rollout is session_meta — id, cwd, source (subagent).
+ *  metaResolved:false means "not readable YET" (empty/torn first line);
+ *  the tailer retries it every tick rather than skipping the session. */
+function readSessionMeta(path: string): Pick<FileState, 'sessionId' | 'cwd' | 'skip' | 'metaResolved'> {
   try {
     const head = readRange(path, 0, Math.min(statSync(path).size, ROLLOUT_TAILER.META_READ_BYTES));
-    const firstLine = head.slice(0, head.indexOf('\n'));
-    const meta = JSON.parse(firstLine) as {
+    const newlineAt = head.indexOf('\n');
+    if (newlineAt < 0) {
+      return { sessionId: null, cwd: process.cwd(), skip: false, metaResolved: false };
+    }
+    const meta = JSON.parse(head.slice(0, newlineAt)) as {
       payload?: { session_id?: string; id?: string; cwd?: string; source?: unknown };
     };
     const p = meta.payload ?? {};
@@ -82,19 +93,11 @@ function readSessionMeta(path: string): Pick<FileState, 'sessionId' | 'cwd' | 's
       sessionId: p.session_id ?? p.id ?? null,
       cwd: p.cwd ?? process.cwd(),
       skip: isSubagent,
+      metaResolved: true,
     };
   } catch {
-    return { sessionId: null, cwd: process.cwd(), skip: true };
+    return { sessionId: null, cwd: process.cwd(), skip: false, metaResolved: false };
   }
-}
-
-function pruneMarkers(db: Database.Database): void {
-  try {
-    const cutoff = new Date(Date.now() - ROLLOUT_TAILER.MARKER_TTL_MS).toISOString();
-    db.prepare(
-      "DELETE FROM maintenance_meta WHERE key LIKE 'codex_seen:%' AND value < ?",
-    ).run(cutoff);
-  } catch { /* best-effort */ }
 }
 
 /**
@@ -120,9 +123,18 @@ export function startRolloutTailer(client: CachedHookContext): TailerHandle {
         let state = files.get(path);
         if (!state) {
           // First sight: no historical backfill — start at current EOF.
+          // An empty file registers with offset 0, so everything written
+          // after first sight is "new" once its meta resolves.
           state = { offset: size, ...readSessionMeta(path) };
           files.set(path, state);
           continue;
+        }
+        if (!state.metaResolved) {
+          // Retry the meta read without advancing the offset — the session
+          // must not be permanently skipped just because the tailer saw the
+          // file before Codex flushed the first line.
+          Object.assign(state, readSessionMeta(path));
+          if (!state.metaResolved) continue;
         }
         if (state.skip || size <= state.offset) continue;
 
@@ -134,17 +146,18 @@ export function startRolloutTailer(client: CachedHookContext): TailerHandle {
         state.offset += lastNewline + 1;
 
         for (const line of chunk.slice(0, lastNewline).split('\n')) {
-          const input = commandInputFromLine(line, path, state);
-          if (!input) continue;
-          if (isToolSeen(client.db, input.tool_use_id!)) continue; // hook path handled it
+          const parsedLine = toolEventFromLine(line, path, state);
+          if (!parsedLine) continue;
+          if (isToolSeen(client.db, parsedLine.input.tool_use_id!)) continue; // hook path handled it
           try {
-            await handleCodexPostTool(input, client);
+            // Pass the record we ALREADY parsed — a fresh tail lookup at
+            // current EOF could have been outrun by this very tick's data.
+            await handleCodexPostTool(parsedLine.input, client, parsedLine.record);
             processed++;
           } catch { /* per-record fail-open */ }
         }
       }
     }
-    pruneMarkers(client.db);
     return processed;
   }
 
@@ -156,14 +169,17 @@ export function startRolloutTailer(client: CachedHookContext): TailerHandle {
   return { stop: () => clearInterval(interval), tick };
 }
 
-/** Parse one rollout line into a synthetic PostToolUseInput for the demux,
- *  or null if it is not a completed CommandExecution. */
-function commandInputFromLine(
+/** Parse one rollout line into a demux-ready (input, record) pair, or null
+ *  if it is not a completed CommandExecution/FileChange. The record carries
+ *  the outcome truth so the demux never re-reads the file on this path. */
+function toolEventFromLine(
   line: string,
   transcriptPath: string,
   state: FileState,
-): PostToolUseInput | null {
-  if (!line.includes('CommandExecution') || !line.includes('item_completed')) return null;
+): { input: PostToolUseInput; record: RolloutToolRecord } | null {
+  if (!line.includes('item_completed')) return null;
+  const isCommand = line.includes('CommandExecution');
+  if (!isCommand && !line.includes('FileChange')) return null;
   let parsed: {
     payload?: {
       type?: string;
@@ -174,17 +190,32 @@ function commandInputFromLine(
   const payload = parsed.payload;
   if (!payload || payload.type !== 'item_completed') return null;
   const item = (payload.item?.item ?? payload.item) as Record<string, unknown> | undefined;
-  if (!item || item.type !== 'CommandExecution' || typeof item.id !== 'string') return null;
+  if (!item || typeof item.id !== 'string') return null;
+  if (item.type !== 'CommandExecution' && item.type !== 'FileChange') return null;
+
+  // Same cap the lookup path applies — oversized text would fail memory
+  // validation downstream and silently drop the record.
+  const outputText = String(item.aggregated_output ?? item.stdout ?? item.stderr ?? '')
+    .slice(0, ROLLOUT_LOOKUP.OUTPUT_MAX_CHARS);
+  const record: RolloutToolRecord = {
+    kind: item.type === 'CommandExecution' ? 'command' : 'file_change',
+    status: String(item.status ?? 'unknown'),
+    exitCode: typeof item.exit_code === 'number' ? item.exit_code : null,
+    outputText,
+  };
   const command = Array.isArray(item.command) ? (item.command as string[]).join(' ') : String(item.command ?? '');
   return {
-    session_id: state.sessionId ?? 'codex-tailer-unknown-session',
-    transcript_path: transcriptPath,
-    cwd: state.cwd,
-    hook_event_name: 'PostToolUse',
-    client_name: CLIENT_CODEX,
-    tool_name: 'Bash',
-    tool_input: { command },
-    tool_use_id: item.id,
-    tool_response: String(item.aggregated_output ?? item.stdout ?? ''),
+    record,
+    input: {
+      session_id: state.sessionId ?? 'codex-tailer-unknown-session',
+      transcript_path: transcriptPath,
+      cwd: state.cwd,
+      hook_event_name: 'PostToolUse',
+      client_name: CLIENT_CODEX,
+      tool_name: record.kind === 'command' ? 'Bash' : 'apply_patch',
+      tool_input: { command },
+      tool_use_id: item.id,
+      tool_response: outputText,
+    },
   };
 }
