@@ -904,6 +904,15 @@ export const ROLLOUT_LOOKUP = {
   OUTPUT_MAX_CHARS: 2000,
 } as const;
 
+export const ROLLOUT_TAILER = {
+  /** Poll cadence — the tailer is a fallback, not a latency path. */
+  INTERVAL_MS: 30_000,
+  /** Bytes read from a rollout head to parse the session_meta first line. */
+  META_READ_BYTES: 8192,
+  /** Seen-marker retention; markers exist only to dedup hook vs tailer. */
+  MARKER_TTL_MS: 24 * 60 * 60 * 1000,
+} as const;
+
 // --- Embedding model registry (roadmap W2) ----------------------------------
 
 export {

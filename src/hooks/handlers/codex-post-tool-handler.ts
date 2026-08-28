@@ -9,6 +9,7 @@
  * as a success). Mirrors Claude's mutually-exclusive
  * PostToolUse/PostToolUseFailure split.
  */
+import type Database from 'better-sqlite3';
 import type { PostToolUseInput, PostToolUseFailureInput } from '../shared/hook-io.js';
 import type { CachedHookContext } from '../shared/db-client.js';
 import { findRolloutToolRecord, type RolloutToolRecord } from '../shared/rollout-lookup.js';
@@ -63,6 +64,25 @@ export function demuxOutcome(
   return { failed: null, exitCode: null, errorText: '' };
 }
 
+/** Hook-vs-tailer dedup markers in maintenance_meta (value = ISO timestamp,
+ *  pruned by the tailer after MARKER_TTL_MS). */
+export function isToolSeen(db: Database.Database, toolUseId: string): boolean {
+  try {
+    return db.prepare(
+      'SELECT 1 FROM maintenance_meta WHERE key = ?',
+    ).get(`codex_seen:${toolUseId}`) !== undefined;
+  } catch { return false; }
+}
+
+function markToolSeen(db: Database.Database, toolUseId: string | undefined): void {
+  if (!toolUseId) return;
+  try {
+    db.prepare(
+      'INSERT OR REPLACE INTO maintenance_meta (key, value) VALUES (?, ?)',
+    ).run(`codex_seen:${toolUseId}`, new Date().toISOString());
+  } catch { /* best-effort */ }
+}
+
 export async function handleCodexPostTool(
   input: PostToolUseInput,
   client: CachedHookContext,
@@ -84,16 +104,21 @@ export async function handleCodexPostTool(
       exit_code: exitCode ?? undefined,
     };
     await handleErrorLearning(failure, client);
+    markToolSeen(client.db, input.tool_use_id);
     return { output: null, action: 'error-routed', exitCode };
   }
 
   if (failed === false) {
     await handleSuccessTracker(input, client);
+    markToolSeen(client.db, input.tool_use_id);
     return { output: null, action: 'success-routed', exitCode };
   }
 
   // Outcome unknown — keep the tool chain continuous without asserting an
-  // outcome (undefined success is falsy at every consumer).
+  // outcome (undefined success is falsy at every consumer). Deliberately
+  // NOT marked seen: the tailer may later find the rollout record the hook
+  // raced past and route it properly (a routed error beats a slightly
+  // duplicated unknown tool event).
   try {
     const tracker = client.cache?.getTracker(input.session_id) ?? loadTracker(input.session_id);
     tracker.toolChain.push({ tool: input.tool_name, timestamp: Date.now() });
