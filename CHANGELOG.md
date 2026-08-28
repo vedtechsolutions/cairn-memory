@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Fixed — reliability pass (cross-agent audit)
+
+- **Stable project identity.** Project ids now derive from the normalized `origin` git remote (stable across clones/machines/paths) instead of a filesystem-path hash, with a non-destructive lazy migration of existing memories and a bare-name resolver so `cairn` resolves to the full id. Fixes recall/plan misses and is the prerequisite for team sync.
+- **Cross-project recall leak.** A project-specific memory stored without an explicit project no longer silently lands in global scope — `cairn_learn` now defaults an omitted project to the current project (`user_profile`/`correction` stay global; explicit scope is respected). Active recall stays permissive but filters a global whose fingerprint belongs to a different project.
+- **Plan completion visibility.** Completing a plan with unfinished steps now reports the open-step count (e.g. `completed (warn: 2 of 3 steps were not done)`) instead of silently marking it done.
+- **Local-time display.** Human-facing timestamps (`cairn_stats`) can be shown in a local timezone via the `CAIRN_TZ` env var (an IANA zone like `America/Jamaica`); storage stays UTC for sync, and dates are unchanged when `CAIRN_TZ` is unset.
+
 ### Changed — repository renamed to `cairn`
 
 - **The GitHub repository was renamed from `cairen` to `cairn`** to match the project name. Added the `repository`, `homepage`, and `bugs` fields to `package.json` (pointing at the new URL) and corrected stale references to the old checkout path in comments.

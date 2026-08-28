@@ -5,6 +5,7 @@ import type { PlanRepository } from '../../db/plan-repository.js';
 import type { ReminderRepository } from '../../db/reminder-repository.js';
 import type Database from 'better-sqlite3';
 import { getEmbeddingModelConfig } from '../../utils/embeddings.js';
+import { formatTimestamp } from '../../utils/time.js';
 import { STATS_ACTIONS, HEALTH, CONSOLIDATION, type ContextMode } from '../../constants/index.js';
 import { isCritical } from './helpers.js';
 
@@ -68,7 +69,7 @@ export function registerStatsTools(
           `Never recalled: ${health.neverRecalled}`,
         ];
         if (health.oldestMemory) {
-          lines.push(`Oldest: "${health.oldestMemory.content.slice(0, 60)}" (${health.oldestMemory.created_at})`);
+          lines.push(`Oldest: "${health.oldestMemory.content.slice(0, 60)}" (${formatTimestamp(health.oldestMemory.created_at)})`);
         }
         if (health.mostRecalled) {
           lines.push(`Most recalled: "${health.mostRecalled.content.slice(0, 60)}" (${health.mostRecalled.recall_count}x)`);
@@ -128,7 +129,7 @@ export function registerStatsTools(
         const byProject = memoryRepo.getStatsByProject();
         const lines = byProject.map(p => {
           const proj = p.project ?? '(global)';
-          return `${proj}: ${p.count} memories, avg conf: ${p.avgConfidence.toFixed(2)}, last activity: ${p.lastActivity ?? 'never'}`;
+          return `${proj}: ${p.count} memories, avg conf: ${p.avgConfidence.toFixed(2)}, last activity: ${formatTimestamp(p.lastActivity)}`;
         });
         return { content: [{ type: 'text', text: lines.length > 0 ? lines.join('\n') : 'No memories found.' }] };
       }
