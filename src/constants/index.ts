@@ -223,6 +223,16 @@ export const ROLLUP_METRICS = {
   IMPACT_PROXY: 'impact_proxy',
 } as const;
 
+/** Importer tuning (internal). */
+export const IMPORT = {
+  /** Keyword tags carried per imported task group (retrieval, not noise). */
+  MAX_KEYWORD_TAGS: 3,
+  /** Sections shorter than this are headers/noise, not lessons. */
+  MIN_SECTION_CHARS: 20,
+  /** A heading with at least this many bullets splits per-bullet. */
+  MIN_BULLETS_FOR_SPLIT: 2,
+} as const;
+
 export const LIMITS = {
   MAX_TAGS: 5,
   MAX_CONTENT_CHARS: 2000,

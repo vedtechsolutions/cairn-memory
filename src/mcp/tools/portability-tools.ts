@@ -5,6 +5,7 @@ import type { SessionCache } from '../../hooks/shared/session-cache.js';
 import { LIMITS, PROMOTION, type ContextMode, type LearnableKind, type MemoryKind, LEARNABLE_KINDS } from '../../constants/index.js';
 import { isPrivateProject, canReadPrivate } from '../../config/cairn-config.js';
 import { PrivateScopeChangeError } from '../../db/memory-repository/portability.js';
+import { learnSections } from '../../importers/learn-pipeline.js';
 import { sessionProjectId } from '../../utils/session-project.js';
 import { isCritical } from './helpers.js';
 import { buildFileSection, buildRecordSection, parseExportDocument } from '../../memory-tool/round-trip.js';
@@ -154,15 +155,13 @@ export function registerPortabilityTools(
           writeErrors.push(`⚠ file ${file.path}: ${(err as Error).message}`);
         }
       }
-      for (const section of v1.sections) {
-        const result = repo.create({
-          content: neutralizeMemoryText(section.content),
-          kind: section.kind,
-          tags: section.tags.map(t => sanitize(t)),
-          project: project ?? null,
-        });
-        if (result.deduplicated) deduplicated++;
-        else ingested++;
+      // v1 sections ride the SAME shared pipeline the CLI importers use —
+      // one neutralize/sanitize/dedup path, no tool-vs-CLI drift.
+      {
+        const learned = learnSections(repo, v1.sections, project ?? null);
+        ingested += learned.ingested;
+        deduplicated += learned.deduplicated;
+        writeErrors.push(...learned.errors.map(e => `⚠ record ${e}`));
       }
 
       // Bulk ingest touched memory content — invalidate hot-path skip gates.

@@ -1,0 +1,180 @@
+/**
+ * Importer: Codex CLI native memories (~/.codex/memories/).
+ *
+ * MEMORY.md is a STRUCTURED curated handbook with a STRICT v1 format
+ * (spec extracted verbatim from the codex 0.150.x binary's consolidation
+ * prompt): a `v1` marker line, then `# Task Group:` blocks each carrying
+ * `scope:` and `applies_to:` header lines, `## Task <n>` sections
+ * (provenance: `### rollout_summary_files`, `### keywords`), and
+ * consolidated block-level sections `## User preferences`,
+ * `## Reusable knowledge`, `## Failures and how to do differently`.
+ *
+ * Mapping (each consolidated BULLET is already a distilled lesson —
+ * exactly Cairn's memory grain):
+ *   - Failures and how to do differently → pitfall
+ *   - User preferences                   → fact, tagged `preference`
+ *   - Reusable knowledge                 → fact
+ *   - kind upgrade: a Reusable-knowledge bullet phrased as a choice
+ *     ("chose/decided/prefer X over Y") → decision
+ * Task sections are provenance, not lessons — they become context, never
+ * rows. `applies_to: cwd=<path>` maps to Cairn's project scope via
+ * projectId(path) (deterministic; a missing dir hashes the path). Task
+ * Group name + scope travel in context.why; task-local keywords become
+ * tags (capped).
+ *
+ * EXCLUDED by design [X5]: memory_summary.md (duplicate summary),
+ * raw_memories.md (temp input), rollout_summaries/ (evidence, referenced
+ * not imported), skills/ + extensions/ (executable guidance), *.sqlite
+ * (undocumented internals). Ad-hoc topic files import only with
+ * includeNotes (freeform, via the memory-md transformer's section rules).
+ */
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { projectId } from '../utils/project-id.js';
+import { IMPORT } from '../constants/index.js';
+import type { LearnSection } from './learn-pipeline.js';
+import { sectionsFromFreeformMarkdown } from './memory-md.js';
+
+export interface CodexMemoriesImport {
+  sections: LearnSection[];
+  /** Files deliberately not imported, with reasons — reported, never silent. */
+  excluded: Array<{ name: string; reason: string }>;
+  notes: string[];
+}
+
+const EXCLUDED_NAMES: ReadonlyArray<{ match: (n: string) => boolean; reason: string }> = [
+  { match: (n) => n === 'memory_summary.md', reason: 'duplicate summary of MEMORY.md' },
+  { match: (n) => n === 'raw_memories.md', reason: 'temporary consolidation input' },
+  { match: (n) => n === 'rollout_summaries', reason: 'per-session evidence (referenced, not imported)' },
+  { match: (n) => n === 'skills', reason: 'executable guidance (import would run-by-reference)' },
+  { match: (n) => n === 'extensions', reason: 'executable guidance' },
+  { match: (n) => n.endsWith('.sqlite'), reason: 'undocumented internal database' },
+];
+
+interface TaskGroup {
+  name: string;
+  scope: string;
+  appliesTo: string;
+  cwd: string | null;
+  keywords: string[];
+  preferences: string[];
+  knowledge: string[];
+  failures: string[];
+}
+
+/** True when a Reusable-knowledge bullet records a CHOICE, not a fact. */
+function looksLikeDecision(bullet: string): boolean {
+  return /\b(chose|decided|prefer(red)?|opted|picked|instead of|over)\b/i.test(bullet);
+}
+
+function parseTaskGroups(markdown: string): TaskGroup[] {
+  const groups: TaskGroup[] = [];
+  // Split on top-level Task Group headers (the v1 marker line and any
+  // preamble fall away with the first split segment).
+  const blocks = markdown.split(/^# Task Group:\s*/m).slice(1);
+  for (const block of blocks) {
+    const lines = block.split('\n');
+    const name = (lines[0] ?? '').trim();
+    if (!name) continue;
+    const scope = lines.find((l) => l.startsWith('scope:'))?.slice(6).trim() ?? '';
+    const appliesTo = lines.find((l) => l.startsWith('applies_to:'))?.slice(11).trim() ?? '';
+    const cwd = /cwd=([^;\s]+)/.exec(appliesTo)?.[1] ?? null;
+
+    const keywords: string[] = [];
+    for (const m of block.matchAll(/^### keywords\n-\s*(.+)$/gm)) {
+      keywords.push(...m[1].split(',').map((k) => k.trim()).filter(Boolean));
+    }
+
+    const sectionBullets = (heading: string): string[] => {
+      const re = new RegExp(`^## ${heading}\\n([\\s\\S]*?)(?=^## |^# |$(?![\\s\\S]))`, 'm');
+      const body = re.exec(block)?.[1] ?? '';
+      return [...body.matchAll(/^-\s+(.+(?:\n {2,}.+)*)/gm)]
+        .map((m) => m[1].replace(/\n\s+/g, ' ').trim())
+        .filter((b) => b.length > 0);
+    };
+
+    groups.push({
+      name,
+      scope,
+      appliesTo,
+      cwd,
+      keywords,
+      preferences: sectionBullets('User preferences'),
+      knowledge: sectionBullets('Reusable knowledge'),
+      failures: sectionBullets('Failures and how to do differently'),
+    });
+  }
+  return groups;
+}
+
+/** Strip the `[Task 1]` provenance refs the strict format appends. */
+function stripTaskRefs(bullet: string): string {
+  return bullet.replace(/\s*(\[Task \d+\])+\s*$/g, '').trim();
+}
+
+function groupSections(group: TaskGroup): LearnSection[] {
+  const project = group.cwd ? projectId(group.cwd) : null;
+  const groupSlug = group.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
+  const baseTags = ['import:codex-memories', ...(groupSlug ? [`group:${groupSlug}`] : []),
+    ...group.keywords.slice(0, IMPORT.MAX_KEYWORD_TAGS)];
+  const why = `Codex task group "${group.name}"${group.scope ? ` — ${group.scope}` : ''}`.slice(0, 200);
+  const context = { why };
+
+  const out: LearnSection[] = [];
+  for (const bullet of group.failures) {
+    out.push({ kind: 'pitfall', content: stripTaskRefs(bullet), tags: baseTags, project, context });
+  }
+  for (const bullet of group.preferences) {
+    out.push({ kind: 'fact', content: stripTaskRefs(bullet), tags: [...baseTags, 'preference'], project, context });
+  }
+  for (const bullet of group.knowledge) {
+    const content = stripTaskRefs(bullet);
+    out.push({ kind: looksLikeDecision(content) ? 'decision' : 'fact', content, tags: baseTags, project, context });
+  }
+  return out;
+}
+
+export function transformCodexMemories(dir: string, opts: { includeNotes?: boolean } = {}): CodexMemoriesImport {
+  const excluded: Array<{ name: string; reason: string }> = [];
+  const notes: string[] = [];
+  const sections: LearnSection[] = [];
+
+  if (!existsSync(dir)) {
+    throw new Error(`codex memories directory not found: ${dir}`);
+  }
+
+  const entries = readdirSync(dir);
+  const adHoc: string[] = [];
+  for (const name of entries) {
+    const rule = EXCLUDED_NAMES.find((r) => r.match(name));
+    if (rule) {
+      excluded.push({ name, reason: rule.reason });
+      continue;
+    }
+    if (name !== 'MEMORY.md' && name.endsWith('.md')) adHoc.push(name);
+  }
+
+  const memoryPath = join(dir, 'MEMORY.md');
+  if (existsSync(memoryPath)) {
+    const groups = parseTaskGroups(readFileSync(memoryPath, 'utf-8'));
+    for (const group of groups) sections.push(...groupSections(group));
+    notes.push(`MEMORY.md: ${groups.length} task group(s)`);
+  } else {
+    notes.push('MEMORY.md not present — nothing structured to import');
+  }
+
+  if (adHoc.length > 0) {
+    if (opts.includeNotes) {
+      for (const name of adHoc) {
+        const fileSections = sectionsFromFreeformMarkdown(
+          readFileSync(join(dir, name), 'utf-8'), ['import:codex-memories', 'ad-hoc']);
+        sections.push(...fileSections);
+        notes.push(`${name}: ${fileSections.length} note section(s)`);
+      }
+    } else {
+      for (const name of adHoc) excluded.push({ name, reason: 'ad-hoc note (use --include-notes to import)' });
+    }
+  }
+
+  return { sections, excluded, notes };
+}

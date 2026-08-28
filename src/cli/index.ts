@@ -11,6 +11,7 @@ function printHelp(): void {
 Usage:
   cairn [serve]     Start the MCP server over stdio (default)
   cairn report      Tokens-saved report (--days=N, default 30)
+  cairn import      Migrate memories in (--from codex-memories|memory-md|claude-mem)
   cairn init        Write Cairn's client config (--dry-run to preview,
                     --migrate-routes to modernize deprecated hook routes)
   cairn build-relay Compile the fast C hook relay (optional; needs a C compiler)
@@ -41,6 +42,31 @@ switch (command) {
       process.exit(await runReport(days));
     } catch (err) {
       console.error(`cairn report: failed — ${(err as Error).message}`);
+      process.exit(1);
+    }
+    break;
+  }
+  case 'import': {
+    try {
+      const { runImport } = await import('./import.js');
+      const arg = (name: string): string | undefined => {
+        const found = process.argv.find((a) => a.startsWith(`--${name}=`));
+        return found?.slice(name.length + 3);
+      };
+      const from = arg('from') ?? process.argv[3];
+      if (!from || from.startsWith('--')) {
+        console.error('usage: cairn import --from codex-memories|memory-md|claude-mem [--path P] [--project ID] [--dry-run] [--include-notes]');
+        process.exit(1);
+      }
+      process.exit(runImport({
+        from,
+        path: arg('path'),
+        project: arg('project') ?? null,
+        dryRun: process.argv.includes('--dry-run'),
+        includeNotes: process.argv.includes('--include-notes'),
+      }));
+    } catch (err) {
+      console.error(`cairn import: failed — ${(err as Error).message}`);
       process.exit(1);
     }
     break;

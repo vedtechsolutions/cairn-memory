@@ -514,6 +514,19 @@ Test-environment overrides (all set automatically by `tests/hermetic-env.cjs`):
 - Embeddings: 384-dim via `@huggingface/transformers` (all-MiniLM-L6-v2, q8) — selected from the model registry (`src/constants/embedding-models.ts`) via `CAIRN_EMBEDDING_MODEL` (default `minilm-l6`; challengers `nomic-v1.5` / `nomic-v1.5-256` / `embeddinggemma-300m`). Schema v26 tags every stored vector with its model: vector reads filter on the active model, and after a model switch the backfill worker re-embeds mismatched rows while FTS+RRF carry retrieval
 - Reranking (opt-in): `CAIRN_RERANK=1` enables a cross-encoder stage on `cairn_recall` (RRF top-20 → rerank → top-k; MCP server only); model via `CAIRN_RERANK_MODEL` (default `jina-turbo-v1`, registry in `src/constants/reranker-models.ts`)
 
+## Migrating From Other Memory Systems
+
+`cairn import` brings existing memories in — one-way, idempotent (re-running deduplicates), always through the same scrubbing and neutralization pipeline as every other write:
+
+```bash
+cairn import --from codex-memories                 # ~/.codex/memories (structured MEMORY.md handbook)
+cairn import --from claude-mem                     # ~/.claude-mem/claude-mem.db (v13 schema; older formats best-effort)
+cairn import --from memory-md --path ./MEMORY.md   # any freeform MEMORY.md + sibling topic files
+cairn import --from codex-memories --dry-run       # preview without writing
+```
+
+Codex imports preserve task-group structure: `applies_to` working directories map to Cairn project scopes, keywords become tags, and "Failures / User preferences / Reusable knowledge" bullets become pitfalls, preference facts, and facts/decisions. Files that shouldn't import (summaries, raw inputs, rollout evidence, skills, internal databases) are excluded **and listed** in the output; ad-hoc notes import with `--include-notes`. claude-mem imports read a snapshot copy, so a live claude-mem worker is safe. Everything lands tagged `import:<source>`.
+
 ## Tokens-Saved Report
 
 `cairn report` (or `cairn report --days=90`) shows what the memory system is worth in tokens — honestly. Gross savings has two labeled components: **compact-saved** (your agent's own reported compaction savings — measured) and **impact-proxy** (verified pitfall saves × a fixed estimate — clearly marked as an estimate). Injected briefings and warnings are counted as a **cost** column, and net = gross − cost, even when that's negative. Aggregates persist for a year (schema v30), independent of the 7-day hook-telemetry prune. Recording is on by default; disable with `{"report":{"rollup":false}}` in `~/.cairn/config.json` or `CAIRN_ROLLUP=0`.

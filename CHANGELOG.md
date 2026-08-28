@@ -4,6 +4,8 @@
 
 ### Added
 
+- Added `cairn import --from codex-memories|claude-mem|memory-md`: one-way, idempotent migration of existing memories through the standard scrubbing/dedup pipeline, with dry-run preview and a reported exclusion list.
+
 - Added `cairn report` — an honest tokens-saved report: gross (client-reported compaction savings + a clearly-labeled estimated impact proxy), injection cost per surface, and net; `--days=N` selects the window.
 - Added durable telemetry rollup (schema v30): per-session token aggregates persist past the 7-day telemetry prune (own 1-year retention); disable recording with `{"report":{"rollup":false}}` in the config file or `CAIRN_ROLLUP=0`.
 
