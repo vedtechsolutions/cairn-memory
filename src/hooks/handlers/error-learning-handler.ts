@@ -16,7 +16,7 @@
  */
 import type { PostToolUseFailureInput } from '../shared/hook-io.js';
 import type { CachedHookContext } from '../shared/db-client.js';
-import { originClientOf } from '../shared/client-adapter.js';
+import { isCodexClient, originClientOf } from '../shared/client-adapter.js';
 import { classifyError } from '../../utils/error-classifier.js';
 import { loadTracker, updateTracker, type EditTracker } from '../shared/edit-tracker.js';
 import { projectId } from '../../utils/project-id.js';
@@ -35,7 +35,7 @@ import { getGitHash } from '../../utils/project-scanner.js';
 import { basename } from 'node:path';
 import { extractAnchor, anchorToJson } from '../../utils/anchor.js';
 import { EdgeRepository } from '../../db/edge-repository.js';
-import { regexDistillError } from '../../utils/distillation.js';
+import { regexDistillError, regexDistillErrorStrict } from '../../utils/distillation.js';
 import { now } from '../../utils/index.js';
 import { recordGovernanceEventFailOpen } from '../../governance/recorder.js';
 import type { RecorderDiagnostic } from '../../governance/types.js';
@@ -236,7 +236,17 @@ function handleErrorLearningBusiness(input: PostToolUseFailureInput, client: Cac
 
   // --- Normal error learning ---
   const project = projectId(input.cwd);
-  const lesson = regexDistillError(input.tool_name, errorText);
+  // Codex-origin failures carry the command's ENTIRE merged output, so the
+  // first-line distillation fallback would store banners/log lines as
+  // lessons (surfaced cross-agent by pitfall-check). Strict mode stores
+  // nothing when no distillation pattern matched — counting, escalation,
+  // and investigation chains above have already happened.
+  const lesson = isCodexClient(input)
+    ? regexDistillErrorStrict(input.tool_name, errorText)
+    : regexDistillError(input.tool_name, errorText);
+  if (lesson === null) {
+    return { output: null, action: 'skip', sessionCount, surfacedProcessed };
+  }
 
   let projectContext = null;
   try {

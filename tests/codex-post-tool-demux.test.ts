@@ -173,6 +173,31 @@ describe('error synthesis (classifier-facing contract)', () => {
     assert.equal(oldA, oldB, 'the old preamble format collapses keys (the bug)');
   });
 
+  it('codex-origin: learnable-but-undistillable output stores NO junk pitfall (strict mode)', async () => {
+    // A learnable signature deep in the body (ECONNREFUSED) makes the
+    // failure classify as learnable, but no DISTILLATION_PATTERN matches —
+    // the first-line fallback would store the banner as a lesson. Strict
+    // mode (codex only) stores nothing instead.
+    const client: HookDbClient = createHookDbClient(':memory:');
+    try {
+      const p = join(dir, 'undistillable.jsonl');
+      writeFileSync(p, rolloutLine({
+        id: 'exec-banner-fail', type: 'CommandExecution', status: 'failed', exit_code: 1,
+        aggregated_output: `▶ BANNER-${RUN} integration suite — postgres backend\nsetting up fixtures\nconnect ECONNREFUSED 127.0.0.1:5432\n`,
+      }));
+      const result = await handleCodexPostTool({
+        session_id: 'banner-s1', transcript_path: p, cwd: '/opt/cairn',
+        hook_event_name: 'PostToolUse', client_name: 'codex', tool_name: 'Bash',
+        tool_input: { command: 'npm run integration' }, tool_use_id: 'exec-banner-fail', tool_response: '',
+      }, { ...client, cache: undefined });
+      assert.equal(result.action, 'error-routed');
+      const junk = (client.db.prepare("SELECT COUNT(*) n FROM memories WHERE content LIKE '%BANNER-' || ? || '%'").get(RUN) as { n: number }).n;
+      assert.equal(junk, 0, 'no banner stored as a lesson for codex');
+    } finally {
+      client.close();
+    }
+  });
+
   it('a failure with no learnable error pattern routes but stores NO pitfall', async () => {
     // Regression for the "(exit code N)" trailer bug: the lowercase trailer
     // matched a learnable pattern and turned every failure into a junk
