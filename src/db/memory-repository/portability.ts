@@ -4,7 +4,10 @@
  * never task_state). Restore is a strict upsert-by-FULL-id: no merge, no
  * confidence boost, no conflict detection, id-preserving. Out of scope
  * by contract: revision (restarts at 1 via column default), telemetry
- * (zeroed), embeddings (re-derived by the backfill worker), graph edges.
+ * (zeroed), embeddings (re-derived by the backfill worker), graph edges,
+ * and origin_client (v29 — restored rows default to 'claude'; existing
+ * rows keep their value via ON CONFLICT. Joins the portable set when the
+ * round-trip format next revs, alongside Phase-2 sync provenance).
  *
  * Secret scanning boundary: restore is byte-exact by design and does NOT
  * re-run the secret scanner — it reconstructs an already-scanned export

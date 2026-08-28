@@ -16,6 +16,8 @@
  */
 import type { PostToolUseFailureInput } from '../shared/hook-io.js';
 import type { CachedHookContext } from '../shared/db-client.js';
+import { isCodexClient, originClientOf } from '../shared/client-adapter.js';
+import { extractPatchFilePaths, patchTextOf } from '../shared/patch-paths.js';
 import { classifyError } from '../../utils/error-classifier.js';
 import { loadTracker, updateTracker, type EditTracker } from '../shared/edit-tracker.js';
 import { projectId } from '../../utils/project-id.js';
@@ -26,6 +28,7 @@ import {
   ESCALATION_ALTERNATIVES,
   ESCALATION_FALLBACK,
   ESCALATION_TOOL_ALTERNATIVES,
+  LIMITS,
   PROACTIVE,
 } from '../../constants/index.js';
 import { generateFingerprint } from '../../utils/fingerprint.js';
@@ -33,7 +36,7 @@ import { getGitHash } from '../../utils/project-scanner.js';
 import { basename } from 'node:path';
 import { extractAnchor, anchorToJson } from '../../utils/anchor.js';
 import { EdgeRepository } from '../../db/edge-repository.js';
-import { regexDistillError } from '../../utils/distillation.js';
+import { regexDistillError, regexDistillErrorStrict } from '../../utils/distillation.js';
 import { now } from '../../utils/index.js';
 import { recordGovernanceEventFailOpen } from '../../governance/recorder.js';
 import type { RecorderDiagnostic } from '../../governance/types.js';
@@ -57,6 +60,10 @@ export async function handleErrorLearning(
   client: CachedHookContext,
 ): Promise<ErrorLearningResult> {
   const result = handleErrorLearningBusiness(input, client);
+  // Governance recording is deliberately Claude-scoped (apply_patch
+  // excluded): the governance adapter validates Claude tool shapes, and
+  // Codex mutations stay outside its evidence trail — a documented
+  // capability delta, not an oversight.
   if (!['Write', 'Edit', 'MultiEdit', 'Bash'].includes(input.tool_name)) return result;
   return { ...result, recorder: await recordGovernanceEventFailOpen(client.db, input) };
 }
@@ -103,8 +110,8 @@ function handleErrorLearningBusiness(input: PostToolUseFailureInput, client: Cac
         };
         tracker.toolChain.push(failEvent);
       }
-      if (tracker.toolChain.length > 20) {
-        tracker.toolChain = tracker.toolChain.slice(-20);
+      if (tracker.toolChain.length > LIMITS.TOOL_CHAIN_MAX) {
+        tracker.toolChain = tracker.toolChain.slice(-LIMITS.TOOL_CHAIN_MAX);
       }
     };
 
@@ -234,7 +241,17 @@ function handleErrorLearningBusiness(input: PostToolUseFailureInput, client: Cac
 
   // --- Normal error learning ---
   const project = projectId(input.cwd);
-  const lesson = regexDistillError(input.tool_name, errorText);
+  // Codex-origin failures carry the command's ENTIRE merged output, so the
+  // first-line distillation fallback would store banners/log lines as
+  // lessons (surfaced cross-agent by pitfall-check). Strict mode stores
+  // nothing when no distillation pattern matched — counting, escalation,
+  // and investigation chains above have already happened.
+  const lesson = isCodexClient(input)
+    ? regexDistillErrorStrict(input.tool_name, errorText)
+    : regexDistillError(input.tool_name, errorText);
+  if (lesson === null) {
+    return { output: null, action: 'skip', sessionCount, surfacedProcessed };
+  }
 
   let projectContext = null;
   try {
@@ -257,7 +274,13 @@ function handleErrorLearningBusiness(input: PostToolUseFailureInput, client: Cac
   const fp = generateFingerprint({
     projectContext,
     filePath: extractFilePaths(input)[0],
-    command: input.tool_input.command as string | undefined,
+    // apply_patch's command is a patch BLOB — its envelope words and diff
+    // body would be baked into the STORED pitfall's fingerprint forever
+    // (measured: a TS pitfall picked up "go" and "javascript" language
+    // signals from a comment and an import in the diff).
+    command: input.tool_name === 'apply_patch'
+      ? undefined
+      : input.tool_input.command as string | undefined,
     tags: classification.tags,
   });
 
@@ -270,6 +293,7 @@ function handleErrorLearningBusiness(input: PostToolUseFailureInput, client: Cac
     tags: classification.tags,
     project,
     confidence: CONFIDENCE.AUTO_DETECTED,
+    originClient: originClientOf(input),
     fingerprint: fp,
     anchor: anchorStr,
   });
@@ -348,6 +372,9 @@ function buildWarningMessage(errorText: string, filePath?: string): string {
 }
 
 function extractFilePaths(input: PostToolUseFailureInput): string[] {
+  const patchText = patchTextOf(input);
+  if (patchText !== null) return extractPatchFilePaths(patchText, input.cwd);
+
   const paths: string[] = [];
   const fp = input.tool_input.file_path as string | undefined;
   if (fp) paths.push(fp);

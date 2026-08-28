@@ -31,6 +31,7 @@ import {
 } from './schema.js';
 import { DB } from '../constants/index.js';
 import { migrateToV28 } from './migrations/v28-governance.js';
+import { migrateToV29 } from './migrations/v29-origin-client.js';
 
 const LAST_LEGACY_SCHEMA_VERSION = 27;
 
@@ -140,6 +141,9 @@ function ensureSchema(db: Database.Database): void {
   }
   if (currentVersion < 28 && SCHEMA_VERSION >= 28) {
     migrateToV28(db);
+  }
+  if (currentVersion < 29 && SCHEMA_VERSION >= 29) {
+    migrateToV29(db);
   }
 
   ensureFtsIntegrity(db);

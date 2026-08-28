@@ -27,6 +27,7 @@
  */
 import type { StopInput } from '../shared/hook-io.js';
 import type { CachedHookContext } from '../shared/db-client.js';
+import { isCodexClient, originClientOf } from '../shared/client-adapter.js';
 import { projectId } from '../../utils/project-id.js';
 import { extractAssistantDecision, extractDecisionSigils } from '../shared/transcript-parser.js';
 import {
@@ -101,6 +102,7 @@ export async function handleStop(
         project,
         source: 'learned',
         confidence: CONFIDENCE.LEARNED,
+        originClient: originClientOf(input),
       });
       if (result.deduplicated) deduped++;
     }
@@ -123,6 +125,7 @@ export async function handleStop(
       project,
       source: 'learned',
       confidence: CONFIDENCE.AUTO_DETECTED,
+      originClient: originClientOf(input),
     });
     return {
       action: result.deduplicated ? 'decision-deduped' : 'decision-mined',
@@ -153,6 +156,7 @@ export async function handleStop(
         project,
         source: 'learned',
         confidence: CONFIDENCE.AUTO_DETECTED,
+        originClient: originClientOf(input),
       });
       stored++;
     }
@@ -166,14 +170,19 @@ export async function handleStop(
   // next UserPromptSubmit surfaces a one-line reminder to emit sigils
   // next time. Session-scoped: the prompt handler clears the flag after
   // firing. No-op if the tracker file is unavailable.
-  try {
-    const tracker = loadTracker(input.session_id);
-    tracker.pendingDecisionNudge = Math.max(tracker.pendingDecisionNudge, markerCount);
-    saveTracker(tracker, input.session_id);
-  } catch { /* best-effort — tracker write failures are non-fatal */ }
+  // Codex sessions: reflection can never run (no MCP sampling), so the
+  // nudge would fire on every decision-bearing turn — suppress at set time.
+  if (!isCodexClient(input)) {
+    try {
+      const tracker = loadTracker(input.session_id);
+      tracker.pendingDecisionNudge = Math.max(tracker.pendingDecisionNudge, markerCount);
+      saveTracker(tracker, input.session_id);
+    } catch { /* best-effort — tracker write failures are non-fatal */ }
+  }
 
   return {
     action: 'reflection-empty',
-    pendingNudge: markerCount,
+    // Suppressed for codex (no nudge was armed) — report what actually fired.
+    pendingNudge: isCodexClient(input) ? 0 : markerCount,
   };
 }

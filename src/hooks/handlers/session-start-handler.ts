@@ -9,12 +9,13 @@
  */
 import type { SessionStartInput } from '../shared/hook-io.js';
 import type { CachedHookContext } from '../shared/db-client.js';
+import { isCodexClient, wrapContextOutput } from '../shared/client-adapter.js';
 import { compileBriefing, recoverDroppedPitfalls, buildBriefingQueryFp, type BriefingContext } from '../shared/briefing-compiler.js';
 import { projectId } from '../../utils/project-id.js';
 import { migrateProjectIdentity } from '../../db/project-identity-migration.js';
 import { generateId, now } from '../../utils/index.js';
 import { runMaintenance, runStalenessDetection, updateAnchorsForRenames } from '../../db/maintenance.js';
-import { LIMITS, BRIEFING_BUDGET } from '../../constants/index.js';
+import { LIMITS, BRIEFING_BUDGET, CROSS_AGENT_CONTEXT_FRAMING } from '../../constants/index.js';
 import { readState } from '../shared/state-io.js';
 import { truncateToTokenBudget, estimateTokensFast } from '../../utils/tokens.js';
 import { getGitHash, scanProject, getProjectModuleTerms, getDeletedFiles, getGitRenames, getGitWorkingState } from '../../utils/project-scanner.js';
@@ -458,11 +459,22 @@ export function handleSessionStart(
     }
   } catch { /* best-effort */ }
 
+  // Non-Claude clients get an explicit framing line: a live Codex session
+  // once read the briefing's plan state and appointed itself the
+  // implementer — shared memory must inform, never task. The framing
+  // spends part of the budget so the emitted total stays inside it.
+  const framing = isCodexClient(input) ? CROSS_AGENT_CONTEXT_FRAMING : null;
+  const effectiveBudget = framing
+    ? Math.max(0, budget - estimateTokensFast(framing))
+    : budget;
   // Final safety net: hard truncation (rarely triggers after tier reduction)
-  const output = truncateToTokenBudget(outputText, budget);
+  const truncated = truncateToTokenBudget(outputText, effectiveBudget);
+  const output = framing ? `${framing}\n${truncated}` : truncated;
 
   return {
-    output,
+    // Codex only injects the JSON hookSpecificOutput contract; Claude
+    // injects plain SessionStart stdout directly.
+    output: wrapContextOutput(input, 'SessionStart', output),
     sessionType,
     interrupted,
     // Estimate the EMITTED text — Stage-2 recovered pitfalls and appended

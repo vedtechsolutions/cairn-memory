@@ -8,12 +8,13 @@
  */
 import type { PreToolUseInput } from '../shared/hook-io.js';
 import type { CachedHookContext } from '../shared/db-client.js';
+import { isCodexClient } from '../shared/client-adapter.js';
 import { readState } from '../shared/state-io.js';
 import { projectId } from '../../utils/project-id.js';
 import { basename, extname } from 'node:path';
 import { loadTracker, saveTracker } from '../shared/edit-tracker.js';
 import { passesCrossProjectGuard, deriveProjectIdentityTokens } from '../../utils/cross-project-guard.js';
-import { PROACTIVE, RELEVANCE } from '../../constants/index.js';
+import { PROACTIVE, RELEVANCE, isEditToolName } from '../../constants/index.js';
 import { SessionCache } from '../shared/session-cache.js';
 import { isReadOnlyCommand } from './pitfall/readonly-command.js';
 import { extractFilePaths } from './pitfall/input-extract.js';
@@ -76,10 +77,16 @@ export function handlePitfallCheck(input: PreToolUseInput, client: CachedHookCon
   // Explicit annotation: without noUncheckedIndexedAccess, filePaths[0] is
   // inferred as plain `string` even though Bash calls have no file path.
   const filePath: string | undefined = filePaths[0] ?? undefined;
-  const command = input.tool_input.command as string | undefined;
+  // For apply_patch, tool_input.command is a patch BLOB, not a shell
+  // command — feeding it here would fill the FTS query with envelope
+  // boilerplate ("begin", "patch", "update", "file"). Content-aware
+  // matching for patches comes from extractCodeContent instead.
+  const command = input.tool_name === 'apply_patch'
+    ? undefined
+    : input.tool_input.command as string | undefined;
   const ext = filePath ? extname(filePath).slice(1) : null;
   const fileLabel = filePath ? basename(filePath) : (ext ?? 'this operation');
-  const isEditTool = ['Write', 'Edit', 'MultiEdit'].includes(input.tool_name);
+  const isEditTool = isEditToolName(input.tool_name);
 
   // --- Load tracker: in-memory (cache) or file I/O (standalone) ---
   const tracker = client.cache?.getTracker(input.session_id) ?? loadTracker(input.session_id);
@@ -170,10 +177,14 @@ export function handlePitfallCheck(input: PreToolUseInput, client: CachedHookCon
   if (capped.length > 0) {
     const formatted = capped.map(w => `  - ${w}`).join('\n');
     const context = `[CAIRN] Pitfalls for ${fileLabel}:\n${formatted}`;
+    // Codex 0.150.1 rejects permissionDecision:"allow" from PreToolUse hooks
+    // (observed live: "unsupported permissionDecision:allow" hook failure) —
+    // warnings are advisory, so emit context alone for codex; Claude keeps
+    // the explicit allow it has always sent.
     outputStr = JSON.stringify({
       hookSpecificOutput: {
         hookEventName: 'PreToolUse',
-        permissionDecision: 'allow',
+        ...(isCodexClient(input) ? {} : { permissionDecision: 'allow' }),
         additionalContext: context,
       },
     });

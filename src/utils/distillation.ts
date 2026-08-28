@@ -74,7 +74,21 @@ export function regexDistillError(toolName: string, rawError: string): string {
   return neutralizeMemoryText(regexDistillErrorRaw(toolName, rawError));
 }
 
-function regexDistillErrorRaw(toolName: string, rawError: string): string {
+/**
+ * Strict variant: null when no DISTILLATION_PATTERN matched. For
+ * codex-origin failures the raw text is a command's ENTIRE merged output,
+ * so learnability may be decided by a signature on line 40 while the
+ * first-line fallback would write the lesson from line 1 — storing banners,
+ * log lines, and source fragments as pitfalls (measured: 12 of 25 stored
+ * rows on the real corpus). No lesson beats a junk lesson that
+ * pitfall-check then surfaces cross-agent.
+ */
+export function regexDistillErrorStrict(toolName: string, rawError: string): string | null {
+  const matched = matchDistillation(toolName, rawError);
+  return matched === null ? null : neutralizeMemoryText(matched);
+}
+
+function matchDistillation(toolName: string, rawError: string): string | null {
   // Try each pattern in priority order
   for (const { pattern, distill } of DISTILLATION_PATTERNS) {
     const match = rawError.match(pattern);
@@ -82,6 +96,12 @@ function regexDistillErrorRaw(toolName: string, rawError: string): string {
       return distill(match, toolName);
     }
   }
+  return null;
+}
+
+function regexDistillErrorRaw(toolName: string, rawError: string): string {
+  const matched = matchDistillation(toolName, rawError);
+  if (matched !== null) return matched;
 
   // Fallback: take first meaningful line and format as lesson
   const firstLine = rawError.split('\n').find(l => l.trim().length > 10)?.trim();

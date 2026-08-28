@@ -47,8 +47,13 @@ export function binaryUsable(hookDir: string): boolean {
   // A wrong-arch/OS file that is +x makes execvp fall back to /bin/sh (exit
   // 127, no spawn error), so the exit code alone can't tell us the relay ran.
   // Require the relay's own sentinel: only the real, runnable binary emits it.
+  // The sentinel + clean exit is DEFINITIVE — do not also require
+  // probe.error === undefined: some sandboxes (observed live: Codex's)
+  // report a spawn-layer EPERM even though the child ran and exited 0,
+  // and rejecting there would flip a working install to the shell relay,
+  // changing every hook command string and invalidating Codex hook trust.
   const probe = spawnSync(bin, [PROBE_ARG], { timeout: PROBE_TIMEOUT_MS, encoding: 'utf8' });
-  return probe.error === undefined && probe.status === 0 && (probe.stdout ?? '').includes(PROBE_SENTINEL);
+  return probe.status === 0 && (probe.stdout ?? '').includes(PROBE_SENTINEL);
 }
 
 /** The relay invocation to use for hook commands on this install. */

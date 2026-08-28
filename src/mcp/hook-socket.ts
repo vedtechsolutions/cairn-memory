@@ -11,13 +11,16 @@ import { writeFileSync, chmodSync } from 'node:fs';
 import type { Server as McpInnerServer } from '@modelcontextprotocol/sdk/server/index.js';
 import { acquireSocketClaim, releaseSocketClaim, ensureCairnDirSecure, isOwnerOnly, socketPath, pidPath } from './socket-ownership.js';
 import { FS_PERMS } from '../constants/index.js';
+import { CLIENT_HEADER } from '../constants/clients.js';
 import type { HookDbClient, CachedHookContext } from '../hooks/shared/db-client.js';
+import { normalizeHookInput } from '../hooks/shared/client-adapter.js';
 import { SessionCache } from '../hooks/shared/session-cache.js';
 import { saveTracker } from '../hooks/shared/edit-tracker.js';
 import { handlePitfallCheck } from '../hooks/handlers/pitfall-handler.js';
 import { handlePromptCheck } from '../hooks/handlers/prompt-handler.js';
 import { handleSuccessTracker } from '../hooks/handlers/success-tracker-handler.js';
 import { handleErrorLearning } from '../hooks/handlers/error-learning-handler.js';
+import { handleCodexPostTool } from '../hooks/handlers/codex-post-tool-handler.js';
 import { handleStop } from '../hooks/handlers/stop-handler.js';
 import { handleStopFailure } from '../hooks/handlers/stop-failure-handler.js';
 import { handleFileChanged } from '../hooks/handlers/file-changed-handler.js';
@@ -222,6 +225,18 @@ const routes: Record<string, {
     extractEventType: (input: { trigger?: string }) => input.trigger ?? 'auto',
     extractMeta: (_input, result) => ({ daemon: true, tokensSaved: result.tokensSaved }),
   },
+  // Codex PostToolUse demux: rollout-lookup ground truth routes each event
+  // to error-learning or success-tracker (Codex payloads carry no failure
+  // signal of their own).
+  '/codex-post-tool': {
+    handler: async (input, c) => {
+      const r = await handleCodexPostTool(input, c);
+      return { output: r.output, action: r.action, exitCode: r.exitCode };
+    },
+    telemetryName: 'codex-post-tool',
+    extractEventType: (input: { tool_name?: string }) => input.tool_name ?? 'unknown',
+    extractMeta: (_input, result) => ({ daemon: true, action: result.action, exitCode: result.exitCode }),
+  },
   '/session-start': {
     handler: (input, c) => {
       const r = handleSessionStart(input, c);
@@ -349,6 +364,16 @@ export async function startHookSocket(
       res.writeHead(400);
       res.end('Invalid JSON');
       return;
+    }
+
+    // Daemon transport path: client identity arrives as a relay-set header
+    // (the direct-node fallback path normalizes in readStdinJson instead).
+    if (input && typeof input === 'object' && !Array.isArray(input)) {
+      const headerClient = req.headers[CLIENT_HEADER];
+      normalizeHookInput(
+        input as Record<string, unknown>,
+        typeof headerClient === 'string' ? headerClient : undefined,
+      );
     }
 
     const route = routes[req.url ?? ''];

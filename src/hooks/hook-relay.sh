@@ -1,9 +1,20 @@
 #!/usr/bin/env bash
 # Cairn Hook Relay — thin client for the hook socket (embedded in MCP server).
 # Fire-and-forget for async hooks; waits for response on sync hooks.
-# Usage: bash /opt/cairn/dist/src/hooks/hook-relay.sh <hook-type>
+# Usage: bash /opt/cairn/dist/src/hooks/hook-relay.sh [--client <name>] <hook-type>
 
 SOCK="$HOME/.cairn/hook-daemon.sock"
+
+# Optional declared client identity (codex, …). Forwarded as a header on the
+# socket path and as CAIRN_CLIENT env on direct-node paths; claude when absent.
+CLIENT=""
+if [ "$1" = "--client" ] && [ -n "$2" ]; then
+  CLIENT="$2"
+  shift 2
+fi
+CLIENT_HDR=()
+[ -n "$CLIENT" ] && CLIENT_HDR=(-H "X-Cairn-Client: $CLIENT")
+
 HOOK_TYPE="$1"
 SCRIPT_DIR="${0%/*}"
 
@@ -34,7 +45,7 @@ is_standalone() {
 }
 
 if is_standalone "$HOOK_TYPE"; then
-  node "$SCRIPT_DIR/$HOOK_TYPE.js" < "$INPUT_FILE"
+  CAIRN_CLIENT="$CLIENT" node "$SCRIPT_DIR/$HOOK_TYPE.js" < "$INPUT_FILE"
   exit 0
 fi
 
@@ -43,7 +54,7 @@ if [ -S "$SOCK" ]; then
     # Sync: wait for response, return it
     MAX_TIME=3
     [ "$HOOK_TYPE" = "governance-gate" ] && MAX_TIME=0.4
-    RESULT=$(curl -sf --max-time "$MAX_TIME" --unix-socket "$SOCK" "http://localhost/$HOOK_TYPE" -H "Content-Type: application/json" --data-binary @"$INPUT_FILE" 2>/dev/null)
+    RESULT=$(curl -sf --max-time "$MAX_TIME" --unix-socket "$SOCK" "http://localhost/$HOOK_TYPE" -H "Content-Type: application/json" "${CLIENT_HDR[@]}" --data-binary @"$INPUT_FILE" 2>/dev/null)
     if [ $? -eq 0 ]; then
       if [ "$HOOK_TYPE" = "governance-gate" ]; then
         case "$RESULT" in
@@ -60,7 +71,7 @@ if [ -S "$SOCK" ]; then
     # the EXIT trap would otherwise race the backgrounded curl's open().
     trap - EXIT
     (
-      curl -sf --max-time 3 --unix-socket "$SOCK" "http://localhost/$HOOK_TYPE" -H "Content-Type: application/json" --data-binary @"$INPUT_FILE" >/dev/null 2>&1
+      curl -sf --max-time 3 --unix-socket "$SOCK" "http://localhost/$HOOK_TYPE" -H "Content-Type: application/json" "${CLIENT_HDR[@]}" --data-binary @"$INPUT_FILE" >/dev/null 2>&1
       rm -f "$INPUT_FILE"
     ) &
     exit 0
@@ -71,5 +82,5 @@ fi
 # Don't spawn standalone daemon; the MCP server owns the socket now.
 # For sync hooks, fall back to direct Node.js as last resort.
 if is_sync "$HOOK_TYPE"; then
-  [ "$HOOK_TYPE" != "governance-gate" ] && node "$SCRIPT_DIR/$HOOK_TYPE.js" < "$INPUT_FILE"
+  [ "$HOOK_TYPE" != "governance-gate" ] && CAIRN_CLIENT="$CLIENT" node "$SCRIPT_DIR/$HOOK_TYPE.js" < "$INPUT_FILE"
 fi

@@ -27,6 +27,10 @@ if (!process.env.CAIRN_STATE_PATH) {
 // checkout directory happens to be called.
 if (!process.env.CAIRN_QUERY_CWD) process.env.CAIRN_QUERY_CWD = '/x';
 
+// Parity step 5: `cairn init`/`doctor` read and WRITE the Codex config dir —
+// point it at the hermetic temp dir so a test can never touch ~/.codex.
+if (!process.env.CAIRN_CODEX_DIR) process.env.CAIRN_CODEX_DIR = join(dir, '.codex');
+
 // M3: production only trusts transcripts under ~/.claude/; tests write
 // fixtures via mkdtemp, so opt the OS tmpdir into the allowlist here.
 process.env.CAIRN_ALLOW_TMP_TRANSCRIPTS = '1';

@@ -4,7 +4,7 @@
 
 import { GOVERNANCE_DDL } from './governance-schema.js';
 
-export const SCHEMA_VERSION = 28;
+export const SCHEMA_VERSION = 29;
 
 export const CREATE_MEMORIES_TABLE = `
 CREATE TABLE IF NOT EXISTS memories (
@@ -30,7 +30,8 @@ CREATE TABLE IF NOT EXISTS memories (
   superseded_by TEXT DEFAULT NULL,
   superseded_at TEXT DEFAULT NULL,
   last_decayed_at TEXT DEFAULT NULL,
-  revision INTEGER NOT NULL DEFAULT 1
+  revision INTEGER NOT NULL DEFAULT 1,
+  origin_client TEXT NOT NULL DEFAULT 'claude'
 )`;
 
 /** Maintenance bookkeeping (rate-gate timestamps etc.) — key/value rows. */

@@ -8,7 +8,10 @@ export interface ToolEvent {
   tool: string;
   file?: string;
   timestamp: number;
-  success: boolean;
+  /** true = verified success, false = failure, undefined = outcome unknown
+   *  (Codex demux with no rollout match). Undefined is falsy at every
+   *  consumer, so an unknown outcome can never count as a success. */
+  success?: boolean;
   output?: string;
 }
 
@@ -51,7 +54,9 @@ export function classifySuccess(toolChain: ToolEvent[], dedup?: SuccessDedup): S
   }
 
   // Identify the pattern type
-  const editTools = toolChain.filter(t => t.tool === 'Edit' || t.tool === 'Write');
+  // apply_patch is Codex's edit tool. MultiEdit's absence here is
+  // pre-existing Claude behavior, deliberately untouched by parity work.
+  const editTools = toolChain.filter(t => t.tool === 'Edit' || t.tool === 'Write' || t.tool === 'apply_patch');
   const readTools = toolChain.filter(t => t.tool === 'Read');
   const files = [...new Set(editTools.map(t => t.file).filter(Boolean))] as string[];
 

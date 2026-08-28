@@ -18,6 +18,7 @@ import type { Server as HttpServer } from 'node:http';
 import { createHookDbClient } from '../hooks/shared/db-client.js';
 import { SessionCache } from '../hooks/shared/session-cache.js';
 import { startHookSocket } from '../mcp/hook-socket.js';
+import { startRolloutTailer } from './rollout-tailer.js';
 import { ensureCairnDirSecure, isOwnerOnly } from '../mcp/socket-ownership.js';
 import { assertManifestPinned } from '../utils/artifact-verification.js';
 import { warmupEmbeddings, getEmbeddingModelConfig } from '../utils/embeddings.js';
@@ -71,10 +72,19 @@ async function main(): Promise<void> {
   }
   const httpServer = server;
 
+  // Codex rollout tailer — capture fallback for sessions with untrusted or
+  // disabled hooks; naturally quiescent while hooks are live (seen-marker
+  // dedup). Standalone daemon only; CAIRN_TAILER=0 disables.
+  const tailer = process.env.CAIRN_TAILER === '0'
+    ? null
+    : startRolloutTailer({ ...client, cache });
+  if (tailer) console.error('[cairn] Codex rollout tailer started');
+
   // Graceful shutdown so the process 'exit' cleanup (tracker flush + claim
   // release) actually runs — a default signal death would skip it.
   const shutdown = (signal: NodeJS.Signals): void => {
     console.error(`[cairn-daemon] ${signal} received — shutting down`);
+    tailer?.stop();
     httpServer.close(() => process.exit(0));
     setTimeout(() => process.exit(0), SHUTDOWN_GRACE_MS).unref();
   };

@@ -12,8 +12,14 @@ export interface CodeAnchor {
 
 /** Regex patterns for extracting file paths from text */
 const FILE_PATH_PATTERNS = [
-  // Explicit paths: src/foo/bar.ts, ./lib/utils.py, /opt/project/file.js
-  /(?:^|[\s(`"'])([.\w/-]+\.\w{1,6})(?:[\s)'"`,;:]|$)/gm,
+  // Explicit paths: src/foo/bar.ts, ./lib/utils.py, /opt/project/file.js.
+  // A SENTENCE-final '.' terminates (lookahead: followed by whitespace,
+  // another dot, or EOL): distilled lessons put filenames at sentence end
+  // ("… in valcheck-one.ts. Fix: …") — without it those anchors were
+  // silently empty. A bare '.' terminator would also accept member-access
+  // dots and anchor `process.env` as a file (env-var names over 6 chars
+  // backtrack to `process` + `.env`), hence the lookahead.
+  /(?:^|[\s(`"'])([.\w/-]+\.\w{1,6})(?:[\s)'"`,;:]|\.(?=[\s.]|$)|$)/gm,
 ];
 
 /** Regex patterns for extracting symbol names (functions, classes) */

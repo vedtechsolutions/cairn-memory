@@ -5,6 +5,7 @@
  * Non-blocking: decision: "block" is NOT used — advisory only.
  */
 import { readStdinJson, type StopInput } from './shared/hook-io.js';
+import { originClientOf } from './shared/client-adapter.js';
 import { createHookDbClient } from './shared/db-client.js';
 import { projectId } from '../utils/project-id.js';
 import { extractAssistantDecision } from './shared/transcript-parser.js';
@@ -38,6 +39,7 @@ async function main(): Promise<void> {
     const result = client.memoryRepo.storeDecision({
       content: decision, project: projectId(input.cwd), source: 'learned',
       confidence: CONFIDENCE.AUTO_DETECTED,
+      originClient: originClientOf(input),
     });
     recordTelemetry(
       'stop', result.deduplicated ? 'decision-deduped' : 'decision-mined', _startTime, true,

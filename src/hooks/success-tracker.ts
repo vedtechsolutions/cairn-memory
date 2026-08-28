@@ -102,8 +102,8 @@ try {
     }
 
     // Trim old tool chain entries (keep last 20)
-    if (tracker.toolChain.length > 20) {
-      tracker.toolChain = tracker.toolChain.slice(-20);
+    if (tracker.toolChain.length > LIMITS.TOOL_CHAIN_MAX) {
+      tracker.toolChain = tracker.toolChain.slice(-LIMITS.TOOL_CHAIN_MAX);
     }
 
     // File-level tracking for Write/Edit/MultiEdit

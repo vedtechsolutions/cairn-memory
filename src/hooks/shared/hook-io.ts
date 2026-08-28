@@ -4,8 +4,14 @@
  */
 import { readFileSync } from 'node:fs';
 
+import { CLIENT_ENV_VAR } from '../../constants/clients.js';
+import { normalizeHookInput } from './client-adapter.js';
+
 /** Read and parse JSON from stdin (synchronous — hooks are short-lived).
- *  Falls back to fd 0 if /dev/stdin device is unavailable (ENXIO). */
+ *  Falls back to fd 0 if /dev/stdin device is unavailable (ENXIO).
+ *  Direct-node fallback path: client identity arrives via env (set by the
+ *  relay), so normalization happens here; the daemon path normalizes in
+ *  hook-socket from the request header instead. */
 export function readStdinJson<T = Record<string, unknown>>(): T {
   let raw: string;
   try {
@@ -13,7 +19,11 @@ export function readStdinJson<T = Record<string, unknown>>(): T {
   } catch {
     raw = readFileSync(0, 'utf-8');
   }
-  return JSON.parse(raw) as T;
+  const parsed = JSON.parse(raw) as T;
+  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+    normalizeHookInput(parsed as Record<string, unknown>, process.env[CLIENT_ENV_VAR]);
+  }
+  return parsed;
 }
 
 /** Common hook input fields (present on all hooks) */
