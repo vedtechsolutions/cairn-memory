@@ -197,14 +197,36 @@ export function findSimilar(db: Database.Database, content: string, project: str
   const ftsQuery = buildFtsQuery(content);
   if (!ftsQuery) return null;
 
+  // An EXACT row always wins over a near match: with both present
+  // (restored/legacy stores have them), merging into the near-dup
+  // overwrites the WRONG row and leaves two identical copies (closing
+  // review, reproduced). Exact by CONSTRUCTION, not window odds — a
+  // stacked store of short term-sharing neighbours can evict the exact
+  // row from any LIMIT-bounded candidate list (measured at 10+ decoys),
+  // so it gets its own indexed lookup rather than a scan of candidates.
   let candidates: MemoryRow[];
   try {
+    const exact = db.prepare(`
+      SELECT m.*
+      FROM memories_fts fts
+      JOIN memories m ON m.rowid = fts.rowid
+      WHERE memories_fts MATCH ?
+        AND m.content = ?
+        AND m.invalidated = 0
+        AND m.superseded_by IS NULL
+        AND m.kind = ?
+        AND ((? IS NULL AND m.project IS NULL) OR m.project = ?)
+      LIMIT 1
+    `).get(ftsQuery, content, kind, project, project) as MemoryRow | undefined;
+    if (exact) return rowToMemory(exact);
+
     candidates = db.prepare(`
       SELECT m.*
       FROM memories_fts fts
       JOIN memories m ON m.rowid = fts.rowid
       WHERE memories_fts MATCH ?
         AND m.invalidated = 0
+        AND m.superseded_by IS NULL
         AND m.kind = ?
         AND ((? IS NULL AND m.project IS NULL) OR m.project = ?)
       ORDER BY rank
@@ -213,14 +235,6 @@ export function findSimilar(db: Database.Database, content: string, project: str
   } catch {
     return null;
   }
-
-  // An EXACT row always wins over a near match: with both present
-  // (restored/legacy stores have them), merging into the near-dup
-  // overwrites the WRONG row and leaves two identical copies (closing
-  // review, reproduced). Best-match-first ordering above keeps the exact
-  // row inside the candidate window.
-  const exact = candidates.find((row) => row.content === content);
-  if (exact) return rowToMemory(exact);
 
   for (const row of candidates) {
     // Opposed content (divergent value, negation flip, antonym) is NOT a

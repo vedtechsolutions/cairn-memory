@@ -53,20 +53,40 @@ export function isAutoMemoryType(type: string | null): boolean {
 
 
 
+/** Drop fenced code blocks per CommonMark: an opener is 3+ backticks
+ *  (info string may not contain a backtick — a line like ```lang` is
+ *  ordinary text, and treating it as an opener DELETED every lesson
+ *  after it) or 3+ tildes (any info string), up to 3 leading spaces; a
+ *  closer is at least as many of the SAME character with only trailing
+ *  whitespace (a mixed ```~~~ line is fence CONTENT, not a closer — the
+ *  regex form falsely closed there and imported the rest of the fence
+ *  as lessons); an unclosed fence runs to EOF. Line scanner because the
+ *  closer's char and minimum length depend on the opener (review rounds
+ *  2 and closing, all three shapes executed). */
+function stripFences(markdown: string): string {
+  const kept: string[] = [];
+  let fence: { char: string; len: number } | null = null;
+  for (const line of markdown.split('\n')) {
+    if (fence) {
+      if (new RegExp(`^ {0,3}${fence.char}{${fence.len},}[ \\t]*$`).test(line)) fence = null;
+      continue; // fence lines (opener, content, closer) all drop
+    }
+    const open = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+    if (open && (open[1][0] === '~' || !open[2].includes('`'))) {
+      fence = { char: open[1][0], len: open[1].length };
+      continue;
+    }
+    kept.push(line);
+  }
+  return kept.join('\n');
+}
+
 /** Transform one freeform markdown document into learn sections. */
 export function sectionsFromFreeformMarkdown(rawMarkdown: string, baseTags: string[]): LearnSection[] {
   // CRLF normalize, then MASK fenced code blocks: a '## ' inside a fence
   // is an example, not a section boundary, and a '#' line inside one is
   // not a lesson (review). Imported lessons are prose — fences drop.
-  // Fence forms per CommonMark: 3+ backticks or tildes, up to 3 leading
-  // spaces (review round 2: the narrow column-zero triple-backtick form
-  // left indented/tilde/longer fences parseable as lessons).
-  const noFences = rawMarkdown.replace(/\r\n/g, '\n')
-    .replace(/^ {0,3}(`{3,}|~{3,})[^\n]*\n[\s\S]*?^ {0,3}\1`*~*[ \t]*$/gm, '')
-    // An UNCLOSED fence runs to EOF under CommonMark — a leftover
-    // opener after the pass above starts one, and everything after it
-    // is code, not lessons (closing review).
-    .replace(/^ {0,3}(`{3,}|~{3,})[^\n]*\n[\s\S]*$/m, '');
+  const noFences = stripFences(rawMarkdown.replace(/\r\n/g, '\n'));
   const { body: markdown, type } = stripFrontmatter(noFences);
   const kindHint = type && Object.hasOwn(FRONTMATTER_KIND, type) ? FRONTMATTER_KIND[type] : undefined;
   const typeTags = type ? [slugTag('type', type)] : [];

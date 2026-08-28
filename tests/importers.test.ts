@@ -676,3 +676,106 @@ describe('closing review fixes', () => {
     for (const s of result.sections) assert.equal(s.originClient, 'codex');
   });
 });
+
+// --- Final-verdict residual: exact preference must survive decoy eviction ------
+
+describe('exact preference under candidate-window pressure', () => {
+  it('an exact row is found even when 12 short decoys crowd the FTS window', () => {
+    // buildFtsQuery uses the leading non-stopword terms and bm25 favours
+    // short documents, so short rows sharing those terms can evict a
+    // LONG exact row from any LIMIT-bounded candidate list (measured at
+    // 10+ decoys in review). The exact match is its own indexed query
+    // now — window pressure must not turn a no-op into a duplicate.
+    const exactContent = 'alpha bravo charlie delta echo foxtrot golf hotel '
+      + 'the long handbook lesson explains the entire payroll reconciliation procedure end to end '.repeat(3);
+    repo.create({ kind: 'fact', content: exactContent, tags: [], skipDedup: true });
+    for (let i = 0; i < 12; i++) {
+      repo.create({ kind: 'fact', content: `alpha bravo charlie delta echo foxtrot golf hotel decoy ${i}`, tags: [], skipDedup: true });
+    }
+    const rowsBefore = (db.prepare('SELECT COUNT(*) n FROM memories').get() as { n: number }).n;
+    const res = learnSections(repo, [{ kind: 'fact', content: exactContent, tags: [] }], null);
+    assert.equal(res.exactDuplicates, 1, 'the exact row is recognized despite the crowded window');
+    assert.equal(res.ingested, 0);
+    assert.equal(res.merged.length, 0, 'no decoy is chosen as a merge target');
+    const rowsAfter = (db.prepare('SELECT COUNT(*) n FROM memories').get() as { n: number }).n;
+    assert.equal(rowsAfter, rowsBefore, 'no duplicate row created');
+  });
+});
+
+// --- Codex re-verification round ----------------------------------------------
+
+describe('codex re-verification round', () => {
+  it('a mixed-marker line does not close a backtick fence', () => {
+    // CommonMark: a closer is the SAME character — ```~~~ inside a
+    // backtick fence is fence CONTENT. The regex closer accepted it and
+    // imported the rest of the fence as lessons (codex re-verify).
+    const md = [
+      '- a real lesson kept before the fence opens in this handbook file',
+      '```',
+      '~~~',
+      '- fenced bullet that must never become a lesson row in the store',
+      '```',
+      '- a real lesson kept after the fence properly closes with backticks',
+    ].join('\n');
+    const secs = sectionsFromFreeformMarkdown(md, []);
+    assert.equal(secs.length, 2, 'fence content stays masked; both real lessons import');
+    assert.ok(secs.every(s => !s.content.includes('fenced bullet')));
+  });
+
+  it('a backtick in a backtick opener info string is ordinary text, not a fence', () => {
+    // CommonMark forbids backticks in a backtick fence's info string —
+    // treating ```lang` as an opener DELETED every lesson after it to
+    // EOF (codex re-verify).
+    const md = [
+      '```lang` is how you would write that token inline',
+      '- a legitimate lesson after the non-opener line must still import',
+    ].join('\n');
+    const secs = sectionsFromFreeformMarkdown(md, []);
+    assert.equal(secs.length, 1);
+    assert.match(secs[0].content, /legitimate lesson/);
+  });
+
+  it('a superseded row is never a dedup target — exact or near', () => {
+    const lesson = 'the payroll export job requires the ledger snapshot to finish before it starts';
+    const created = repo.create({ kind: 'fact', content: lesson, tags: [] });
+    db.prepare('UPDATE memories SET superseded_by = ? WHERE id = ?').run('newer-claim-id', created.id);
+    // Exact content of a RETIRED row: reinforcing it would resurrect a
+    // claim a newer conflicting one already superseded (codex re-verify).
+    const res = learnSections(repo, [{ kind: 'fact', content: lesson, tags: [] }], null);
+    assert.equal(res.ingested, 1, 'a fresh live row inserts instead');
+    assert.equal(res.exactDuplicates, 0);
+    const superseded = db.prepare('SELECT confidence FROM memories WHERE id = ?').get(created.id) as { confidence: number };
+    const live = db.prepare('SELECT COUNT(*) n FROM memories WHERE superseded_by IS NULL AND content = ?').get(lesson) as { n: number };
+    assert.equal(live.n, 1);
+    assert.ok(superseded, 'the retired row itself is untouched');
+  });
+
+  it('storeMemory path also never shrinks a pre-existing row [R2 coverage gap]', () => {
+    const staging = 'never run the staging deploy before the migration lock is released by the operator';
+    const production = 'never run the production deploy again before the migration lock is released by the operator';
+    const seven = ['t1', 't2', 't3', 't4', 't5', 't6', 't7'];
+    repo.create({ kind: 'pitfall', content: staging, tags: seven });
+    repo.storePitfall({ content: production, project: null, tags: ['t8'] });
+    const row = db.prepare("SELECT tags FROM memories WHERE kind = 'pitfall'").get() as { tags: string };
+    const tags = JSON.parse(row.tags) as string[];
+    for (const t of seven) assert.ok(tags.includes(t), `pre-existing tag ${t} survives a storeMemory merge`);
+  });
+
+  it('empty --from errors like empty --path [R1 coverage gap]', () => {
+    for (const argv of [
+      ['import', '--from', '', '--path', join(dir, 'nowhere')],
+      ['import', '--from=', '--path', join(dir, 'nowhere')],
+    ]) {
+      let failed = false;
+      try {
+        execFileSync('node', ['dist/src/cli/index.js', ...argv], {
+          cwd: REPO_ROOT, encoding: 'utf-8', stdio: 'pipe', env: { ...process.env, CAIRN_DB_PATH: join(dir, 'r1.db') },
+        });
+      } catch (err) {
+        failed = true;
+        assert.match(String((err as { stderr?: string }).stderr), /--from requires a non-empty value/);
+      }
+      assert.ok(failed, 'an empty --from must not fall through to a default source');
+    }
+  });
+});

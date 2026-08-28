@@ -243,10 +243,16 @@ describe('cairn_ingest', () => {
 
   it('deduplicates when the same markdown is ingested twice', async () => {
     await callTool(h.client, 'cairn_ingest', { content: INGEST_FIXTURE, project: 'proj-ingest' });
+    const confBefore = h.memoryRepo.exportMemories({ project: 'proj-ingest' }).map(m => m.confidence);
     const second = textOf(await callTool(h.client, 'cairn_ingest', { content: INGEST_FIXTURE, project: 'proj-ingest' }));
     assert.ok(second.includes('ingested: 0'), `re-ingest must not create new rows, got:\n${second}`);
     assert.ok(second.includes('deduplicated: 2'));
     assert.equal(h.memoryRepo.getStats().active, 2);
+    // Through the REGISTERED tool, exact repeats keep the gateway's
+    // reinforcement semantics the description promises (reinforceExact —
+    // the CLI importer's no-op default must not leak in here).
+    const confAfter = h.memoryRepo.exportMemories({ project: 'proj-ingest' }).map(m => m.confidence);
+    assert.ok(confAfter.every((c, i) => c > confBefore[i]), 'exact re-ingest reinforces via the MCP tool');
   });
 
   it('reports unstructured markdown as skipped instead of storing it', async () => {
