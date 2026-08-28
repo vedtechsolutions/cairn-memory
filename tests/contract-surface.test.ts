@@ -81,6 +81,31 @@ describe('generated hook wiring targets real routes', () => {
     }
   });
 
+  it('generated async flags match the contract classification — both generators', () => {
+    // The routes module's central claim: whether a hook WAITS is part of
+    // the contract. A sync route wired async loses its injected context;
+    // an async route wired sync blocks the agent's turn.
+    const asyncSet = new Set<string>(ASYNC_ROUTES);
+    const syncish = new Set<string>([...SYNC_ROUTES, ...STANDALONE_HOOKS]);
+    const check = (hooks: Record<string, Array<{ hooks: Array<{ command: string; async?: boolean }> }>>): void => {
+      for (const groups of Object.values(hooks)) {
+        for (const g of groups) {
+          for (const h of g.hooks) {
+            const sub = subcommandOf(h.command);
+            if (asyncSet.has(sub)) {
+              assert.equal(h.async, true, `async route wired without async: ${h.command}`);
+            } else if (syncish.has(sub)) {
+              assert.notEqual(h.async, true, `sync/standalone route wired async: ${h.command}`);
+            }
+          }
+        }
+      }
+    };
+    check(cairnHooks(RELAY));
+    check(codexHooks(RELAY).hooks);
+    check(codexHooks(RELAY, LEGACY_POST_TOOL_ROUTE).hooks);
+  });
+
   it('both post-tool generations have a standalone fallback entry in dist (relay socket-miss path)', () => {
     // Old wiring / new package and new wiring / new package must both
     // survive a daemon outage: the relay execs dist/src/hooks/<sub>.js.

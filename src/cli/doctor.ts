@@ -213,7 +213,7 @@ export function checkCodexParity(): CheckResult {
     return { status: 'warn', detail: `Codex wired but ${trust.disabled} hook(s) are DISABLED and ${total - trust.trusted - trust.disabled} untrusted (${trust.trusted}/${total} active; ${mcp}) — review with /hooks in codex${legacyRoute}` };
   }
   if (trust.trusted >= total) {
-    return { status: 'ok', detail: `Codex wired and trusted (${trust.trusted}/${total} hooks; ${mcp}${legacyRoute})` };
+    return { status: 'ok', detail: `Codex wired and trusted (${trust.trusted}/${total} hooks; ${mcp})${legacyRoute}` };
   }
   return { status: 'warn', detail: `Codex wired, awaiting one-time trust review (${trust.trusted}/${total} hooks trusted; ${mcp}) — start \`codex\` and accept the Cairn hooks${legacyRoute}` };
 }

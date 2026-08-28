@@ -16,6 +16,8 @@ import {
   deriveOriginClient,
   originClientOf,
   wrapContextOutput,
+  registerClientAdapter,
+  capabilitiesOf,
 } from '../src/hooks/shared/client-adapter.js';
 import { CLIENT_CLAUDE, CLIENT_CODEX, CLIENT_UNKNOWN } from '../src/constants/clients.js';
 
@@ -197,5 +199,50 @@ describe('migrateToV29', () => {
     migrateToV29(db);
     const row = db.prepare('SELECT origin_client FROM memories WHERE id = ?').get('m1') as { origin_client: string };
     assert.equal(row.origin_client, CLIENT_CLAUDE);
+  });
+});
+
+describe('the extension seam (registerClientAdapter)', () => {
+  it('a registered adapter takes over capabilities, wrapping, and gated dialect mapping', () => {
+    const NAME = 'seam-test-agent';
+    registerClientAdapter({
+      name: NAME,
+      capabilities: {
+        toolFailureSignal: 'event',
+        contextOutput: 'envelope',
+        emitsPermissionDecision: false,
+        crossAgentFraming: true,
+        sigilNudges: false,
+      },
+      normalizeInput: (input, declared) => {
+        if (declared !== NAME) return;
+        if (input.type === undefined && typeof input.origin === 'string') input.type = input.origin;
+      },
+      wrapContextOutput: (event, output) => `[${event}] ${output}`,
+    });
+
+    const input = normalizeHookInput({ hook_event_name: 'SessionStart', origin: 'startup' }, NAME);
+    assert.equal(input.client_name, NAME);
+    assert.equal(input.type, 'startup', 'its own dialect mapping ran');
+    assert.equal(capabilitiesOf(input).sigilNudges, false, 'its capabilities dispatch');
+    assert.equal(wrapContextOutput(input, 'SessionStart', 'ctx'), '[SessionStart] ctx', 'its wrapper dispatches');
+  });
+
+  it('LOCK-IN: an UNREGISTERED declared client gets no Codex dialect mapping and Claude defaults', () => {
+    // Before the registry, `clientName !== claude` mapped source→type for
+    // ANY non-Claude name; a dialect now belongs to its adapter alone.
+    const input = normalizeHookInput(
+      { hook_event_name: 'SessionStart', source: 'startup' }, 'gemini');
+    assert.equal(input.client_name, 'gemini');
+    assert.equal(input.type, undefined, 'Codex source→type mapping must not leak to other clients');
+    assert.equal(capabilitiesOf(input).contextOutput, 'plain', 'unknown names degrade to the Claude default');
+  });
+
+  it('declared names are canonicalized to lowercase — "Codex" must not get Claude capabilities', () => {
+    const input = normalizeHookInput(
+      { hook_event_name: 'SessionStart', source: 'resume' }, 'Codex');
+    assert.equal(input.client_name, CLIENT_CODEX);
+    assert.equal(input.type, 'resume', 'dialect mapping applies after canonicalization');
+    assert.equal(capabilitiesOf(input).contextOutput, 'envelope');
   });
 });

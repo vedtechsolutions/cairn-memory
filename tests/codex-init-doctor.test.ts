@@ -95,26 +95,34 @@ describe('codexHooks generator', () => {
   });
 });
 
-describe('postToolRouteFor (D3 migration policy — per-command trust)', () => {
+describe('postToolRouteFor (D3 migration policy — exact-command trust)', () => {
   const legacyCmd = `${RELAY} --client codex ${LEGACY_POST_TOOL_ROUTE}`;
 
   it('fresh installs get the canonical route', () => {
-    assert.equal(postToolRouteFor([], false), POST_TOOL_ROUTE);
+    assert.equal(postToolRouteFor([], legacyCmd, false), POST_TOOL_ROUTE);
   });
 
-  it('a TRUSTED legacy command keeps its route — renaming would invalidate hash-pinned trust', () => {
-    assert.equal(postToolRouteFor([legacyCmd], false), LEGACY_POST_TOOL_ROUTE);
+  it('the EXACT trusted legacy command keeps its route — renaming would invalidate hash-pinned trust', () => {
+    assert.equal(postToolRouteFor([legacyCmd], legacyCmd, false), LEGACY_POST_TOOL_ROUTE);
   });
 
   it('trust on OTHER commands does not make an untrusted legacy route look preserved', () => {
-    // A trusted foreign hook (no Cairn marker) and a trusted canonical
-    // route must both leave the decision at canonical.
-    assert.equal(postToolRouteFor([`/usr/local/bin/foreign ${LEGACY_POST_TOOL_ROUTE}`], false), POST_TOOL_ROUTE);
-    assert.equal(postToolRouteFor([`${RELAY} --client codex ${POST_TOOL_ROUTE}`], false), POST_TOOL_ROUTE);
+    // A trusted foreign hook and a trusted canonical route must both
+    // leave the decision at canonical.
+    assert.equal(postToolRouteFor([`/usr/local/bin/foreign ${LEGACY_POST_TOOL_ROUTE}`], legacyCmd, false), POST_TOOL_ROUTE);
+    assert.equal(postToolRouteFor([`${RELAY} --client codex ${POST_TOOL_ROUTE}`], legacyCmd, false), POST_TOOL_ROUTE);
+  });
+
+  it('a relay-prefix change rides the forced re-trust into the canonical route for free', () => {
+    // The legacy command is trusted, but under a DIFFERENT relay prefix:
+    // its trust dies with the prefix change anyway, so preservation
+    // would preserve nothing — migrate as part of the same re-review.
+    const oldPrefixLegacy = `/old-install/dist/src/hooks/hook-relay --client codex ${LEGACY_POST_TOOL_ROUTE}`;
+    assert.equal(postToolRouteFor([oldPrefixLegacy], legacyCmd, false), POST_TOOL_ROUTE);
   });
 
   it('--migrate-routes always yields the canonical route', () => {
-    assert.equal(postToolRouteFor([legacyCmd], true), POST_TOOL_ROUTE);
+    assert.equal(postToolRouteFor([legacyCmd], legacyCmd, true), POST_TOOL_ROUTE);
   });
 });
 

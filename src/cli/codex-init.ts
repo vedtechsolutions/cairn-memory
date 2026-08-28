@@ -51,24 +51,23 @@ export const LEGACY_POST_TOOL_ROUTE = 'codex-post-tool';
 export type PostToolRoute = typeof POST_TOOL_ROUTE | typeof LEGACY_POST_TOOL_ROUTE;
 
 /**
- * Which PostToolUse route to generate. Fresh installs get the canonical
- * `post-tool`; an install whose legacy `codex-post-tool` command is
- * ITSELF trusted keeps it verbatim — trust is hash-pinned to the exact
- * command string, so renaming the route in place would silently disable
- * the hook until the user re-reviews. Per-command trust matters: a
- * trusted foreign hook (or an already-trusted canonical route) must not
+ * Which PostToolUse route to generate. The canonical `post-tool` always,
+ * EXCEPT when the EXACT legacy command this install would re-emit is
+ * currently trusted — only then does preservation actually preserve
+ * anything (trust is hash-pinned to the exact command string; a legacy
+ * command with a different relay prefix re-reviews regardless, so that
+ * re-trust rides the migration for free). Per-command trust matters: a
+ * trusted foreign hook or an already-trusted canonical route must not
  * make an untrusted legacy command look preservation-worthy. Migration
- * is an explicit opt-in (`cairn init --migrate-routes`), riding the
- * trust-invalidation warning path.
+ * is otherwise an explicit opt-in (`cairn init --migrate-routes`).
  */
 export function postToolRouteFor(
   trustedCommands: readonly string[],
+  candidateLegacyCommand: string,
   migrateRoutes: boolean,
 ): PostToolRoute {
   if (migrateRoutes) return POST_TOOL_ROUTE;
-  const legacyTrusted = trustedCommands.some(
-    (c) => c.includes(CAIRN_HOOK_DIR_MARKER) && c.endsWith(` ${LEGACY_POST_TOOL_ROUTE}`));
-  return legacyTrusted ? LEGACY_POST_TOOL_ROUTE : POST_TOOL_ROUTE;
+  return trustedCommands.includes(candidateLegacyCommand) ? LEGACY_POST_TOOL_ROUTE : POST_TOOL_ROUTE;
 }
 
 /** The canonical Codex hook set for this install's resolved relay command. */
@@ -324,7 +323,11 @@ export function runCodexInit(relayCmd: string, serverPath: string, dryRun: boole
   const mcpBlock = mcpRegistered ? null : codexMcpBlock(serverPath);
 
   const trustEntries = parseTrustState(config, codexHooksPath());
-  const postToolRoute = postToolRouteFor(trustedCommandsIn(config, codexHooksPath(), existing), migrateRoutes);
+  // The legacy command THIS relay would emit — built through the
+  // generator so the comparison can never drift from the emitted format.
+  const candidateLegacy = codexHooks(relayCmd, LEGACY_POST_TOOL_ROUTE).hooks.PostToolUse[0].hooks[0].command;
+  const postToolRoute = postToolRouteFor(
+    trustedCommandsIn(config, codexHooksPath(), existing), candidateLegacy, migrateRoutes);
   const generated = codexHooks(relayCmd, postToolRoute);
   const merged = mergeCodexHooks(existing, generated);
   const total = codexHookCount(merged);

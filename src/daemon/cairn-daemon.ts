@@ -18,7 +18,7 @@ import type { Server as HttpServer } from 'node:http';
 import { createHookDbClient } from '../hooks/shared/db-client.js';
 import { SessionCache } from '../hooks/shared/session-cache.js';
 import { startHookSocket } from '../mcp/hook-socket.js';
-import { ADAPTER_LIFECYCLES } from '../adapters/index.js';
+import { ADAPTER_WORKERS } from '../adapters/workers.js';
 import { ensureCairnDirSecure, isOwnerOnly } from '../mcp/socket-ownership.js';
 import { assertManifestPinned } from '../utils/artifact-verification.js';
 import { warmupEmbeddings, getEmbeddingModelConfig } from '../utils/embeddings.js';
@@ -78,9 +78,9 @@ async function main(): Promise<void> {
   // daemon only; CAIRN_TAILER=0 disables all adapter workers.
   const workers: { name: string; handle: { stop(): void } }[] = [];
   if (process.env.CAIRN_TAILER !== '0') {
-    for (const lifecycle of ADAPTER_LIFECYCLES) {
-      for (const start of lifecycle.daemonWorkers ?? []) {
-        workers.push({ name: lifecycle.name, handle: start({ ...client, cache }) });
+    for (const set of ADAPTER_WORKERS) {
+      for (const start of set.workers) {
+        workers.push({ name: set.name, handle: start({ ...client, cache }) });
       }
     }
   }

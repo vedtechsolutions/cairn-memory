@@ -1,8 +1,11 @@
 /**
  * Contract error table (W4 v3.1 §9) — the ONE mapping from every contract
  * case to its thrown message. Modules throw `new Error(ERR.case(...))`;
- * no contract-visible message text lives anywhere else. Messages carry no
- * `Error: ` prefix — the SDK runner supplies it.
+ * no contract-visible message text lives anywhere else, with ONE carve-out:
+ * the invalid-path message lives in @cairn/contract's memory-paths module
+ * (the path grammar and its rejection message are a single contract
+ * surface and moved together). Messages carry no `Error: ` prefix — the
+ * SDK runner supplies it.
  *
  * The marker classes carry a record id OUT of a rolled-back transaction:
  * the command handler catches them AFTER the outer rollback and only then
@@ -11,10 +14,6 @@
  */
 
 export const ERR = {
-  // path-router
-  invalidPath: (path: string, root: string): string =>
-    `invalid path ${path} — memory paths must stay within ${root}`,
-
   // block-parser
   malformedBlock: (detail: string): string =>
     `malformed record block: ${detail}. Edit whole records using the rendered block grammar ([kind:id@rev] token line + why/how/tags continuation lines with one-line JSON values).`,

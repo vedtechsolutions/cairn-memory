@@ -3,10 +3,13 @@
  * seam. One adapter per agent; NOTHING else in the pipeline branches on a
  * client name (the capability record replaces the branches that used to).
  *
- * Adapter selection follows DECLARED identity: normalization maps a
- * dialect only for the delivery's wiring-declared client, never for a
- * payload-asserted client_name (same-UID provenance model — see the
- * contract's clients module).
+ * Identity: DIALECT MAPPING runs only for the delivery's wiring-declared
+ * client, never for a payload-asserted client_name. Capability dispatch
+ * (adapterFor) follows `client_name`, which a declared identity always
+ * overwrites; a payload-asserted name is honored for capability selection
+ * only as legacy tolerance — it selects behavior flags, never dialect
+ * rewriting (same-UID provenance model — see the contract's clients
+ * module).
  *
  * Lifecycle contributions (installers, daemon workers) register in
  * src/adapters/ — separate on purpose, so this hot-path module never
@@ -106,17 +109,18 @@ export function capabilitiesOf(input: { client_name?: string }): AdapterCapabili
  * Stamp declared client identity and reconcile field-name deltas, in
  * place. Declared identity (relay flag → header/env) is authoritative: it
  * overrides any client_name the payload carries, and dialect mapping runs
- * only for the DECLARED client's adapter.
+ * only for the DECLARED client's adapter. Names are canonicalized to
+ * lowercase — registry lookup is exact-match, and a `--client Codex`
+ * wiring must not silently receive Claude's capabilities.
  */
 export function normalizeHookInput(
   input: Record<string, unknown>,
   clientName?: string,
 ): Record<string, unknown> {
-  if (clientName) {
-    input.client_name = clientName;
-  }
-  if (clientName) {
-    registry.get(clientName)?.normalizeInput(input, clientName);
+  const declared = clientName?.toLowerCase();
+  if (declared) {
+    input.client_name = declared;
+    registry.get(declared)?.normalizeInput(input, declared);
   }
   return input;
 }
