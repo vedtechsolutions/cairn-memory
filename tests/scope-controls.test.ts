@@ -611,10 +611,20 @@ describe('MCP surfaces', () => {
     repo.create({ content: PRIVATE_MARKER, kind: 'pitfall', project: PRIVATE_PROJECT, confidence: 0.9 });
     writeScopeConfig([PRIVATE_PROJECT]);
     setSessionProjectForTests(PRIVATE_PROJECT);
-    await call('cairn_plan', { action: 'create', name: 'ALIAS-PLAN secret rollout', project: 'clientwork', steps: [{ description: 'ALIAS-STEP secret detail' }] });
-    await call('cairn_remind', { trigger: 'alias-trigger', action: 'ALIAS-REMINDER secret action', project: 'clientwork' });
+    const planCreate = await call('cairn_plan', { action: 'create', name: 'ALIAS-PLAN secret rollout', project: 'clientwork', steps: [{ description: 'ALIAS-STEP secret detail' }] });
+    assert.equal(planCreate.isError, false, 'premise: alias create succeeds from inside');
+    const remindCreate = await call('cairn_remind', { trigger: 'alias-trigger', action: 'ALIAS-REMINDER secret action', project: 'clientwork' });
+    assert.equal(remindCreate.isError, false, 'premise: alias reminder create succeeds from inside');
+    // Non-vacuous: the created rows are really there, under the CANONICAL id.
+    const insidePlan = await client.readResource({ uri: `cairn://plan/${PRIVATE_PROJECT}/active` });
+    assert.ok((insidePlan.contents as Array<{ text?: string }>).some(c => c.text?.includes('ALIAS-PLAN')),
+      'premise: the alias-created plan exists under the canonical id');
 
+    // The GATE must be alias-aware too, not just the store: creating via
+    // the bare name from OUTSIDE must be refused like the canonical id.
     setSessionProjectForTests(OTHER_PROJECT);
+    const outsideAlias = await call('cairn_remind', { trigger: 'planted', action: 'PLANTED-FROM-OUTSIDE', project: 'clientwork' });
+    assert.equal(outsideAlias.isError, true, 'alias create from outside is refused (gate resolves first)');
     const planRes = await client.readResource({ uri: 'cairn://plan/clientwork/active' });
     const planText = (planRes.contents as Array<{ text?: string }>).map(c => c.text ?? '').join('\n');
     assert.ok(!planText.includes('ALIAS-PLAN'), 'alias-created plan is stored canonical and stays guarded');
@@ -639,6 +649,12 @@ describe('MCP surfaces', () => {
     assert.match(refused.text, /session inside/);
     assert.ok(!refused.text.includes('confidence'), 'no confidence leak');
     assert.ok(!refused.text.includes('fact'), 'no kind leak');
+
+    // Invalidation status is row metadata too (Codex final round).
+    repo.invalidate(mem.id);
+    const invalidatedRefusal = await call('cairn_promote', { id: mem.id });
+    assert.match(invalidatedRefusal.text, /session inside/);
+    assert.ok(!invalidatedRefusal.text.includes('invalidated'), 'no invalidation-status leak');
   });
 
   it('mutations follow readability: forget/correct/cleanup-execute cannot touch private rows from outside', async () => {

@@ -37,8 +37,15 @@ export function registerReminderTools(
       }),
     },
     async ({ trigger, action, project, max_fires: maxFires, trigger_type: triggerType, trigger_config: triggerConfig }) => {
-      if (project && !canReadPrivate(project, sessionProjectId())) {
-        return { content: [{ type: 'text', text: `error: project "${project}" is marked private — its reminders are managed only from a session inside that project` }], isError: true };
+      // Resolve FIRST, then gate and store the SAME value — a gate on the
+      // raw string while the store resolves (or vice versa) is exactly
+      // the alias split 5c895aa fixed for plans and reintroduced here.
+      // resolveProject preserves null and passes unknown names through raw;
+      // `?? null` maps only omitted/whitespace to global — restoring the
+      // raw value there would undo the resolver's deliberate normalization.
+      const resolvedProject = repo.resolveProject(project) ?? null;
+      if (resolvedProject && !canReadPrivate(resolvedProject, sessionProjectId())) {
+        return { content: [{ type: 'text', text: `error: project "${resolvedProject}" is marked private — its reminders are managed only from a session inside that project` }], isError: true };
       }
       const critical = isCritical(getMode());
       if (critical) return critical;
@@ -46,9 +53,7 @@ export function registerReminderTools(
       const result = repo.create({
         trigger,
         action,
-        // Resolved id, same reason as plan create: an alias-stored row
-        // would sit outside the privacy guard's canonical-id match.
-        project: repo.resolveProject(project) ?? project ?? null,
+        project: resolvedProject,
         max_fires: maxFires,
         trigger_type: triggerType,
         trigger_config: triggerConfig,

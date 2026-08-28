@@ -271,19 +271,20 @@ export function registerPortabilityTools(
         return { content: [{ type: 'text' as const, text: 'not found' }] };
       }
 
+      // Standing FIRST — before EVERY row-metadata check (invalidation
+      // status included): an outside caller must hit this refusal before
+      // learning anything about the row. Globals pass through (a null
+      // project is never private).
+      if (isPrivateProject(memory.project) && memory.project !== sessionProjectId()) {
+        return { content: [{ type: 'text' as const, text: `error: project "${memory.project}" is marked private — its memories can be promoted only from a session inside that project.` }], isError: true };
+      }
+
       if (memory.invalidated) {
         return { content: [{ type: 'text' as const, text: 'error: memory is invalidated' }], isError: true };
       }
 
       if (memory.project === null) {
         return { content: [{ type: 'text' as const, text: 'already global' }] };
-      }
-
-      // Standing FIRST: the kind/confidence checks below name row
-      // metadata, and an outside caller must hit the refusal before
-      // learning any of it.
-      if (isPrivateProject(memory.project) && memory.project !== sessionProjectId()) {
-        return { content: [{ type: 'text' as const, text: `error: project "${memory.project}" is marked private — its memories can be promoted only from a session inside that project.` }], isError: true };
       }
 
       if (!(PROMOTION.ALLOWED_KINDS as readonly string[]).includes(memory.kind)) {
