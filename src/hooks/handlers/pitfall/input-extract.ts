@@ -2,10 +2,15 @@
  * Tool-input extraction helpers for the pitfall check.
  */
 import type { PreToolUseInput } from '../../shared/hook-io.js';
+import { extractPatchFilePaths, patchTextOf } from '../../shared/patch-paths.js';
 import { PROACTIVE } from '../../../constants/index.js';
 
-/** Extract file paths from tool_input — handles MultiEdit edits[] array */
+/** Extract file paths from tool_input — handles MultiEdit edits[] array
+ *  and Codex apply_patch envelopes (D8). */
 export function extractFilePaths(input: PreToolUseInput): string[] {
+  const patchText = patchTextOf(input);
+  if (patchText !== null) return extractPatchFilePaths(patchText);
+
   const paths: string[] = [];
   const fp = (input.tool_input.file_path ?? input.tool_input.path) as string | undefined;
   if (fp) paths.push(fp);

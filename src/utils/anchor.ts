@@ -12,8 +12,11 @@ export interface CodeAnchor {
 
 /** Regex patterns for extracting file paths from text */
 const FILE_PATH_PATTERNS = [
-  // Explicit paths: src/foo/bar.ts, ./lib/utils.py, /opt/project/file.js
-  /(?:^|[\s(`"'])([.\w/-]+\.\w{1,6})(?:[\s)'"`,;:]|$)/gm,
+  // Explicit paths: src/foo/bar.ts, ./lib/utils.py, /opt/project/file.js.
+  // '.' is a valid terminator: distilled lessons put filenames at sentence
+  // end ("… in valcheck-one.ts. Fix: …") — without it those anchors were
+  // silently empty and file-anchored recall missed the memory.
+  /(?:^|[\s(`"'])([.\w/-]+\.\w{1,6})(?:[\s)'"`,;:.]|$)/gm,
 ];
 
 /** Regex patterns for extracting symbol names (functions, classes) */

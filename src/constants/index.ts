@@ -585,7 +585,7 @@ export const PROACTIVE = {
   /** How far back in toolChain to look for loop patterns */
   LOOP_LOOKBACK: 6,
   /** Tools that get proactive pre-tool warnings */
-  TOOLS: ['Write', 'Edit', 'MultiEdit', 'Bash'] as readonly string[],
+  TOOLS: ['Write', 'Edit', 'MultiEdit', 'Bash', 'apply_patch'] as readonly string[],
   /** Max decisions to surface per tool call (only in normal mode) */
   MAX_DECISIONS: 2,
   /** Max investigation chain summaries to surface per tool call */

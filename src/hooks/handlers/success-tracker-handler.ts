@@ -10,6 +10,7 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 import { CONFIDENCE, LIMITS, TOKEN_BUDGET } from '../../constants/index.js';
 import { loadTracker, saveTracker, type ResumeCursor } from '../shared/edit-tracker.js';
 import { classifySuccess, type ToolEvent } from '../../utils/success-classifier.js';
+import { extractPatchFilePaths, patchTextOf } from '../shared/patch-paths.js';
 import { projectId } from '../../utils/project-id.js';
 import { markRecallSuccess } from '../../utils/prediction.js';
 import { recordGovernanceEventFailOpen } from '../../governance/recorder.js';
@@ -31,7 +32,9 @@ export async function handleSuccessTracker(
 }
 
 function handleSuccessTrackerBusiness(input: PostToolUseInput, client: CachedHookContext): SuccessTrackerResult {
-  if (!['Write', 'Edit', 'MultiEdit', 'Bash'].includes(input.tool_name)) {
+  // apply_patch is Codex's edit tool (D8) — governance recording above
+  // stays Claude-scoped, but file-level tracking treats it like Write/Edit.
+  if (!['Write', 'Edit', 'MultiEdit', 'Bash', 'apply_patch'].includes(input.tool_name)) {
     return { tracked: false };
   }
 
@@ -110,8 +113,11 @@ function handleSuccessTrackerBusiness(input: PostToolUseInput, client: CachedHoo
     tracker.toolChain = tracker.toolChain.slice(-LIMITS.TOOL_CHAIN_MAX);
   }
 
-  // File-level tracking for Write/Edit/MultiEdit — boost confidence on surfaced pitfalls
-  const isEditTool = input.tool_name === 'Write' || input.tool_name === 'Edit' || input.tool_name === 'MultiEdit';
+  // File-level tracking for edit-type tools — boost confidence on surfaced
+  // pitfalls. apply_patch (Codex) counts: its file paths come from the
+  // patch envelope headers.
+  const isEditTool = input.tool_name === 'Write' || input.tool_name === 'Edit'
+    || input.tool_name === 'MultiEdit' || input.tool_name === 'apply_patch';
   if (isEditTool && filePaths.length > 0) {
     let needsBoost = false;
     for (const fp of filePaths) {
@@ -141,7 +147,8 @@ function handleSuccessTrackerBusiness(input: PostToolUseInput, client: CachedHoo
     // can't be located (e.g. racing with a reformat). The cursor still
     // carries file + tool + timestamp so the briefing can tell you what you
     // were touching even without a precise line.
-    if (filePath) {
+    // apply_patch has no old_string anchor to locate — no cursor for it.
+    if (filePath && input.tool_name !== 'apply_patch') {
       const cursor: ResumeCursor = {
         file: filePath,
         line: extractCursorLine(input.tool_name as ResumeCursor['tool'], filePath, input.tool_input),
@@ -228,6 +235,9 @@ function extractCursorLine(
 }
 
 function extractFilePaths(input: PostToolUseInput): string[] {
+  const patchText = patchTextOf(input);
+  if (patchText !== null) return extractPatchFilePaths(patchText);
+
   const paths: string[] = [];
   const fp = input.tool_input.file_path as string | undefined;
   if (fp) paths.push(fp);

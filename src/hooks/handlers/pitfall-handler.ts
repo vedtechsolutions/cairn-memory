@@ -80,7 +80,9 @@ export function handlePitfallCheck(input: PreToolUseInput, client: CachedHookCon
   const command = input.tool_input.command as string | undefined;
   const ext = filePath ? extname(filePath).slice(1) : null;
   const fileLabel = filePath ? basename(filePath) : (ext ?? 'this operation');
-  const isEditTool = ['Write', 'Edit', 'MultiEdit'].includes(input.tool_name);
+  // apply_patch is Codex's edit tool — its file paths come from the patch
+  // envelope headers (D8), so file-targeted warnings apply to it too.
+  const isEditTool = ['Write', 'Edit', 'MultiEdit', 'apply_patch'].includes(input.tool_name);
 
   // --- Load tracker: in-memory (cache) or file I/O (standalone) ---
   const tracker = client.cache?.getTracker(input.session_id) ?? loadTracker(input.session_id);

@@ -17,6 +17,7 @@
 import type { PostToolUseFailureInput } from '../shared/hook-io.js';
 import type { CachedHookContext } from '../shared/db-client.js';
 import { isCodexClient, originClientOf } from '../shared/client-adapter.js';
+import { extractPatchFilePaths, patchTextOf } from '../shared/patch-paths.js';
 import { classifyError } from '../../utils/error-classifier.js';
 import { loadTracker, updateTracker, type EditTracker } from '../shared/edit-tracker.js';
 import { projectId } from '../../utils/project-id.js';
@@ -361,6 +362,9 @@ function buildWarningMessage(errorText: string, filePath?: string): string {
 }
 
 function extractFilePaths(input: PostToolUseFailureInput): string[] {
+  const patchText = patchTextOf(input);
+  if (patchText !== null) return extractPatchFilePaths(patchText);
+
   const paths: string[] = [];
   const fp = input.tool_input.file_path as string | undefined;
   if (fp) paths.push(fp);
