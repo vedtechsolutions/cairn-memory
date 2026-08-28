@@ -279,6 +279,13 @@ export function registerPortabilityTools(
         return { content: [{ type: 'text' as const, text: 'already global' }] };
       }
 
+      // Standing FIRST: the kind/confidence checks below name row
+      // metadata, and an outside caller must hit the refusal before
+      // learning any of it.
+      if (isPrivateProject(memory.project) && memory.project !== sessionProjectId()) {
+        return { content: [{ type: 'text' as const, text: `error: project "${memory.project}" is marked private — its memories can be promoted only from a session inside that project.` }], isError: true };
+      }
+
       if (!(PROMOTION.ALLOWED_KINDS as readonly string[]).includes(memory.kind)) {
         return { content: [{ type: 'text' as const, text: `error: only ${PROMOTION.ALLOWED_KINDS.join('/')} can be promoted (got ${memory.kind})` }], isError: true };
       }
@@ -295,13 +302,8 @@ export function registerPortabilityTools(
       // NOT name the flag: for an autonomous agent, an error that says
       // "re-run with the flag" is the path of least resistance, and the
       // flag alone would not work anyway.
-      if (isPrivateProject(memory.project)) {
-        if (memory.project !== sessionProjectId()) {
-          return { content: [{ type: 'text' as const, text: `error: project "${memory.project}" is marked private — its memories can be promoted only from a session inside that project.` }], isError: true };
-        }
-        if (fromPrivate !== true) {
-          return { content: [{ type: 'text' as const, text: `error: project "${memory.project}" is marked private — promoting makes this memory visible in ALL projects. Re-run with from_private: true to acknowledge.` }], isError: true };
-        }
+      if (isPrivateProject(memory.project) && fromPrivate !== true) {
+        return { content: [{ type: 'text' as const, text: `error: project "${memory.project}" is marked private — promoting makes this memory visible in ALL projects. Re-run with from_private: true to acknowledge.` }], isError: true };
       }
 
       const ok = repo.promote(id);

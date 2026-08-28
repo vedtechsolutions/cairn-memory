@@ -68,9 +68,12 @@ function parseConfig(raw: string): CairnConfig | 'bad-shape' {
     return Object.keys(scope as object).length === 0 ? EMPTY_CONFIG : 'bad-shape';
   }
   if (!Array.isArray(list)) return 'bad-shape';
+  // Non-string members mean a malformed file, not ignorable noise — being
+  // silently filtered to an empty set is the same fail-open as a typo.
+  if (list.some((p) => typeof p !== 'string')) return 'bad-shape';
   return {
     scope: {
-      privateProjects: new Set(list.filter((p): p is string => typeof p === 'string' && p.length > 0)),
+      privateProjects: new Set(list.filter((p): p is string => p.length > 0)),
     },
   };
 }

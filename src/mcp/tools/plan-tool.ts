@@ -69,7 +69,11 @@ export function registerPlanTool(
 
       switch (params.action) {
         case 'create':
-          return handleCreate(planRepo, memoryRepo, params, sessionCache);
+          // Store under the RESOLVED id: an alias ('cairn' for
+          // 'cairn-abc123') creating under the raw string would park the
+          // plan at an id the privacy guard never matches (reproduced by
+          // review). Genuinely new names resolve to themselves.
+          return handleCreate(planRepo, memoryRepo, { ...params, project: project ?? params.project }, sessionCache);
 
         case 'get':
           return handleGet(planRepo, project, params.filter, mode);

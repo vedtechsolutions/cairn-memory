@@ -141,6 +141,7 @@ describe('scope config loader', () => {
         ['{"scope":{}}', false],                            // deliberate empty
         ['{}', false],                                      // minimal file
         ['{"scope":{"privateProjects":[]}}', false],        // explicit empty list
+        ['{"scope":{"privateProjects":[1, 2]}}', true],      // non-string members = malformed
       ];
       for (const [raw, shouldWarn] of cases) {
         const before = warnings.length;
@@ -601,6 +602,43 @@ describe('MCP surfaces', () => {
     assert.ok(own.text.includes('PRIVATE-PLAN'), 'plan readable from inside');
     const ownReminders = await call('cairn_reminder_list', { project: PRIVATE_PROJECT });
     assert.ok(ownReminders.text.includes('PRIVATE-REMINDER'), 'reminders readable from inside');
+  });
+
+  it('creating under an ALIAS stores the canonical id — no privacy-guard bypass via bare names (Codex round-3)', async () => {
+    // 'clientwork' resolves to the private id once memories exist under
+    // it; a plan/reminder created via the alias must land under the
+    // CANONICAL id or the guard never matches it again.
+    repo.create({ content: PRIVATE_MARKER, kind: 'pitfall', project: PRIVATE_PROJECT, confidence: 0.9 });
+    writeScopeConfig([PRIVATE_PROJECT]);
+    setSessionProjectForTests(PRIVATE_PROJECT);
+    await call('cairn_plan', { action: 'create', name: 'ALIAS-PLAN secret rollout', project: 'clientwork', steps: [{ description: 'ALIAS-STEP secret detail' }] });
+    await call('cairn_remind', { trigger: 'alias-trigger', action: 'ALIAS-REMINDER secret action', project: 'clientwork' });
+
+    setSessionProjectForTests(OTHER_PROJECT);
+    const planRes = await client.readResource({ uri: 'cairn://plan/clientwork/active' });
+    const planText = (planRes.contents as Array<{ text?: string }>).map(c => c.text ?? '').join('\n');
+    assert.ok(!planText.includes('ALIAS-PLAN'), 'alias-created plan is stored canonical and stays guarded');
+    const reminders = await call('cairn_reminder_list', {});
+    assert.ok(!reminders.text.includes('ALIAS-REMINDER'), 'alias-created reminder is stored canonical and stays guarded');
+  });
+
+  it('export with ONLY private matches reports the exclusion on the zero-result path', async () => {
+    repo.create({ content: PRIVATE_MARKER, kind: 'pitfall', project: PRIVATE_PROJECT, confidence: 0.9 });
+    writeScopeConfig([PRIVATE_PROJECT]);
+    const out = await call('cairn_export', {});
+    assert.match(out.text, /No memories match.*1 record\(s\) from private project\(s\) excluded/s,
+      'a DB whose only matches are private must not read as nothing-exists');
+  });
+
+  it('promote from outside refuses BEFORE leaking kind/confidence metadata', async () => {
+    // A low-confidence fact fails kind and confidence checks — but an
+    // outside caller must get the standing refusal, not those details.
+    const mem = repo.create({ content: PRIVATE_MARKER, kind: 'fact', project: PRIVATE_PROJECT, confidence: 0.2 });
+    writeScopeConfig([PRIVATE_PROJECT]);
+    const refused = await call('cairn_promote', { id: mem.id });
+    assert.match(refused.text, /session inside/);
+    assert.ok(!refused.text.includes('confidence'), 'no confidence leak');
+    assert.ok(!refused.text.includes('fact'), 'no kind leak');
   });
 
   it('mutations follow readability: forget/correct/cleanup-execute cannot touch private rows from outside', async () => {

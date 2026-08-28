@@ -46,7 +46,9 @@ export function registerReminderTools(
       const result = repo.create({
         trigger,
         action,
-        project: project ?? null,
+        // Resolved id, same reason as plan create: an alias-stored row
+        // would sit outside the privacy guard's canonical-id match.
+        project: repo.resolveProject(project) ?? project ?? null,
         max_fires: maxFires,
         trigger_type: triggerType,
         trigger_config: triggerConfig,
