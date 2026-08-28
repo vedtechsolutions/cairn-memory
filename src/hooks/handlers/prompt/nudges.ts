@@ -6,6 +6,7 @@
 import { isPositiveConfirmation, detectUserProfile, detectReference } from '../../../utils/intent-classifier.js';
 import { UserModelRepository, type UserDimension } from '../../../db/user-model-repository.js';
 import { validateMemoryContent } from '../../../utils/validation.js';
+import { originClientOf } from '../../shared/client-adapter.js';
 import { CONFIDENCE } from '../../../constants/index.js';
 import type { PromptCtx } from './types.js';
 import { checkTranscriptForCairnCalls, hasEntityTerms, summarizeRecentActions } from './helpers.js';
@@ -62,7 +63,7 @@ export function applyWorkflowNudges(ctx: PromptCtx): void {
 /** Prompt-driven auto-capture: positive confirmations, user-profile signals,
  *  and external-reference signals. */
 export function applyAutoCapture(ctx: PromptCtx): void {
-  const { client, prompt, project, fp, mode, tracker } = ctx;
+  const { client, input, prompt, project, fp, mode, tracker } = ctx;
 
   // Positive confirmation capture
   if (isPositiveConfirmation(prompt) && mode !== 'minimal') {
@@ -75,6 +76,7 @@ export function applyAutoCapture(ctx: PromptCtx): void {
           content: confirmedAction,
           project,
           source: 'confirmed',
+          originClient: originClientOf(input),
           confidence: CONFIDENCE.CONFIRMED,
           fingerprint: fp,
         });
@@ -98,6 +100,7 @@ export function applyAutoCapture(ctx: PromptCtx): void {
           project: null,
           confidence: CONFIDENCE.AUTO_DETECTED,
           source: 'learned',
+          originClient: originClientOf(input),
         });
       }
 
@@ -129,6 +132,7 @@ export function applyAutoCapture(ctx: PromptCtx): void {
           tags: refSignal.tags,
           confidence: CONFIDENCE.AUTO_DETECTED,
           source: 'learned',
+          originClient: originClientOf(input),
         });
       }
     }

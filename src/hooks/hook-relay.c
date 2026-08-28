@@ -405,7 +405,24 @@ int main(int argc, char *argv[]) {
      * turns those into EPIPE write errors the fallback paths already handle. */
     signal(SIGPIPE, SIG_IGN);
 
-    const char *hook_type = argv[1];
+    /* Optional declared client identity: `--client <name> <hook-type>`.
+     * Forwarded as an X-Cairn-Client header on the socket path; exported as
+     * CAIRN_CLIENT so every exec_fallback child inherits it. The name comes
+     * from hook wiring Cairn itself authors, never from the payload. */
+    int argi = 1;
+    const char *client_name = NULL;
+    if (argc >= 4 && strcmp(argv[1], "--client") == 0) {
+        client_name = argv[2];
+        setenv("CAIRN_CLIENT", client_name, 1);
+        argi = 3;
+    } else {
+        /* Mirror hook-relay.sh: without --client, a stale inherited
+         * CAIRN_CLIENT must not leak into fallback children — a Claude
+         * session would otherwise emit the codex JSON envelope. */
+        unsetenv("CAIRN_CLIENT");
+    }
+
+    const char *hook_type = argv[argi];
     /* Self-identification probe: lets `cairn init`/`doctor` confirm this binary
      * actually runs on THIS platform and is the Cairn relay. A shipped
      * wrong-arch/OS ELF execvp-falls-back to /bin/sh and would otherwise look
@@ -459,6 +476,15 @@ int main(int argc, char *argv[]) {
         return 0;
     }
 
+    /* Standalone hooks own their own DB access — mirror hook-relay.sh's
+     * STANDALONE_HOOKS list and skip the socket round-trip entirely
+     * (the daemon has no route for them; going there just logs a
+     * bad-status fallback on every fire). */
+    if (strcmp(hook_type, "precompact") == 0 || strcmp(hook_type, "session-end") == 0) {
+        exec_fallback(argv[0], hook_type, input_buf, input_len, 0);
+        return 0;
+    }
+
     /* Check socket exists. If missing, exec the JS fallback directly. */
     struct stat st;
     if (stat(sock_path, &st) != 0 || !S_ISSOCK(st.st_mode)) {
@@ -470,12 +496,19 @@ int main(int argc, char *argv[]) {
     /* Build HTTP headers only. The body is written separately from
      * input_buf so a NUL byte in the payload can't truncate it out from
      * under the Content-Length we advertise. */
+    char client_hdr[96] = "";
+    if (client_name != NULL) {
+        int cn = snprintf(client_hdr, sizeof(client_hdr),
+                          "X-Cairn-Client: %s\r\n", client_name);
+        if (cn <= 0 || (size_t)cn >= sizeof(client_hdr)) client_hdr[0] = '\0';
+    }
     int hdr_len = snprintf(hdr_buf, sizeof(hdr_buf),
         "POST /%s HTTP/1.0\r\n"
         "Content-Type: application/json\r\n"
+        "%s"
         "Content-Length: %zu\r\n"
         "\r\n",
-        hook_type, input_len);
+        hook_type, client_hdr, input_len);
     if (hdr_len <= 0 || (size_t)hdr_len >= sizeof(hdr_buf)) {
         log_fallback(home, hook_type, "header-overflow");
         if (!is_governance) exec_fallback(argv[0], hook_type, input_buf, input_len, 0);

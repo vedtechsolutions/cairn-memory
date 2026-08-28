@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added — Codex parity Slice A: client adapter, briefing, provenance
+
+- **Codex sessions now receive the Cairn session-start briefing and ambient wiring foundation.** The hook relay accepts a `--client <name>` flag (forwarded as an `X-Cairn-Client` header on the daemon socket and as `CAIRN_CLIENT` env on direct-node fallback paths), and a shared client adapter normalizes payload deltas in one place for both transports — declared identity, never sniffed, with declared identity overriding anything the payload asserts. For declared non-Claude clients only, `SessionStart.source` maps onto the `type` field the handlers read, so startup/resume/clear/compact (including post-compaction recovery) behave identically across agents — Claude sessions keep their existing inference-derived session typing, verified byte-identical.
+- **Schema v29: per-memory client provenance.** New `memories.origin_client` column (default `claude`, idempotent guarded migration) records which agent authored each memory — stamped at every hook-path write site (decision mining, corrections, pitfalls, patterns, profile/reference capture, across daemon and fallback transports) and on MCP-tool writes from the connecting client's `clientInfo`. This is the seam Phase-2 author attribution builds on.
+- **Complete Codex hooks wiring template** at `deploy/codex-hooks.json` — every event wired through the relay from day one so the user's interactive hook-trust review happens exactly once, with later slices activating server-side.
+- **PreToolUse warnings are Codex-compatible.** Codex 0.150.1 rejects `permissionDecision: "allow"` from PreToolUse hooks (found live in the first trusted session), so pitfall warnings for Codex emit `additionalContext` alone; Claude keeps the explicit allow it has always sent.
+- **Codex-aware guards:** Claude's transcript parser is skipped for Codex sessions (their `transcript_path` is a rollout JSONL — snapshot enrichment degrades to empty instead of mining garbage), and tier-3 sigil nudges are suppressed for Codex sessions where Socratic reflection can never run (no MCP sampling).
+
 ## [5.2.0] - 2026-08-28
 
 ### Fixed — reliability pass (cross-agent audit)

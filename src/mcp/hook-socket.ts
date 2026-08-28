@@ -11,7 +11,9 @@ import { writeFileSync, chmodSync } from 'node:fs';
 import type { Server as McpInnerServer } from '@modelcontextprotocol/sdk/server/index.js';
 import { acquireSocketClaim, releaseSocketClaim, ensureCairnDirSecure, isOwnerOnly, socketPath, pidPath } from './socket-ownership.js';
 import { FS_PERMS } from '../constants/index.js';
+import { CLIENT_HEADER } from '../constants/clients.js';
 import type { HookDbClient, CachedHookContext } from '../hooks/shared/db-client.js';
+import { normalizeHookInput } from '../hooks/shared/client-adapter.js';
 import { SessionCache } from '../hooks/shared/session-cache.js';
 import { saveTracker } from '../hooks/shared/edit-tracker.js';
 import { handlePitfallCheck } from '../hooks/handlers/pitfall-handler.js';
@@ -222,6 +224,15 @@ const routes: Record<string, {
     extractEventType: (input: { trigger?: string }) => input.trigger ?? 'auto',
     extractMeta: (_input, result) => ({ daemon: true, tokensSaved: result.tokensSaved }),
   },
+  // Slice B placeholder: the Codex hooks.json wires PostToolUse here from
+  // day one (single trust review). Returning 200 keeps the relay off its
+  // fallback path (which would append to the fallback log on every tool
+  // call) until the real demux handler lands.
+  '/codex-post-tool': {
+    handler: () => ({ output: null, action: 'pending-slice-b' }),
+    telemetryName: 'codex-post-tool',
+    extractEventType: (input: { tool_name?: string }) => input.tool_name ?? 'unknown',
+  },
   '/session-start': {
     handler: (input, c) => {
       const r = handleSessionStart(input, c);
@@ -349,6 +360,16 @@ export async function startHookSocket(
       res.writeHead(400);
       res.end('Invalid JSON');
       return;
+    }
+
+    // Daemon transport path: client identity arrives as a relay-set header
+    // (the direct-node fallback path normalizes in readStdinJson instead).
+    if (input && typeof input === 'object' && !Array.isArray(input)) {
+      const headerClient = req.headers[CLIENT_HEADER];
+      normalizeHookInput(
+        input as Record<string, unknown>,
+        typeof headerClient === 'string' ? headerClient : undefined,
+      );
     }
 
     const route = routes[req.url ?? ''];

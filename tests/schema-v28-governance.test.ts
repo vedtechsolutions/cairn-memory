@@ -148,7 +148,7 @@ describe('schema v28 governance migration', () => {
     seedV27(path);
     const db = openDatabase({ dbPath: path });
     try {
-      assert.equal(version(db), 28);
+      assert.equal(version(db), SCHEMA_VERSION);
       const row = db.prepare('SELECT * FROM memories WHERE id = ?').get('m-old') as Record<string, unknown>;
       assert.equal(row.content, 'v28 aardwolf migration source');
       assert.equal(row.revision, 7);
@@ -183,7 +183,7 @@ describe('schema v28 governance migration', () => {
 
     const db = openDatabase({ dbPath: path });
     try {
-      assert.equal(version(db), 28);
+      assert.equal(version(db), SCHEMA_VERSION);
       assert.deepEqual(foreignKeyViolations(db), before);
       const orphan = db.prepare(`
         SELECT plan_id, step_id, description FROM plan_steps
@@ -209,7 +209,7 @@ describe('schema v28 governance migration', () => {
 
     const db = openDatabase({ dbPath: path });
     try {
-      assert.equal(version(db), 28);
+      assert.equal(version(db), SCHEMA_VERSION);
       assert.deepEqual(foreignKeyViolations(db), before);
       const orphan = db.prepare(`
         SELECT session_id, memory_id, led_to_success FROM session_memories

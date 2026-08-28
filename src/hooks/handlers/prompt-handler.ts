@@ -9,6 +9,7 @@
  */
 import type { UserPromptSubmitInput } from '../shared/hook-io.js';
 import type { CachedHookContext } from '../shared/db-client.js';
+import { wrapContextOutput } from '../shared/client-adapter.js';
 import { SessionCache } from '../shared/session-cache.js';
 import { classifyIntent } from '../../utils/intent-classifier.js';
 import { readState } from '../shared/state-io.js';
@@ -181,7 +182,9 @@ export function handlePromptCheck(input: UserPromptSubmitInput, client: CachedHo
   }
 
   return {
-    output: finalOutput,
+    // Codex only injects the JSON hookSpecificOutput contract; Claude
+    // injects plain UserPromptSubmit stdout directly.
+    output: wrapContextOutput(input, 'UserPromptSubmit', finalOutput),
     intent,
     injections: output.length,
   };

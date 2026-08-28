@@ -6,7 +6,8 @@
  */
 import { readStdinJson, type PreCompactInput } from './shared/hook-io.js';
 import { createHookDbClient } from './shared/db-client.js';
-import { parseTranscript } from './shared/transcript-parser.js';
+import { parseTranscript, emptySnapshot } from './shared/transcript-parser.js';
+import { isCodexClient, originClientOf } from './shared/client-adapter.js';
 import { resolveInitialGoal, resolveProjectGoal } from './shared/goal-resolver.js';
 import { projectId } from '../utils/project-id.js';
 import { generateId, now } from '../utils/index.js';
@@ -27,8 +28,10 @@ try {
 
   const project = projectId(input.cwd);
 
-  // Parse transcript for recent state
-  const snapshot = parseTranscript(input.transcript_path);
+  // Parse transcript for recent state. Codex transcript_path points at a
+  // rollout JSONL the Claude-format parser cannot read — degrade to empty
+  // rather than mine garbage (rollout parser is a recorded follow-up).
+  const snapshot = isCodexClient(input) ? emptySnapshot() : parseTranscript(input.transcript_path);
 
   // Enrich decisions: transcript may miss decisions from earlier in the session
   // or from previous sessions. Pull from DB plan as authoritative source.
@@ -164,6 +167,7 @@ try {
         project,
         confidence: CONFIDENCE.AUTO_DETECTED,
         source: 'learned',
+        originClient: originClientOf(input),
         fingerprint: fp,
         context: why ? { why } : undefined,
       });

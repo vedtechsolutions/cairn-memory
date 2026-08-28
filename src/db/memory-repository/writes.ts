@@ -6,6 +6,7 @@ import {
   type LearnableKind,
   type MemorySource,
 } from '../../constants/index.js';
+import { CLIENT_CLAUDE } from '../../constants/clients.js';
 import { generateId, now, sanitize, scrubSecrets, tokenOverlap, buildFtsQuery } from '../../utils/index.js';
 import { getEmbeddingModelConfig } from '../../utils/embeddings.js';
 import { cosineSimilarity } from '../../utils/similarity.js';
@@ -82,9 +83,9 @@ export function create(db: Database.Database, input: CreateMemoryInput): CreateR
   const anchorJson = input.anchor ?? null;
 
   db.prepare(`
-    INSERT INTO memories (id, content, kind, project, tags, confidence, source, created_at, recall_count, invalidated, expires_at, fingerprint, context, embedding, embedding_model, anchor)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?, ?)
-  `).run(id, content, input.kind, project, tagsJson, confidence, source, timestamp, input.expiresAt ?? null, fpJson, ctxJson, embeddingBlob, embeddingModel, anchorJson);
+    INSERT INTO memories (id, content, kind, project, tags, confidence, source, origin_client, created_at, recall_count, invalidated, expires_at, fingerprint, context, embedding, embedding_model, anchor)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?, ?)
+  `).run(id, content, input.kind, project, tagsJson, confidence, source, input.originClient ?? CLIENT_CLAUDE, timestamp, input.expiresAt ?? null, fpJson, ctxJson, embeddingBlob, embeddingModel, anchorJson);
 
   if (input.skipConflictDetection) {
     return { id, deduplicated: false };
@@ -160,9 +161,9 @@ export function storeMemory(db: Database.Database, input: StoreMemoryInput): Cre
   const anchorJson = input.anchor ?? null;
 
   db.prepare(`
-    INSERT INTO memories (id, content, kind, project, tags, confidence, source, created_at, recall_count, invalidated, expires_at, fingerprint, context, embedding, embedding_model, anchor)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, NULL, ?, ?, ?, ?, ?)
-  `).run(id, content, kind, project, JSON.stringify(tags), confidence, source, timestamp, fpJson, ctxJson, input.embedding ?? null, input.embedding ? getEmbeddingModelConfig().key : null, anchorJson);
+    INSERT INTO memories (id, content, kind, project, tags, confidence, source, origin_client, created_at, recall_count, invalidated, expires_at, fingerprint, context, embedding, embedding_model, anchor)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, NULL, ?, ?, ?, ?, ?)
+  `).run(id, content, kind, project, JSON.stringify(tags), confidence, source, input.originClient ?? CLIENT_CLAUDE, timestamp, fpJson, ctxJson, input.embedding ?? null, input.embedding ? getEmbeddingModelConfig().key : null, anchorJson);
 
   return { id, deduplicated: false, ...detectConflicts(db, id) };
 }

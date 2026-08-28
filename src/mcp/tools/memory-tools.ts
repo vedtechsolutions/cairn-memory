@@ -4,6 +4,7 @@ import * as z from 'zod/v4';
 import type { MemoryRepository } from '../../db/memory-repository.js';
 import type { EdgeRepository } from '../../db/edge-repository.js';
 import type { SessionCache } from '../../hooks/shared/session-cache.js';
+import { deriveOriginClient } from '../../hooks/shared/client-adapter.js';
 import { LEARNABLE_KINDS, LIMITS, BRIEFING_MODE, RELEVANCE, FINGERPRINT, type ContextMode } from '../../constants/index.js';
 import { RERANK } from '../../constants/reranker-models.js';
 import { generateFingerprint } from '../../utils/fingerprint.js';
@@ -278,6 +279,10 @@ export function registerMemoryTools(
       const anchor = extractAnchor(content);
       const anchorStr = anchor ? anchorToJson(anchor) : undefined;
 
+      // Provenance: which agent authored this write (schema v29). The MCP
+      // path has no relay flag, so derive from the initialize clientInfo.
+      const originClient = deriveOriginClient(innerServer?.getClientVersion()?.name);
+
       // Decisions and pitfalls use unified gateways for smart dedup
       const result = kind === 'decision'
         ? repo.storeDecision({
@@ -286,6 +291,7 @@ export function registerMemoryTools(
             tags: effectiveTags,
             context,
             embedding: embeddingBuf,
+            originClient,
           })
         : kind === 'pitfall'
         ? repo.storePitfall({
@@ -295,6 +301,7 @@ export function registerMemoryTools(
             context,
             embedding: embeddingBuf,
             anchor: anchorStr,
+            originClient,
           })
         : repo.create({
             content,
@@ -305,6 +312,7 @@ export function registerMemoryTools(
             context,
             embedding: embeddingBuf,
             anchor: anchorStr,
+            originClient,
           });
 
       // Auto-create cross-kind 'informs' edges for new (non-dedup) memories

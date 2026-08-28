@@ -11,6 +11,7 @@ export {
 } from './transcript/snapshot.js';
 export { looksLikeFilePath, classifyCommandBucket } from './transcript/classify.js';
 export { parseTranscript } from './transcript/parse-transcript.js';
+export { emptySnapshot } from './transcript/snapshot.js';
 export { isMetaGoal, distillGoal } from './transcript/goal-extraction.js';
 export { extractAssistantDecision, extractDecisionSigils } from './transcript/decision-extraction.js';
 export {

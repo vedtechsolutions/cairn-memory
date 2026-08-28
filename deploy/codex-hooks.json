@@ -1,0 +1,37 @@
+{
+  "description": "Cairn memory hooks — passive briefing, ambient recall, pitfall warnings, auto-capture (same experience as Claude Code). DEV-MACHINE REFERENCE with absolute /opt/cairn paths; `cairn init` (parity plan step 5) generates the per-install version via resolveRelay. Install at ~/.codex/hooks.json; requires one interactive trust review at next Codex start.",
+  "hooks": {
+    "SessionStart": [
+      { "hooks": [ { "type": "command", "command": "/opt/cairn/dist/src/hooks/hook-relay --client codex session-start", "timeout": 10, "statusMessage": "Cairn briefing", "additionalContextLimit": 2500 } ] }
+    ],
+    "UserPromptSubmit": [
+      { "hooks": [ { "type": "command", "command": "/opt/cairn/dist/src/hooks/hook-relay --client codex prompt-check", "timeout": 10, "additionalContextLimit": 2500 } ] }
+    ],
+    "PreToolUse": [
+      { "matcher": "Bash|apply_patch",
+        "hooks": [ { "type": "command", "command": "/opt/cairn/dist/src/hooks/hook-relay --client codex pitfall-check", "timeout": 10 } ] }
+    ],
+    "PostToolUse": [
+      { "matcher": "Bash|apply_patch",
+        "hooks": [ { "type": "command", "command": "/opt/cairn/dist/src/hooks/hook-relay --client codex codex-post-tool", "timeout": 30, "async": true } ] }
+    ],
+    "Stop": [
+      { "hooks": [ { "type": "command", "command": "/opt/cairn/dist/src/hooks/hook-relay --client codex stop", "timeout": 30, "async": true } ] }
+    ],
+    "SubagentStart": [
+      { "hooks": [ { "type": "command", "command": "/opt/cairn/dist/src/hooks/hook-relay --client codex subagent-context", "timeout": 10 } ] }
+    ],
+    "SubagentStop": [
+      { "hooks": [ { "type": "command", "command": "/opt/cairn/dist/src/hooks/hook-relay --client codex subagent-stop", "timeout": 30, "async": true } ] }
+    ],
+    "PreCompact": [
+      { "hooks": [ { "type": "command", "command": "/opt/cairn/dist/src/hooks/hook-relay --client codex precompact", "timeout": 10 } ] }
+    ],
+    "PostCompact": [
+      { "hooks": [ { "type": "command", "command": "/opt/cairn/dist/src/hooks/hook-relay --client codex postcompact", "timeout": 10 } ] }
+    ],
+    "SessionEnd": [
+      { "hooks": [ { "type": "command", "command": "/opt/cairn/dist/src/hooks/hook-relay --client codex session-end", "timeout": 10 } ] }
+    ]
+  }
+}

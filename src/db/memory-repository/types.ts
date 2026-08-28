@@ -35,6 +35,9 @@ export interface CreateMemoryInput {
   tags?: string[];
   project?: string | null;
   source?: MemorySource;
+  /** Authoring agent client (claude, codex, …) — schema v29 provenance.
+   *  Defaults to claude; distinct from `source` (capture mechanism). */
+  originClient?: string;
   confidence?: number;
   expiresAt?: string;
   fingerprint?: ContextFingerprint;
@@ -62,6 +65,7 @@ export interface StoreDecisionInput {
   content: string;
   project: string | null;
   source?: MemorySource;
+  originClient?: string;
   confidence?: number;
   fingerprint?: ContextFingerprint;
   context?: { why?: string; how_to_apply?: string };
@@ -73,6 +77,7 @@ export interface StorePitfallInput {
   content: string;
   project: string | null;
   source?: MemorySource;
+  originClient?: string;
   confidence?: number;
   fingerprint?: ContextFingerprint;
   context?: { why?: string; how_to_apply?: string };
@@ -87,6 +92,7 @@ export interface StoreMemoryInput {
   project: string | null;
   kind: 'decision' | 'pitfall';
   source?: MemorySource;
+  originClient?: string;
   confidence?: number;
   fingerprint?: ContextFingerprint;
   context?: { why?: string; how_to_apply?: string };

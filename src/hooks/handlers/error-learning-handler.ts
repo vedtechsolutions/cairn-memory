@@ -16,6 +16,7 @@
  */
 import type { PostToolUseFailureInput } from '../shared/hook-io.js';
 import type { CachedHookContext } from '../shared/db-client.js';
+import { originClientOf } from '../shared/client-adapter.js';
 import { classifyError } from '../../utils/error-classifier.js';
 import { loadTracker, updateTracker, type EditTracker } from '../shared/edit-tracker.js';
 import { projectId } from '../../utils/project-id.js';
@@ -270,6 +271,7 @@ function handleErrorLearningBusiness(input: PostToolUseFailureInput, client: Cac
     tags: classification.tags,
     project,
     confidence: CONFIDENCE.AUTO_DETECTED,
+    originClient: originClientOf(input),
     fingerprint: fp,
     anchor: anchorStr,
   });

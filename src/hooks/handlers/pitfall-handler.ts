@@ -8,6 +8,7 @@
  */
 import type { PreToolUseInput } from '../shared/hook-io.js';
 import type { CachedHookContext } from '../shared/db-client.js';
+import { isCodexClient } from '../shared/client-adapter.js';
 import { readState } from '../shared/state-io.js';
 import { projectId } from '../../utils/project-id.js';
 import { basename, extname } from 'node:path';
@@ -170,10 +171,14 @@ export function handlePitfallCheck(input: PreToolUseInput, client: CachedHookCon
   if (capped.length > 0) {
     const formatted = capped.map(w => `  - ${w}`).join('\n');
     const context = `[CAIRN] Pitfalls for ${fileLabel}:\n${formatted}`;
+    // Codex 0.150.1 rejects permissionDecision:"allow" from PreToolUse hooks
+    // (observed live: "unsupported permissionDecision:allow" hook failure) —
+    // warnings are advisory, so emit context alone for codex; Claude keeps
+    // the explicit allow it has always sent.
     outputStr = JSON.stringify({
       hookSpecificOutput: {
         hookEventName: 'PreToolUse',
-        permissionDecision: 'allow',
+        ...(isCodexClient(input) ? {} : { permissionDecision: 'allow' }),
         additionalContext: context,
       },
     });

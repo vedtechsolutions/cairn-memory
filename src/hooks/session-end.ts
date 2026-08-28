@@ -11,7 +11,8 @@ import { generateId, now } from '../utils/index.js';
 import { recordTelemetry } from './shared/hook-telemetry.js';
 import { loadTracker, deleteTracker } from './shared/edit-tracker.js';
 import { LIMITS, CONFIDENCE, CONSOLIDATION } from '../constants/index.js';
-import { parseTranscript, extractWinningPattern } from './shared/transcript-parser.js';
+import { parseTranscript, emptySnapshot, extractWinningPattern } from './shared/transcript-parser.js';
+import { isCodexClient, originClientOf } from './shared/client-adapter.js';
 import { resolveInitialGoal, resolveProjectGoal } from './shared/goal-resolver.js';
 import { generateFingerprint } from '../utils/fingerprint.js';
 import { getGitWorkingState, getGitHash } from '../utils/project-scanner.js';
@@ -66,7 +67,9 @@ try {
   // --- Final transcript parse — capture conversation since last compaction ---
   // Prevents memory loss when user exits via /exit without triggering compaction.
   try {
-    const snapshot = parseTranscript(input.transcript_path);
+    // Codex transcript_path is a rollout JSONL the Claude-format parser
+    // cannot read — degrade to empty (rollout parser is a recorded follow-up).
+    const snapshot = isCodexClient(input) ? emptySnapshot() : parseTranscript(input.transcript_path);
     // Load tracker once for snapshot enrichment (resume cursor) — deleted
     // later by deleteTracker, so anything that needs to survive must be
     // persisted into the snapshot first.
@@ -185,6 +188,7 @@ try {
           project,
           confidence: CONFIDENCE.AUTO_DETECTED,
           source: 'learned',
+          originClient: originClientOf(input),
           fingerprint: fp,
           context: why ? { why } : undefined,
         });
@@ -269,6 +273,7 @@ try {
         kind: 'pitfall',
         project,
         source: 'learned',
+        originClient: originClientOf(input),
         confidence: CONFIDENCE.AUTO_DETECTED,
         fingerprint: retroFp,
       });
@@ -280,7 +285,7 @@ try {
     // enough to produce a reliable winning pattern.
     if (overBudget.length === 0 && quality.label === 'smooth' && quality.stepsCompleted > 0) {
       try {
-        const retroSnapshot = parseTranscript(input.transcript_path);
+        const retroSnapshot = isCodexClient(input) ? emptySnapshot() : parseTranscript(input.transcript_path);
         const patterns: string[] = [];
         // Scan approach notes first — these are already pre-filtered to
         // strategy-like content.
@@ -295,6 +300,7 @@ try {
             kind: 'pattern',
             project,
             source: 'learned',
+            originClient: originClientOf(input),
             confidence: CONFIDENCE.AUTO_DETECTED,
             fingerprint: retroFp,
           });

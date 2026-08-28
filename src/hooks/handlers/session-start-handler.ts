@@ -9,6 +9,7 @@
  */
 import type { SessionStartInput } from '../shared/hook-io.js';
 import type { CachedHookContext } from '../shared/db-client.js';
+import { wrapContextOutput } from '../shared/client-adapter.js';
 import { compileBriefing, recoverDroppedPitfalls, buildBriefingQueryFp, type BriefingContext } from '../shared/briefing-compiler.js';
 import { projectId } from '../../utils/project-id.js';
 import { migrateProjectIdentity } from '../../db/project-identity-migration.js';
@@ -462,7 +463,9 @@ export function handleSessionStart(
   const output = truncateToTokenBudget(outputText, budget);
 
   return {
-    output,
+    // Codex only injects the JSON hookSpecificOutput contract; Claude
+    // injects plain SessionStart stdout directly.
+    output: wrapContextOutput(input, 'SessionStart', output),
     sessionType,
     interrupted,
     // Estimate the EMITTED text — Stage-2 recovered pitfalls and appended

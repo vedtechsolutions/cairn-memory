@@ -8,11 +8,12 @@ import { validateMemoryContent } from '../../../utils/validation.js';
 import { CONFIDENCE, RELEVANCE } from '../../../constants/index.js';
 import { passesCrossProjectGuard } from '../../../utils/cross-project-guard.js';
 import type { PromptCtx } from './types.js';
+import { originClientOf } from '../../shared/client-adapter.js';
 import { extractDecision, isGoalMemoryStale } from './extractors.js';
 import { extractCorrectionLesson } from './helpers.js';
 
 export function routeIntent(ctx: PromptCtx): void {
-  const { client, prompt, project, fp, mode, intent, previouslyInjected, newlyInjected, budgetAvailable, budgetPush } = ctx;
+  const { client, input, prompt, project, fp, mode, intent, previouslyInjected, newlyInjected, budgetAvailable, budgetPush } = ctx;
 
   switch (intent) {
     case 'correction': {
@@ -25,6 +26,7 @@ export function routeIntent(ctx: PromptCtx): void {
           project: null,
           confidence: CONFIDENCE.USER_CORRECTION,
           source: 'user',
+          originClient: originClientOf(input),
           fingerprint: fp,
         });
       }
@@ -41,6 +43,7 @@ export function routeIntent(ctx: PromptCtx): void {
             content: decision,
             project,
             source: 'user',
+            originClient: originClientOf(input),
             fingerprint: fp,
             context: why ? { why } : undefined,
           });
@@ -123,6 +126,7 @@ export function routeIntent(ctx: PromptCtx): void {
             content: decision,
             project,
             source: 'user',
+            originClient: originClientOf(input),
             fingerprint: fp,
             context: why ? { why } : undefined,
           });
