@@ -1,0 +1,30 @@
+#!/usr/bin/env node
+/**
+ * PostCompact hook — records compaction metadata for reliable session type detection.
+ * Sets a definitive flag in edit-tracker.json so SessionStart doesn't need
+ * the 60-second DB heuristic to infer post-compaction state.
+ * async: true — observability only, no blocking, no stdout.
+ */
+import { readStdinJson, type PostCompactInput } from './shared/hook-io.js';
+import { updateTracker } from './shared/edit-tracker.js';
+import { recordTelemetry } from './shared/hook-telemetry.js';
+
+const _startTime = Date.now();
+try {
+  const input = readStdinJson<PostCompactInput>();
+
+  const tracker = updateTracker(input.session_id, t => {
+    t.lastCompactAt = Date.now();
+    t.lastCompactSessionId = input.session_id;
+    t.lastCompactTokensSaved = input.tokens_saved ?? 0;
+  });
+
+  recordTelemetry('postcompact', input.trigger ?? 'auto', _startTime, true, undefined, {
+    tokensSaved: tracker.lastCompactTokensSaved,
+    sessionId: input.session_id,
+  });
+} catch (err) {
+  recordTelemetry('postcompact', 'error', _startTime, false, String(err));
+  console.error('[cairn] PostCompact hook error:', err);
+  process.exit(0);
+}

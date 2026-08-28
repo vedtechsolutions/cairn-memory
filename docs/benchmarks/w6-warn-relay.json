@@ -1,0 +1,26 @@
+{
+  "date": "2026-08-26",
+  "benchmark": "governance warn relay spawn-to-warm-daemon latency",
+  "environment": {
+    "os": "Linux 6.8.0-117-generic x86_64",
+    "cpu": "AMD EPYC Processor (with IBPB), 8 cores",
+    "node": "v24.12.0",
+    "git": "2.43.0"
+  },
+  "protocol": {
+    "repository_kind": "git",
+    "tree_state": "clean",
+    "warmups_per_size": 3,
+    "samples_per_size": 20,
+    "percentile": "nearest-rank ceil(q*n)-1",
+    "path": "spawn compiled relay -> warm Unix-socket daemon -> synchronous evaluator -> systemMessage response",
+    "budget_ms": 400
+  },
+  "results": [
+    { "tracked_files": 25, "visible_responses": 20, "p50_ms": 96.56, "p95_ms": 112.01 },
+    { "tracked_files": 250, "visible_responses": 20, "p50_ms": 98.22, "p95_ms": 131.07 },
+    { "tracked_files": 1000, "visible_responses": 20, "p50_ms": 175.05, "p95_ms": 254.56 }
+  ],
+  "max_p95_ms": 254.56,
+  "accepted": true
+}

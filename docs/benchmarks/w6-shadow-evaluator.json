@@ -1,0 +1,25 @@
+{
+  "date": "2026-08-26",
+  "benchmark": "shadow evaluator end-to-end latency",
+  "environment": {
+    "os": "Linux 6.8.0-117-generic x86_64",
+    "cpu": "AMD EPYC Processor (with IBPB), 8 cores",
+    "node": "v24.12.0",
+    "git": "2.43.0"
+  },
+  "protocol": {
+    "repository_kind": "git",
+    "tree_state": "clean",
+    "warmups_per_size": 3,
+    "samples_per_size": 20,
+    "percentile": "nearest-rank ceil(q*n)-1",
+    "budget_ms": 250
+  },
+  "results": [
+    { "tracked_files": 25, "p50_ms": 82.92, "p95_ms": 100.61 },
+    { "tracked_files": 250, "p50_ms": 86.41, "p95_ms": 112.97 },
+    { "tracked_files": 1000, "p50_ms": 137.40, "p95_ms": 192.36 }
+  ],
+  "max_p95_ms": 192.36,
+  "accepted": true
+}

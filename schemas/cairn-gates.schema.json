@@ -1,0 +1,210 @@
+{
+  "$id": "https://cairn.dev/schemas/cairn-gates.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "defaults": {
+      "additionalProperties": false,
+      "default": {
+        "evaluationTimeoutMs": 250,
+        "level": "advise",
+        "retention": {
+          "evidenceDays": 30
+        }
+      },
+      "properties": {
+        "evaluationTimeoutMs": {
+          "default": 250,
+          "maximum": 1000,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "level": {
+          "default": "advise",
+          "enum": [
+            "advise",
+            "warn",
+            "block"
+          ],
+          "type": "string"
+        },
+        "retention": {
+          "additionalProperties": false,
+          "default": {
+            "evidenceDays": 30
+          },
+          "properties": {
+            "auditDays": {
+              "maximum": 3650,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "evidenceDays": {
+              "default": 30,
+              "maximum": 30,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "ruleDays": {
+              "maximum": 3650,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "gates": {
+      "additionalProperties": {
+        "additionalProperties": false,
+        "properties": {
+          "aliases": {
+            "default": [],
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "argv": {
+                  "items": {
+                    "maxLength": 4096,
+                    "pattern": "^[^\\0]*$",
+                    "type": "string"
+                  },
+                  "maxItems": 64,
+                  "minItems": 1,
+                  "type": "array"
+                },
+                "cwd": {
+                  "maxLength": 512,
+                  "pattern": "^(?![\\\\/]|[A-Za-z]:)(?!\\.\\.(?:[\\\\/]|$))(?!.*[\\\\/]\\.\\.(?:[\\\\/]|$))[^\\0]+$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "argv"
+              ],
+              "type": "object"
+            },
+            "maxItems": 16,
+            "type": "array"
+          },
+          "argv": {
+            "items": {
+              "maxLength": 4096,
+              "pattern": "^[^\\0]*$",
+              "type": "string"
+            },
+            "maxItems": 64,
+            "minItems": 1,
+            "type": "array"
+          },
+          "cwd": {
+            "default": ".",
+            "maxLength": 512,
+            "pattern": "^(?![\\\\/]|[A-Za-z]:)(?!\\.\\.(?:[\\\\/]|$))(?!.*[\\\\/]\\.\\.(?:[\\\\/]|$))[^\\0]+$",
+            "type": "string"
+          },
+          "envNames": {
+            "default": [],
+            "items": {
+              "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+              "type": "string"
+            },
+            "maxItems": 64,
+            "type": "array"
+          },
+          "parser": {
+            "enum": [
+              "node-test",
+              "exit-only"
+            ],
+            "type": "string"
+          },
+          "skips": {
+            "additionalProperties": false,
+            "default": {
+              "max": 0,
+              "requireReasons": false
+            },
+            "properties": {
+              "max": {
+                "default": 0,
+                "maximum": 1000,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "requireReasons": {
+                "default": false,
+                "type": "boolean"
+              }
+            },
+            "type": "object"
+          },
+          "timeoutMs": {
+            "maximum": 3600000,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "argv",
+          "parser",
+          "timeoutMs"
+        ],
+        "type": "object"
+      },
+      "maxProperties": 32,
+      "minProperties": 1,
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "pathRules": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "paths": {
+            "items": {
+              "maxLength": 512,
+              "pattern": "^(?![\\\\/]|[A-Za-z]:)(?!\\.\\.(?:[\\\\/]|$))(?!.*[\\\\/]\\.\\.(?:[\\\\/]|$))[^\\0]+$",
+              "type": "string"
+            },
+            "maxItems": 64,
+            "minItems": 1,
+            "type": "array"
+          },
+          "require": {
+            "items": {
+              "pattern": "^[a-z][a-z0-9_-]{0,63}$",
+              "type": "string"
+            },
+            "maxItems": 32,
+            "type": "array"
+          }
+        },
+        "required": [
+          "paths",
+          "require"
+        ],
+        "type": "object"
+      },
+      "maxItems": 128,
+      "minItems": 1,
+      "type": "array"
+    },
+    "version": {
+      "const": 1,
+      "type": "number"
+    }
+  },
+  "required": [
+    "version",
+    "gates",
+    "pathRules"
+  ],
+  "title": "Cairn gate configuration v1",
+  "type": "object"
+}

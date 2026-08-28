@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+# Cairn Hook Relay — thin client for the hook socket (embedded in MCP server).
+# Fire-and-forget for async hooks; waits for response on sync hooks.
+# Usage: bash /opt/cairn/dist/src/hooks/hook-relay.sh <hook-type>
+
+SOCK="$HOME/.cairn/hook-daemon.sock"
+HOOK_TYPE="$1"
+SCRIPT_DIR="${0%/*}"
+
+# Buffer stdin to a temp file (M1): a shell variable strips NUL bytes and
+# trailing newlines while double-buffering up to 256 KB in memory; a file
+# preserves the exact bytes and lets the fallback replay the same input
+# after a failed socket attempt. curl must use --data-binary — plain -d
+# strips newlines from the payload.
+INPUT_FILE=$(mktemp "${TMPDIR:-/tmp}/cairn-hook-XXXXXX") || exit 0
+trap 'rm -f "$INPUT_FILE"' EXIT
+cat > "$INPUT_FILE"
+
+# Sync hooks that need a response (Claude Code waits for these). Must match the
+# hooks the config registers WITHOUT an async flag — prompt-check and
+# pitfall-check inject context/warnings the model consumes, so their response
+# must be waited for and printed, never fire-and-forget.
+SYNC_HOOKS="plan-bridge subagent-context postcompact session-start governance-gate prompt-check pitfall-check"
+STANDALONE_HOOKS="precompact session-end"
+
+is_sync() {
+  for h in $SYNC_HOOKS; do [ "$h" = "$1" ] && return 0; done
+  return 1
+}
+
+is_standalone() {
+  for h in $STANDALONE_HOOKS; do [ "$h" = "$1" ] && return 0; done
+  return 1
+}
+
+if is_standalone "$HOOK_TYPE"; then
+  node "$SCRIPT_DIR/$HOOK_TYPE.js" < "$INPUT_FILE"
+  exit 0
+fi
+
+if [ -S "$SOCK" ]; then
+  if is_sync "$HOOK_TYPE"; then
+    # Sync: wait for response, return it
+    MAX_TIME=3
+    [ "$HOOK_TYPE" = "governance-gate" ] && MAX_TIME=0.4
+    RESULT=$(curl -sf --max-time "$MAX_TIME" --unix-socket "$SOCK" "http://localhost/$HOOK_TYPE" -H "Content-Type: application/json" --data-binary @"$INPUT_FILE" 2>/dev/null)
+    if [ $? -eq 0 ]; then
+      if [ "$HOOK_TYPE" = "governance-gate" ]; then
+        case "$RESULT" in
+          *'"decision"'*) ;;
+          '{"systemMessage":"'*'"}') printf '%s' "$RESULT" ;;
+        esac
+      else
+        [ -n "$RESULT" ] && printf '%s' "$RESULT"
+      fi
+      exit 0
+    fi
+  else
+    # Async: fire and forget. The subshell owns the temp file's lifetime —
+    # the EXIT trap would otherwise race the backgrounded curl's open().
+    trap - EXIT
+    (
+      curl -sf --max-time 3 --unix-socket "$SOCK" "http://localhost/$HOOK_TYPE" -H "Content-Type: application/json" --data-binary @"$INPUT_FILE" >/dev/null 2>&1
+      rm -f "$INPUT_FILE"
+    ) &
+    exit 0
+  fi
+fi
+
+# Socket missing — MCP server not yet started or restarting.
+# Don't spawn standalone daemon; the MCP server owns the socket now.
+# For sync hooks, fall back to direct Node.js as last resort.
+if is_sync "$HOOK_TYPE"; then
+  [ "$HOOK_TYPE" != "governance-gate" ] && node "$SCRIPT_DIR/$HOOK_TYPE.js" < "$INPUT_FILE"
+fi

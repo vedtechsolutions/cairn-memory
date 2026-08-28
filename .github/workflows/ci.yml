@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Cancel superseded runs on the same ref to save minutes.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    name: build & test (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['20.x', '22.x', '24.x']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      # Install strictly from the lockfile — this is what enforces the
+      # exact-versions policy; any drift fails here.
+      - name: Install (locked)
+        run: npm ci
+
+      # tsc + the C hook-relay (ubuntu runners ship a C compiler as `cc`).
+      - name: Build (TypeScript + C relay)
+        run: npm run build
+
+      # Prove the relay binary was actually produced, not just that tsc passed.
+      - name: Verify relay binary is executable
+        run: test -x dist/src/hooks/hook-relay
+
+      # Catch native-ABI breaks per Node major independently of the suite.
+      - name: Native module smoke test
+        run: node -e "const db=require('better-sqlite3')(':memory:');require('sqlite-vec').load(db);db.prepare('select vec_version() v').get()"
+
+      # Full suite, including the SNR guardrails and the LongMemEval retrieval
+      # regression gate (both live in dist/tests and run under run-tests.mjs,
+      # whose zero-test guard fails a silently-empty run).
+      - name: Test suite
+        run: npm test
+
+  audit:
+    name: dependency audit gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+          cache: npm
+      - name: Install (locked)
+        run: npm ci
+      - name: Audit gate (dated allowlist)
+        run: node scripts/audit-gate.mjs
+
+  source-build:
+    name: better-sqlite3 source build (Node 20)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: npm
+      - name: Install (locked)
+        run: npm ci
+      # Prove a source build works when no prebuilt binary exists for a future
+      # Node ABI — the failure mode a prebuilt-only matrix would miss.
+      - name: Rebuild better-sqlite3 from source
+        run: npm rebuild better-sqlite3 --build-from-source
+      - name: Native module smoke test
+        run: node -e "const db=require('better-sqlite3')(':memory:');require('sqlite-vec').load(db);db.prepare('select vec_version() v').get()"

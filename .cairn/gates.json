@@ -1,0 +1,49 @@
+{
+  "version": 1,
+  "defaults": {
+    "level": "advise",
+    "evaluationTimeoutMs": 250,
+    "retention": {
+      "evidenceDays": 30
+    }
+  },
+  "gates": {
+    "full-suite": {
+      "argv": ["npm", "run", "test:build"],
+      "cwd": ".",
+      "parser": "node-test",
+      "timeoutMs": 3600000,
+      "skips": {
+        "max": 3,
+        "requireReasons": true
+      },
+      "aliases": [
+        {
+          "argv": ["npm", "test"]
+        },
+        {
+          "argv": ["npm", "run", "test"]
+        }
+      ],
+      "envNames": []
+    },
+    "diff-check": {
+      "argv": ["git", "diff", "--check"],
+      "cwd": ".",
+      "parser": "exit-only",
+      "timeoutMs": 60000,
+      "skips": {
+        "max": 0,
+        "requireReasons": false
+      },
+      "aliases": [],
+      "envNames": []
+    }
+  },
+  "pathRules": [
+    {
+      "paths": ["**"],
+      "require": ["full-suite", "diff-check"]
+    }
+  ]
+}

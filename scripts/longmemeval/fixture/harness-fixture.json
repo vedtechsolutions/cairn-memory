@@ -1,0 +1,181 @@
+[
+  {
+    "question_id": "fx-01-ie",
+    "question_type": "single-session-user",
+    "question": "What rebate did the user receive for the solar panel installation?",
+    "answer": "1200 dollars",
+    "question_date": "2023/07/01 (Sat) 10:00",
+    "haystack_session_ids": ["fx01-s1", "fx01-s2", "fx01-s3", "fx01-s4", "fx01-s5"],
+    "haystack_dates": [
+      "2023/05/20 (Sat) 02:21",
+      "2023/05/22 (Mon) 18:05",
+      "2023/05/25 (Thu) 07:40",
+      "2023/06/02 (Fri) 12:15",
+      "2023/06/04 (Sun) 09:30"
+    ],
+    "haystack_sessions": [
+      [
+        { "role": "user", "content": "I finally finished the solar panel installation on my roof last month." },
+        { "role": "assistant", "content": "Congratulations on completing the installation, that is a big project." },
+        { "role": "user", "content": "The city gave me a rebate of 1200 dollars for the solar panel installation.", "has_answer": true }
+      ],
+      [
+        { "role": "user", "content": "Tonight I am cooking fresh pasta with a garlic tomato sauce." },
+        { "role": "assistant", "content": "Fresh pasta with garlic tomato sauce sounds delicious." }
+      ],
+      [
+        { "role": "user", "content": "My marathon training schedule now includes hill repeats every Tuesday." },
+        { "role": "assistant", "content": "Hill repeats are a great way to build running strength." }
+      ],
+      [
+        { "role": "user", "content": "I am comparing lightweight laptops with long battery life for travel." },
+        { "role": "assistant", "content": "Battery life and weight are the right priorities for travel laptops." }
+      ],
+      [
+        { "role": "user", "content": "I love hiking." },
+        { "role": "user", "content": "I love hiking." }
+      ]
+    ],
+    "answer_session_ids": ["fx01-s1"]
+  },
+  {
+    "question_id": "fx-02-multi",
+    "question_type": "multi-session",
+    "question": "Which two cities did the user visit for the photography project?",
+    "answer": "Lisbon and Oslo",
+    "question_date": "2023/07/02 (Sun) 11:00",
+    "haystack_session_ids": ["fx02-s1", "fx02-s2", "fx02-s3", "fx02-s4"],
+    "haystack_dates": [
+      "2023/04/10 (Mon) 08:00",
+      "2023/04/14 (Fri) 16:20",
+      "2023/05/03 (Wed) 19:45",
+      "2023/05/09 (Tue) 13:10"
+    ],
+    "haystack_sessions": [
+      [
+        { "role": "user", "content": "I visited Lisbon last week to shoot street scenes for my photography project.", "has_answer": true },
+        { "role": "assistant", "content": "Lisbon has wonderful light for street photography." }
+      ],
+      [
+        { "role": "user", "content": "My sourdough starter finally doubled in size overnight." },
+        { "role": "assistant", "content": "A doubling starter means it is ready for baking." }
+      ],
+      [
+        { "role": "user", "content": "I continued the photography project in Oslo and captured the harbor at dawn.", "has_answer": true },
+        { "role": "assistant", "content": "Dawn light over a harbor makes for striking images." }
+      ],
+      [
+        { "role": "user", "content": "The book club picked a mystery novel for next month." },
+        { "role": "assistant", "content": "Mystery novels always spark good discussion." }
+      ]
+    ],
+    "answer_session_ids": ["fx02-s1", "fx02-s3"]
+  },
+  {
+    "question_id": "fx-03-ku",
+    "question_type": "knowledge-update",
+    "question": "Which gym does the user currently have a membership at?",
+    "answer": "PeakFit",
+    "question_date": "2023/07/03 (Mon) 09:00",
+    "haystack_session_ids": ["fx03-s1", "fx03-s2", "fx03-s3"],
+    "haystack_dates": [
+      "2023/02/05 (Sun) 10:30",
+      "2023/06/18 (Sun) 15:00",
+      "2023/06/20 (Tue) 17:25"
+    ],
+    "haystack_sessions": [
+      [
+        { "role": "user", "content": "I joined the IronWorks gym with a monthly membership in February." },
+        { "role": "assistant", "content": "A monthly gym membership keeps things flexible." }
+      ],
+      [
+        { "role": "user", "content": "I switched my gym membership from IronWorks to PeakFit this weekend.", "has_answer": true },
+        { "role": "assistant", "content": "PeakFit should give you access to the new climbing wall." }
+      ],
+      [
+        { "role": "user", "content": "My herb garden basil finally recovered after the heat wave." },
+        { "role": "assistant", "content": "Basil bounces back quickly with consistent watering." }
+      ]
+    ],
+    "answer_session_ids": ["fx03-s2"]
+  },
+  {
+    "question_id": "fx-04-tr",
+    "question_type": "temporal-reasoning",
+    "question": "When did the user adopt the beagle puppy named Comet?",
+    "answer": "2023/06/10",
+    "question_date": "2023/07/04 (Tue) 14:00",
+    "haystack_session_ids": ["fx04-s1", "fx04-s2", "fx04-s3"],
+    "haystack_dates": [
+      "2023/06/10 (Sat) 11:11",
+      "2023/06/12 (Mon) 20:40",
+      "2023/06/15 (Thu) 08:55"
+    ],
+    "haystack_sessions": [
+      [
+        { "role": "user", "content": "We adopted a beagle puppy today and named him Comet.", "has_answer": true },
+        { "role": "assistant", "content": "Comet is a lovely name for a beagle puppy." }
+      ],
+      [
+        { "role": "user", "content": "The community orchestra rehearsal moved to Thursday evenings." },
+        { "role": "assistant", "content": "Thursday rehearsals should suit most members." }
+      ],
+      [
+        { "role": "user", "content": "I repainted the study in a calm sage green color." },
+        { "role": "assistant", "content": "Sage green makes a study feel restful." }
+      ]
+    ],
+    "answer_session_ids": ["fx04-s1"]
+  },
+  {
+    "question_id": "fx-05-miss",
+    "question_type": "single-session-user",
+    "question": "What automobile did the user purchase?",
+    "answer": "a used Honda",
+    "question_date": "2023/07/05 (Wed) 16:00",
+    "haystack_session_ids": ["fx05-s1", "fx05-s2", "fx05-s3"],
+    "haystack_dates": [
+      "2023/03/08 (Wed) 09:20",
+      "2023/03/11 (Sat) 14:45",
+      "2023/03/15 (Wed) 19:05"
+    ],
+    "haystack_sessions": [
+      [
+        { "role": "user", "content": "I bought a used Honda yesterday and it drives smoothly.", "has_answer": true },
+        { "role": "assistant", "content": "A reliable secondhand vehicle is a great find." }
+      ],
+      [
+        { "role": "user", "content": "The pottery class fired my first glazed bowl this week." },
+        { "role": "assistant", "content": "Your first glazed bowl is a milestone worth celebrating." }
+      ],
+      [
+        { "role": "user", "content": "I finished reading a biography of a famous architect." },
+        { "role": "assistant", "content": "Architect biographies often reveal how cities took shape." }
+      ]
+    ],
+    "answer_session_ids": ["fx05-s1"]
+  },
+  {
+    "question_id": "fx-06-ie_abs",
+    "question_type": "single-session-user",
+    "question": "What is the name of the user's sailboat?",
+    "answer": "unanswerable",
+    "question_date": "2023/07/06 (Thu) 12:00",
+    "haystack_session_ids": ["fx06-s1", "fx06-s2"],
+    "haystack_dates": [
+      "2023/05/01 (Mon) 10:00",
+      "2023/05/06 (Sat) 18:30"
+    ],
+    "haystack_sessions": [
+      [
+        { "role": "user", "content": "The farmers market had excellent strawberries this morning." },
+        { "role": "assistant", "content": "Early season strawberries are the sweetest." }
+      ],
+      [
+        { "role": "user", "content": "I organized my workshop and labeled every drawer." },
+        { "role": "assistant", "content": "A labeled workshop saves time on every project." }
+      ]
+    ],
+    "answer_session_ids": []
+  }
+]

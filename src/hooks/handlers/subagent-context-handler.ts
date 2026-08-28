@@ -1,0 +1,66 @@
+/**
+ * SubagentStart handler — inject Cairn context into subagent prompts.
+ * Pure business logic: no stdin/stdout/process.exit.
+ */
+import type { SubagentStartInput } from '../shared/hook-io.js';
+import type { HookDbClient } from '../shared/db-client.js';
+import { projectId } from '../../utils/project-id.js';
+
+export interface SubagentContextResult {
+  /** Context to inject, or null */
+  output: string | null;
+  hasPlan: boolean;
+  pitfalls: number;
+  corrections: number;
+}
+
+export function handleSubagentContext(input: SubagentStartInput, client: HookDbClient): SubagentContextResult {
+  const project = projectId(input.cwd);
+  const lines: string[] = [];
+  lines.push('[Cairn Context for Subagent]');
+
+  const plan = client.planRepo.getActive(project);
+  if (plan) {
+    const done = plan.steps.filter(s => s.status === 'done').length;
+    const total = plan.steps.length;
+    const current = plan.steps.find(s => s.status === 'in_progress');
+    let planLine = `Plan: "${plan.name}" — ${done}/${total} steps`;
+    if (current) {
+      planLine += `, current: ${current.description}`;
+    }
+    lines.push(planLine);
+  }
+
+  const pitfalls = client.memoryRepo.topPitfalls(project, 2);
+  if (pitfalls.length > 0) {
+    lines.push('Pitfalls:');
+    for (const p of pitfalls) {
+      lines.push(`  - ${p.content}`);
+    }
+  }
+
+  const corrections = client.memoryRepo.activeCorrections(project, 2);
+  if (corrections.length > 0) {
+    lines.push('Corrections:');
+    for (const c of corrections) {
+      lines.push(`  - ${c.content}`);
+    }
+  }
+
+  let output: string | null = null;
+  if (lines.length > 1) {
+    output = JSON.stringify({
+      hookSpecificOutput: {
+        hookEventName: 'SubagentStart',
+        additionalContext: lines.join('\n'),
+      },
+    });
+  }
+
+  return {
+    output,
+    hasPlan: !!plan,
+    pitfalls: pitfalls.length,
+    corrections: corrections.length,
+  };
+}
