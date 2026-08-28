@@ -11,8 +11,10 @@ import { extractErrorContext } from './signal-extraction.js';
 import { extractReasoningState } from './reasoning-state.js';
 import { emptyScanState, collectUserContext, scanAssistantEntry, scanUserToolResults } from './entry-scan.js';
 
-/** Parse transcript JSONL and extract recent state */
-export function parseTranscript(transcriptPath: string, maxEntries = 200): TranscriptSnapshot {
+/** Parse transcript JSONL and extract recent state. Accepts null (the
+ *  contract's transcript_path is `string | null`) — empty snapshot. */
+export function parseTranscript(transcriptPath: string | null, maxEntries = 200): TranscriptSnapshot {
+  if (transcriptPath === null) return emptySnapshot();
   // Validate path — must be absolute and under expected directories
   if (!isSafeTranscriptPath(transcriptPath)) return emptySnapshot();
   if (!existsSync(transcriptPath)) return emptySnapshot();

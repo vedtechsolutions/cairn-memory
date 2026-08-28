@@ -36,7 +36,7 @@ export function extractCorrectionLesson(prompt: string): string {
   return lesson;
 }
 
-export function checkTranscriptForCairnCalls(transcriptPath: string): boolean {
+export function checkTranscriptForCairnCalls(transcriptPath: string | null): boolean {
   try {
     if (!transcriptPath || !existsSync(transcriptPath)) return false;
 

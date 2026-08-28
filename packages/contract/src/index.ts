@@ -9,3 +9,4 @@
 
 export * from './clients.js';
 export * from './vocabulary.js';
+export * from './hook-events.js';
