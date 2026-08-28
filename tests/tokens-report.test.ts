@@ -32,6 +32,7 @@ import { handlePitfallCheck } from '../src/hooks/handlers/pitfall-handler.js';
 import { handleSubagentContext } from '../src/hooks/handlers/subagent-context-handler.js';
 import { handleErrorLearning } from '../src/hooks/handlers/error-learning-handler.js';
 import { handleFileChanged } from '../src/hooks/handlers/file-changed-handler.js';
+import { handlePlanBridge } from '../src/hooks/handlers/plan-bridge-handler.js';
 import { handleSuccessTracker } from '../src/hooks/handlers/success-tracker-handler.js';
 import { loadTracker } from '../src/hooks/shared/edit-tracker.js';
 import { SessionCache } from '../src/hooks/shared/session-cache.js';
@@ -93,6 +94,23 @@ describe('schema v30 migration', () => {
     assert.doesNotThrow(() => db.prepare('SELECT COUNT(*) FROM telemetry_rollup').get());
     const v = db.prepare('SELECT version FROM schema_version').get() as { version: number };
     assert.equal(v.version, 30);
+  });
+});
+
+describe('stale v30 shape heals on open (review round 2)', () => {
+  it('a six-column table already AT version 30 gains events and records again', () => {
+    // Reproduce the c9beaf4 shape: drop, recreate WITHOUT events, stay at 30.
+    db.exec('DROP TABLE telemetry_rollup');
+    db.exec(`CREATE TABLE telemetry_rollup (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL,
+      day TEXT NOT NULL, metric TEXT NOT NULL, surface TEXT NOT NULL DEFAULT '',
+      tokens INTEGER NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')))`);
+    recordRollup(db, 's', ROLLUP_METRICS.INJECTED, 'x', 5);
+    assert.equal(rollupRows().length, 0, 'PREMISE: recording is dead on the stale shape');
+
+    migrateToV30(db); // what any openDatabase does at currentVersion <= 30
+    recordRollup(db, 's', ROLLUP_METRICS.INJECTED, 'x', 5);
+    assert.equal(rollupRows().length, 1, 'healed: the events column arrived and recording works');
   });
 });
 
@@ -216,26 +234,39 @@ describe('hand-computed acceptance (the arithmetic the user sees)', () => {
     assert.ok(sub.output, 'PREMISE: subagent context emitted');
     assert.ok(rollupRows().some(r => r.surface === 'subagent-context' && r.tokens > 0), 'subagent-context records');
 
-    // error-learning — a learnable failure injects a lesson AND records cost.
+    // error-learning — its output is UNDELIVERABLE (async wiring), so it
+    // must record NO cost row even when it builds one (phantom-cost pin:
+    // review round 2 reproduced a Codex user billed for undelivered text).
     const el = await handleErrorLearning({
       session_id: 'wire-s2', transcript_path: null, cwd,
       hook_event_name: 'PostToolUseFailure', tool_name: 'Bash',
       tool_input: { command: 'npm test' },
       error: "TypeError: Cannot read properties of undefined (reading 'foo') at billing.ts:10",
     } as unknown as Parameters<typeof handleErrorLearning>[0], client);
-    if (el.output) {
-      assert.ok(rollupRows().some(r => r.surface === 'error-learning' && r.metric === 'injected'), 'error-learning cost recorded');
-    }
+    assert.ok(el.output, 'PREMISE: error-learning did build an output');
+    assert.ok(!rollupRows().some(r => r.surface === 'error-learning' && r.metric === 'injected'),
+      'no cost row for undeliverable async output');
 
-    // file-changed — seeded file reminder fires.
+    // file-changed — same undeliverable-async rule, no cost row.
     client.reminderRepo.create({ trigger: 'billing.ts', action: 'WIRE reminder check thresholds', project: pid, trigger_type: 'file' });
     const fc = await handleFileChanged({
       session_id: 'wire-s2', transcript_path: null, cwd,
       hook_event_name: 'FileChanged', file_path: `${cwd}/src/billing.ts`,
     } as unknown as Parameters<typeof handleFileChanged>[0], client);
-    if (fc.output) {
-      assert.ok(rollupRows().some(r => r.surface === 'file-changed'), 'file-changed cost recorded');
-    }
+    assert.ok(!rollupRows().some(r => r.surface === 'file-changed'),
+      `no cost row for the async file-changed surface (output=${fc.output === null ? 'null' : 'built'})`);
+
+    // plan-bridge — SYNC, delivered, must record; premise asserted.
+    const pb = handlePlanBridge({
+      session_id: 'wire-s2', transcript_path: null, cwd,
+      hook_event_name: 'PostToolUse', tool_name: 'ExitPlanMode',
+      tool_input: {},
+      // The fallback parse path expects the plan as a markdown STRING.
+      tool_response: '# WIRE plan\n\n1. First step do the thing\n2. Second step verify the thing\n',
+    } as unknown as Parameters<typeof handlePlanBridge>[0], client);
+    assert.ok(pb.output, 'PREMISE: plan-bridge persisted a plan and emitted its message');
+    assert.ok(rollupRows().some(r => r.surface === 'plan-bridge' && r.metric === 'injected' && r.tokens > 0),
+      'plan-bridge cost recorded');
 
     // success-tracker — surfaced pitfall + successful edit = impact row with events.
     const mem = client.memoryRepo.create({ content: 'WIRE tracked pitfall', kind: 'pitfall', project: pid, confidence: 0.9 });

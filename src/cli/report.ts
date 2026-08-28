@@ -32,6 +32,14 @@ export async function runReport(days: number = ROLLUP.REPORT_DAYS): Promise<numb
       console.log('cairn report — no rollup data (database predates schema v30; data accrues from the next session).');
       return 0;
     }
+    // A stale v30 shape (events column added while v30 was unreleased):
+    // this READONLY connection cannot migrate — any session or `cairn
+    // doctor` heals it on open. Degrade honestly instead of erroring.
+    const columns = db.prepare('PRAGMA table_info(telemetry_rollup)').all() as Array<{ name: string }>;
+    if (!columns.some((c) => c.name === 'events')) {
+      console.log('cairn report — rollup schema needs a one-time upgrade; run any session (or `cairn doctor`) first, then re-run.');
+      return 0;
+    }
     const report = computeRollupReport(db, days);
 
     console.log(`cairn report — tokens saved, last ${report.days} days\n`);
@@ -63,6 +71,8 @@ export async function runReport(days: number = ROLLUP.REPORT_DAYS): Promise<numb
       console.log('');
     }
     console.log('  Notes: impact-proxy is an estimate, not a measurement; days are UTC.');
+    console.log('  Not counted: governance policy nudges, and async-hook text the agent');
+    console.log('  never receives (a known delivery gap, tracked separately).');
     console.log('  Disable recording with {"report":{"rollup":false}} in ~/.cairn/config.json or CAIRN_ROLLUP=0.');
     return 0;
   } finally {

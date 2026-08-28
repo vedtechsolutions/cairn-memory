@@ -153,7 +153,9 @@ export function loadCairnConfig(): CairnConfig {
     const parsed = parseConfig(readFileSync(path, 'utf-8'));
     config = parsed.config;
     if (parsed.badSections.length > 0) {
-      problem = `has an unrecognized ${parsed.badSections.join(' and ')} section — those settings are INACTIVE until fixed (other sections still apply)`;
+      problem = parsed.badSections.includes('(document)')
+        ? 'is not a JSON object — ALL settings are INACTIVE until fixed'
+        : `has an unrecognized ${parsed.badSections.join(' and ')} section — those settings are INACTIVE until fixed (other sections still apply)`;
     }
   } catch {
     problem = 'is invalid JSON — ALL settings are INACTIVE until fixed';

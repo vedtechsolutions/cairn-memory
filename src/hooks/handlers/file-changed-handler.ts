@@ -3,9 +3,6 @@
  * Pure business logic: no stdin/stdout/process.exit.
  */
 import type { FileChangedInput } from '../shared/hook-io.js';
-import { recordRollup } from '../../db/telemetry-rollup.js';
-import { ROLLUP_METRICS } from '../../constants/index.js';
-import { estimateTokensFast } from '../../utils/tokens.js';
 import type { HookDbClient } from '../shared/db-client.js';
 import { projectId } from '../../utils/project-id.js';
 import { recordGovernanceEventFailOpen } from '../../governance/recorder.js';
@@ -38,12 +35,14 @@ function handleFileChangedBusiness(input: FileChangedInput, client: HookDbClient
 
   if (reminders.length > 0) {
     const lines = reminders.map(r => `[CAIRN] Reminder: ${r.action}`);
-    const context = lines.join('\n');
-    recordRollup(client.db, input.session_id, ROLLUP_METRICS.INJECTED, 'file-changed', estimateTokensFast(context));
+    // NOT a report cost surface: file-changed is an ASYNC route, so this
+    // additionalContext is never injected (async responses are discarded)
+    // — recording it billed for undelivered text (review round 2). Same
+    // latent delivery gap as error-learning; recorded in the backlog.
     const output = JSON.stringify({
       hookSpecificOutput: {
         hookEventName: 'FileChanged',
-        additionalContext: context,
+        additionalContext: lines.join('\n'),
       },
     });
     return { output, remindersTriggered: reminders.length };

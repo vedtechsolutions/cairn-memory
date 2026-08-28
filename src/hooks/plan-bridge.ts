@@ -8,6 +8,9 @@
  * recent Write event (the plan file), then parses its markdown content.
  */
 import { readStdinJson, type PostToolUseInput } from './shared/hook-io.js';
+import { recordRollup } from '../db/telemetry-rollup.js';
+import { ROLLUP_METRICS } from '../constants/index.js';
+import { estimateTokensFast } from '../utils/tokens.js';
 import { createHookDbClient } from './shared/db-client.js';
 import { loadTracker } from './shared/edit-tracker.js';
 import { projectId } from '../utils/project-id.js';
@@ -85,6 +88,10 @@ function createCairnPlan(
     });
 
     const msg = `[CAIRN] Plan auto-persisted: "${planContent.name}" (${steps.length} steps). Survives compaction. Use cairn_plan(step) to track progress.`;
+    // Same cost row the shared handler records — plan-bridge is a SYNC
+    // route, so this stdout IS delivered (standalone twin must not be the
+    // one uncounted path; review round 2).
+    recordRollup(client.db, input.session_id, ROLLUP_METRICS.INJECTED, 'plan-bridge', estimateTokensFast(msg));
     process.stdout.write(msg);
 
     recordTelemetry('plan-bridge', 'created', _startTime, true, undefined, {

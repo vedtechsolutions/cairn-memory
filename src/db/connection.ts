@@ -146,7 +146,10 @@ function ensureSchema(db: Database.Database): void {
   if (currentVersion < 29 && SCHEMA_VERSION >= 29) {
     migrateToV29(db);
   }
-  if (currentVersion < 30 && SCHEMA_VERSION >= 30) {
+  // <= 30 on purpose: v30's shape changed while unreleased (events
+  // column), so an already-at-30 database still needs the column pass.
+  // Idempotent and one PRAGMA when nothing is missing.
+  if (currentVersion <= 30 && SCHEMA_VERSION >= 30) {
     migrateToV30(db);
   }
 
