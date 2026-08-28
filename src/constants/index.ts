@@ -890,6 +890,20 @@ export const NOISE_ERROR_PATTERNS = [
   /ETIMEOUT|ECONNRESET|ECONNREFUSED/,
 ] as const;
 
+// --- Codex rollout lookup (parity Slice B) ----------------------------------
+
+export const ROLLOUT_LOOKUP = {
+  /** Tail window read per attempt — the record for a just-completed tool
+   *  call sits near the end of the rollout, but its output can be large. */
+  TAIL_BYTES: 512 * 1024,
+  /** Rollout-before-hook ordering is observed (102 ms live), not
+   *  contractual — total retry budget stays within the brief's ≤500 ms. */
+  MAX_ATTEMPTS: 4,
+  RETRY_DELAY_MS: 150,
+  /** Cap on output text carried into error synthesis / classification. */
+  OUTPUT_MAX_CHARS: 2000,
+} as const;
+
 // --- Embedding model registry (roadmap W2) ----------------------------------
 
 export {

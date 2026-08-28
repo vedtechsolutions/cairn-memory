@@ -32,7 +32,7 @@ export function applySessionWarnings(
   // A1: Check for recent file failures in toolChain
   if (filePath && shouldFireWarning('A1', filePath)) {
     const recentFailures = tracker.toolChain.filter(
-      e => e.file === filePath && !e.success && (nowMs - e.timestamp) < 300_000,
+      e => e.file === filePath && e.success === false && (nowMs - e.timestamp) < 300_000,
     );
     if (recentFailures.length > 0) {
       const lastError = recentFailures[recentFailures.length - 1].output ?? 'unknown error';
@@ -72,7 +72,7 @@ export function applySessionWarnings(
 }
 
 /** Detect Edit->Bash(fail)->Edit loop pattern on the same file */
-export function detectEditFailLoop(chain: Array<{ tool: string; file?: string; success: boolean }>, filePath: string): boolean {
+export function detectEditFailLoop(chain: Array<{ tool: string; file?: string; success?: boolean }>, filePath: string): boolean {
   let sawEdit = false;
   let sawFailAfterEdit = false;
 
@@ -82,7 +82,9 @@ export function detectEditFailLoop(chain: Array<{ tool: string; file?: string; s
         sawEdit = true;
       }
     } else if (!sawFailAfterEdit) {
-      if (!event.success) {
+      // Explicit failure only — an unknown outcome (undefined, Codex demux
+      // with no rollout match) must not count as a fail in the loop heuristic.
+      if (event.success === false) {
         sawFailAfterEdit = true;
       }
     } else {

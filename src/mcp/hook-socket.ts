@@ -20,6 +20,7 @@ import { handlePitfallCheck } from '../hooks/handlers/pitfall-handler.js';
 import { handlePromptCheck } from '../hooks/handlers/prompt-handler.js';
 import { handleSuccessTracker } from '../hooks/handlers/success-tracker-handler.js';
 import { handleErrorLearning } from '../hooks/handlers/error-learning-handler.js';
+import { handleCodexPostTool } from '../hooks/handlers/codex-post-tool-handler.js';
 import { handleStop } from '../hooks/handlers/stop-handler.js';
 import { handleStopFailure } from '../hooks/handlers/stop-failure-handler.js';
 import { handleFileChanged } from '../hooks/handlers/file-changed-handler.js';
@@ -224,14 +225,17 @@ const routes: Record<string, {
     extractEventType: (input: { trigger?: string }) => input.trigger ?? 'auto',
     extractMeta: (_input, result) => ({ daemon: true, tokensSaved: result.tokensSaved }),
   },
-  // Slice B placeholder: the Codex hooks.json wires PostToolUse here from
-  // day one (single trust review). Returning 200 keeps the relay off its
-  // fallback path (which would append to the fallback log on every tool
-  // call) until the real demux handler lands.
+  // Codex PostToolUse demux: rollout-lookup ground truth routes each event
+  // to error-learning or success-tracker (Codex payloads carry no failure
+  // signal of their own).
   '/codex-post-tool': {
-    handler: () => ({ output: null, action: 'pending-slice-b' }),
+    handler: async (input, c) => {
+      const r = await handleCodexPostTool(input, c);
+      return { output: r.output, action: r.action, exitCode: r.exitCode };
+    },
     telemetryName: 'codex-post-tool',
     extractEventType: (input: { tool_name?: string }) => input.tool_name ?? 'unknown',
+    extractMeta: (_input, result) => ({ daemon: true, action: result.action, exitCode: result.exitCode }),
   },
   '/session-start': {
     handler: (input, c) => {

@@ -8,7 +8,10 @@ export interface ToolEvent {
   tool: string;
   file?: string;
   timestamp: number;
-  success: boolean;
+  /** true = verified success, false = failure, undefined = outcome unknown
+   *  (Codex demux with no rollout match). Undefined is falsy at every
+   *  consumer, so an unknown outcome can never count as a success. */
+  success?: boolean;
   output?: string;
 }
 
