@@ -1,6 +1,6 @@
 # Cairn
 
-Dual-channel memory system for Claude Code. Hooks + MCP tools that give Claude persistent memory across sessions and seamless recovery after context compaction.
+Dual-channel memory system for AI coding agents. Hooks + MCP tools give Claude Code and Codex ONE persistent, shared memory across sessions — briefings, pitfall warnings, auto-learned lessons with per-agent provenance — plus seamless recovery after context compaction.
 
 [![npm version](https://img.shields.io/npm/v/cairn-memory.svg)](https://www.npmjs.com/package/cairn-memory)
 [![license: Elastic-2.0](https://img.shields.io/badge/license-Elastic--2.0-blue.svg)](LICENSE)
@@ -11,12 +11,16 @@ Dual-channel memory system for Claude Code. Hooks + MCP tools that give Claude p
 
 ## What It Does
 
-Cairn solves the biggest problem with long Claude Code sessions: **context compaction destroys working memory**. After compaction, Claude forgets what it was doing, what files it read, what decisions it made, and what mistakes to avoid.
+Cairn solves two problems that ruin long agent sessions.
+
+**Context compaction destroys working memory.** After compaction, an agent forgets what it was doing, what files it read, what decisions it made, and what mistakes to avoid.
+
+**Every agent is a memory island.** What Claude learned the hard way, Codex re-learns the hard way — and vice versa. As of v5.3, Cairn gives every agent on a machine one shared, ambient memory: Codex fails a command once, and Claude gets warned before touching the same file; decisions, corrections, and lessons carry `origin_client` provenance so you always know which agent learned what. Switch models freely — the memory stays.
 
 Cairn fixes this with:
 
-- **14 lifecycle hooks + StatusLine** that passively capture context pressure, errors, successes, corrections, file activity, task state, plans, compaction, subagents, and API failures
-- **16 MCP tools** + **2 MCP resources** for explicit memory management, planning, reminders, and progressive-disclosure expansion
+- **14 lifecycle hooks + StatusLine** (Claude Code) and **10 trusted hooks** (Codex) that passively capture context pressure, errors, successes, corrections, file activity, task state, plans, compaction, subagents, and API failures — wired automatically by `cairn init`
+- **17 MCP tools** + **2 MCP resources** for explicit memory management, planning, reminders, and progressive-disclosure expansion
 - **SQLite + FTS5 + vector embeddings** backend with hybrid search (RRF), confidence-weighted ranking, and natural decay
 - **Embedded hook socket** (v5) — socket-routed hooks run through a persistent Unix socket inside the MCP server process, sharing one DB connection and one session cache. Skip gates short-circuit null-output `pitfall-check` calls in <1 ms.
 - **Write gateways** (`storeDecision()` / `storePitfall()`) that unify all storage paths with smart merge (source authority, dedup, enrichment)

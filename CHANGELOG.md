@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [5.3.1] - 2026-08-28
+
+### Changed
+
+- npm package metadata and README now lead with the v5.3 cross-agent story: one shared memory across Claude Code and Codex, per-agent provenance, and the `cairn init` setup path; keywords added for Codex/cross-agent discoverability; stale tool count corrected.
+
 ## [5.3.0] - 2026-08-28
 
 ### Added — Codex parity step 5: zero-config wiring + per-agent doctor
