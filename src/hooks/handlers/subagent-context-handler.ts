@@ -7,6 +7,7 @@ import type { HookDbClient } from '../shared/db-client.js';
 import { projectId } from '../../utils/project-id.js';
 import { isCodexClient } from '../shared/client-adapter.js';
 import { CROSS_AGENT_CONTEXT_FRAMING } from '../../constants/index.js';
+import { neutralizeMemoryText } from '../../utils/validation.js';
 
 export interface SubagentContextResult {
   /** Context to inject, or null */
@@ -33,11 +34,14 @@ export function handleSubagentContext(input: SubagentStartInput, client: HookDbC
     lines.push(planLine);
   }
 
+  // Render-time neutralization is the actual defense against stored
+  // content impersonating the system voice (a forged "[CAIRN] …" prefix
+  // would sit directly under the genuine framing line above).
   const pitfalls = client.memoryRepo.topPitfalls(project, 2);
   if (pitfalls.length > 0) {
     lines.push('Pitfalls:');
     for (const p of pitfalls) {
-      lines.push(`  - ${p.content}`);
+      lines.push(`  - ${neutralizeMemoryText(p.content)}`);
     }
   }
 
@@ -45,7 +49,7 @@ export function handleSubagentContext(input: SubagentStartInput, client: HookDbC
   if (corrections.length > 0) {
     lines.push('Corrections:');
     for (const c of corrections) {
-      lines.push(`  - ${c.content}`);
+      lines.push(`  - ${neutralizeMemoryText(c.content)}`);
     }
   }
 
