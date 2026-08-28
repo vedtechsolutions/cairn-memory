@@ -464,7 +464,7 @@ describe('cairn_plan complete', () => {
 
     const reply = await plan(h, { action: 'complete', project: PROJECT });
     assert.equal(reply.isError, false);
-    assert.equal(reply.text, 'ok — plan completed, 1 decision(s) graduated to memories');
+    assert.equal(reply.text, 'ok — plan completed, 1 decision(s) graduated to memories (warn: 3 of 3 steps were not done)');
 
     const rows = h.db.prepare("SELECT content, project FROM memories WHERE kind = 'decision'")
       .all() as Array<{ content: string; project: string }>;
@@ -477,8 +477,24 @@ describe('cairn_plan complete', () => {
   it('completes without graduation when no decision is permanent', async () => {
     await createTestPlan(h);
     const reply = await plan(h, { action: 'complete', project: PROJECT });
-    assert.equal(reply.text, 'ok — plan completed');
+    assert.equal(reply.text, 'ok — plan completed (warn: 3 of 3 steps were not done)');
     assert.equal(countMemories(h.db, 'decision'), 0);
+  });
+
+  it('does not warn when every step is done before completion', async () => {
+    await createTestPlan(h);
+    await plan(h, { action: 'step', project: PROJECT, step_id: 1, status: 'done' });
+    await plan(h, { action: 'step', project: PROJECT, step_id: 2, status: 'done' });
+    await plan(h, { action: 'step', project: PROJECT, step_id: 3, status: 'done' });
+    const reply = await plan(h, { action: 'complete', project: PROJECT });
+    assert.equal(reply.text, 'ok — plan completed');
+  });
+
+  it('reports the open-step count when a plan is completed with pending work', async () => {
+    await createTestPlan(h);
+    await plan(h, { action: 'step', project: PROJECT, step_id: 1, status: 'done' });
+    const reply = await plan(h, { action: 'complete', project: PROJECT });
+    assert.equal(reply.text, 'ok — plan completed (warn: 2 of 3 steps were not done)');
   });
 
   it('errors when no active plan exists', async () => {

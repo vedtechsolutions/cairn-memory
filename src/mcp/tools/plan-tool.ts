@@ -240,6 +240,11 @@ function handleComplete(
   const plan = repo.getActive(project);
   if (!plan) return text('error: no active plan', true);
 
+  // Surface incomplete work at completion time — a plan marked completed with
+  // open steps is a lifecycle inconsistency the agent should see, not create
+  // silently. (We don't rewrite step status: completing early is legitimate;
+  // it just must be visible.)
+  const openSteps = plan.steps.filter(s => s.status !== 'done').length;
   const graduatedDecisions = repo.complete(plan.id);
 
   // Graduate permanent decisions to memories via unified gateway
@@ -257,9 +262,12 @@ function handleComplete(
   // Plan completion + graduated memories both affect briefings — always invalidate.
   sessionCache?.bumpMemoryVersion();
 
-  const msg = graduated > 0
+  const base = graduated > 0
     ? `ok — plan completed, ${graduated} decision(s) graduated to memories`
     : 'ok — plan completed';
+  const msg = openSteps > 0
+    ? `${base} (warn: ${openSteps} of ${plan.steps.length} steps were not done)`
+    : base;
   return text(msg);
 }
 
