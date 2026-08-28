@@ -8,19 +8,19 @@
  * `cairn doctor` can gate CI and setup scripts. Diagnostic only — it never
  * creates or migrates the database.
  */
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { SCHEMA_VERSION } from '../db/schema.js';
 import { resolveDbPath } from '../db/db-path.js';
+import { CAIRN_HOOK_DIR_MARKER } from '../constants/index.js';
 import { getEmbeddingModelConfig } from '../utils/embeddings.js';
 import { verifyModelPackage, ArtifactVerificationError } from '../utils/artifact-verification.js';
-import { probeHookSocket, socketPath } from '../mcp/socket-ownership.js';
+import { probeHookSocket, socketPath, pidPath } from '../mcp/socket-ownership.js';
 import { binaryUsable, relayShellPath } from './relay.js';
-import { readFileSync } from 'node:fs';
 import {
   codexDir, codexHooksPath, codexConfigPath, codexHookCount,
-  countTrustedCairnHooks, hasCairnMcpServer, type CodexHooksFile,
+  countTrustedHooksIn, hasCairnMcpServer, type CodexHooksFile,
 } from './codex-init.js';
 
 const MIN_NODE_MAJOR = 20;
@@ -126,17 +126,32 @@ async function checkSocket(): Promise<CheckResult> {
   if (live) {
     return { status: 'ok', detail: `hook socket served by PID ${live.pid} at ${socketPath()}` };
   }
-  // A socket file with no identifiable owner usually means doctor is running
-  // inside an agent's sandbox (no /proc visibility) — seen live from a Codex
-  // shell — not that the daemon is down.
+  // A socket file whose HTTP probe fails has two very different causes; the
+  // PID file discriminates them: a live owner PID means the probe itself
+  // was blocked (typically an agent sandbox — seen live from a Codex
+  // shell), while a dead/absent PID means the owner crashed and left the
+  // socket behind (releaseSocketClaim only unlinks on clean exit).
   if (existsSync(socketPath())) {
-    return { status: 'warn', detail: `hook socket exists at ${socketPath()} but its owner is unknown — likely a sandboxed environment (no /proc access); re-run doctor from an unsandboxed shell to confirm` };
+    let ownerAlive = false;
+    let pid: number | null = null;
+    try {
+      pid = Number(readFileSync(pidPath(), 'utf-8').trim());
+      if (Number.isInteger(pid) && pid > 0) {
+        process.kill(pid, 0);
+        ownerAlive = true;
+      }
+    } catch { /* absent PID file or dead process — ownerAlive stays false */ }
+    if (ownerAlive) {
+      return { status: 'warn', detail: `hook socket exists and its owner (PID ${pid}) is alive, but the probe could not reach it — likely a sandboxed environment; re-run doctor from an unsandboxed shell to confirm` };
+    }
+    return { status: 'warn', detail: `stale hook socket at ${socketPath()} (its owner exited uncleanly) — self-healing: the next agent client reclaims it on start` };
   }
   return { status: 'ok', detail: `no live hook-socket owner (an agent client starts one on demand at ${socketPath()})` };
 }
 
-/** Per-agent parity: is Codex wired, and has the one-time trust happened? */
-function checkCodexParity(): CheckResult {
+/** Per-agent parity: is Codex wired, and has the one-time trust happened?
+ *  Exported for direct unit testing (CAIRN_CODEX_DIR makes it hermetic). */
+export function checkCodexParity(): CheckResult {
   if (!existsSync(codexDir())) {
     return { status: 'ok', detail: 'Codex CLI not detected (nothing to wire)' };
   }
@@ -146,22 +161,33 @@ function checkCodexParity(): CheckResult {
   }
   let file: CodexHooksFile;
   try {
-    file = JSON.parse(readFileSync(hooksPath, 'utf-8')) as CodexHooksFile;
+    const parsed = JSON.parse(readFileSync(hooksPath, 'utf-8')) as unknown;
+    // A wrong-shape file is a config problem, not a doctor crash: the cast
+    // alone let `{}`/`null` throw TypeErrors that failed CI unactionably.
+    if (parsed === null || typeof parsed !== 'object'
+      || typeof (parsed as { hooks?: unknown }).hooks !== 'object'
+      || (parsed as { hooks?: unknown }).hooks === null) {
+      throw new Error('not a hooks file');
+    }
+    file = parsed as CodexHooksFile;
   } catch {
-    return { status: 'warn', detail: `${hooksPath} is not valid JSON — re-run \`cairn init\`` };
+    return { status: 'warn', detail: `${hooksPath} is not a valid hooks file (bad JSON or shape) — re-run \`cairn init\`` };
   }
   const total = codexHookCount(file);
-  const wired = JSON.stringify(file).includes('dist/src/hooks/');
+  const wired = JSON.stringify(file).includes(CAIRN_HOOK_DIR_MARKER);
   if (!wired || total === 0) {
     return { status: 'warn', detail: 'Codex hooks.json exists but carries no Cairn hooks — run `cairn init`' };
   }
   const config = existsSync(codexConfigPath()) ? readFileSync(codexConfigPath(), 'utf-8') : '';
   const mcp = hasCairnMcpServer(config) ? 'MCP registered' : 'MCP NOT registered (run `cairn init`)';
-  const trusted = countTrustedCairnHooks(config, hooksPath);
-  if (trusted >= total) {
-    return { status: 'ok', detail: `Codex wired and trusted (${trusted}/${total} hooks; ${mcp})` };
+  const trust = countTrustedHooksIn(config, hooksPath);
+  if (trust.disabled > 0 && trust.trusted < total) {
+    return { status: 'warn', detail: `Codex wired but ${trust.disabled} hook(s) are DISABLED and ${total - trust.trusted - trust.disabled} untrusted (${trust.trusted}/${total} active; ${mcp}) — review with /hooks in codex` };
   }
-  return { status: 'warn', detail: `Codex wired, awaiting one-time trust review (${trusted}/${total} hooks trusted; ${mcp}) — start \`codex\` and accept the Cairn hooks` };
+  if (trust.trusted >= total) {
+    return { status: 'ok', detail: `Codex wired and trusted (${trust.trusted}/${total} hooks; ${mcp})` };
+  }
+  return { status: 'warn', detail: `Codex wired, awaiting one-time trust review (${trust.trusted}/${total} hooks trusted; ${mcp}) — start \`codex\` and accept the Cairn hooks` };
 }
 
 const CHECKS: Check[] = [

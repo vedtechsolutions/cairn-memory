@@ -14,19 +14,18 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { resolveRelay, relayBinaryPath, relayShellPath } from './relay.js';
 import { runCodexInit } from './codex-init.js';
+import { CAIRN_HOOK_DIR_MARKER } from '../constants/index.js';
 
 /** Package root: dist/src/cli/ → the install root that holds dist/. */
 const PKG_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const HOOK_DIR = join(PKG_ROOT, 'dist', 'src', 'hooks');
 const SERVER = join(PKG_ROOT, 'dist', 'src', 'mcp', 'server.js');
 
-/** Substring that identifies a hook entry as Cairn's own, so re-running init is
- *  idempotent and survives a reinstall to a different path. Every Cairn hook —
- *  the relay and every node-form script (session-start.js, precompact.js,
- *  session-end.js, …), current or legacy — lives under this directory, so a
- *  single directory marker catches them all; a user's own hook pointing into a
- *  Cairn install's hooks dir is effectively impossible. */
-const CAIRN_HOOK_MARKERS = ['dist/src/hooks/'];
+/** Every Cairn hook — relay or node-form, current or legacy — lives under
+ *  the marker directory, so one substring identifies Cairn entries across
+ *  reinstalls; a user's own hook pointing into a Cairn install's hooks dir
+ *  is effectively impossible. */
+const CAIRN_HOOK_MARKERS = [CAIRN_HOOK_DIR_MARKER];
 
 interface HookCommand { type: 'command'; command: string; async?: boolean }
 interface HookMatcher { matcher: string; hooks: HookCommand[] }
@@ -161,9 +160,7 @@ export function runInit(options: InitOptions = {}): number {
   for (const change of plan.changed) console.log(`  ✓ ${change}`);
   for (const skip of plan.skipped) console.log(`  ! ${skip}`);
 
-  if (options.dryRun) {
-    console.log('\n  (dry run — no files written)');
-  } else {
+  if (!options.dryRun) {
     mkdirSync(dirname(path), { recursive: true });
     if (existsSync(path)) {
       const backup = `${path}.cairn-backup`;
@@ -183,6 +180,8 @@ export function runInit(options: InitOptions = {}): number {
   }
 
   runCodexInit(relay.command, SERVER, options.dryRun ?? false);
+
+  if (options.dryRun) console.log('\n  (dry run — no files were written)');
 
   const detected = OTHER_CLIENTS.filter(c => existsSync(join(homedir(), c.dir)));
   if (detected.length > 0) {

@@ -910,6 +910,11 @@ export const ROLLOUT_LOOKUP = {
   OUTPUT_MAX_CHARS: 2000,
 } as const;
 
+/** Substring identifying a hook command as Cairn's own: every Cairn hook —
+ *  relay or node-form script — lives under this directory. Shared by init
+ *  (Claude + Codex merge logic) and doctor. */
+export const CAIRN_HOOK_DIR_MARKER = 'dist/src/hooks/';
+
 /** Edit-type tools across agents: Claude's Write/Edit/MultiEdit and
  *  Codex's apply_patch (whose file paths come from patch-envelope headers).
  *  Single source — this list was previously duplicated at five sites. */

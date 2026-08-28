@@ -23,7 +23,13 @@ function tempSettingsPath(): string {
 function init(settingsPath: string, args: string[] = []): SpawnSyncReturns<string> {
   return spawnSync(process.execPath, [CLI, 'init', ...args], {
     encoding: 'utf8',
-    env: { ...process.env, CAIRN_CLAUDE_SETTINGS: settingsPath },
+    env: {
+      ...process.env,
+      CAIRN_CLAUDE_SETTINGS: settingsPath,
+      // init WRITES the Codex dir now — must stay hermetic even when this
+      // file is run directly without the hermetic-env preload.
+      CAIRN_CODEX_DIR: process.env.CAIRN_CODEX_DIR ?? `${settingsPath}.codex-hermetic`,
+    },
   }) as SpawnSyncReturns<string>;
 }
 
