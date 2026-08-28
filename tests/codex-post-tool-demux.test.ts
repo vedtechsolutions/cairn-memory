@@ -93,7 +93,7 @@ describe('findRolloutToolRecord', () => {
 describe('demuxOutcome', () => {
   it('routes a failed record to failure with exit code and output text', () => {
     const o = demuxOutcome({ tool_name: 'Bash', tool_response: 'boom-stderr\n' },
-      { kind: 'command', status: 'failed', exitCode: 3, outputText: 'boom-stderr\n' });
+      { status: 'failed', exitCode: 3, outputText: 'boom-stderr\n' });
     assert.equal(o.failed, true);
     assert.equal(o.exitCode, 3);
     assert.match(o.errorText, /boom-stderr/);
@@ -101,7 +101,7 @@ describe('demuxOutcome', () => {
 
   it('routes a completed record to success', () => {
     const o = demuxOutcome({ tool_name: 'Bash', tool_response: 'ok\n' },
-      { kind: 'command', status: 'completed', exitCode: 0, outputText: 'ok\n' });
+      { status: 'completed', exitCode: 0, outputText: 'ok\n' });
     assert.equal(o.failed, false);
   });
 
@@ -114,16 +114,16 @@ describe('demuxOutcome', () => {
   it('FAIL-SAFE: a novel status routes to unknown, and a non-zero exit code to failure regardless of status', () => {
     // Regression for review fix 1: `aborted` (exit 130) must never be success.
     const aborted = demuxOutcome({ tool_name: 'Bash', tool_response: 'interrupted' },
-      { kind: 'command', status: 'aborted', exitCode: 130, outputText: 'interrupted' });
+      { status: 'aborted', exitCode: 130, outputText: 'interrupted' });
     assert.equal(aborted.failed, true);
     assert.equal(aborted.exitCode, 130);
 
     const novel = demuxOutcome({ tool_name: 'Bash', tool_response: 'x' },
-      { kind: 'command', status: 'unknown', exitCode: null, outputText: 'x' });
+      { status: 'unknown', exitCode: null, outputText: 'x' });
     assert.equal(novel.failed, null);
 
     const completedNonZero = demuxOutcome({ tool_name: 'Bash', tool_response: 'x' },
-      { kind: 'command', status: 'completed', exitCode: 7, outputText: 'x' });
+      { status: 'completed', exitCode: 7, outputText: 'x' });
     assert.equal(completedNonZero.failed, true);
   });
 

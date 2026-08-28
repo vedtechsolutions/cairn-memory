@@ -21,6 +21,7 @@ import {
   codexHooks, codexHookCount, mergeCodexHooks,
   codexMcpBlock, hasCairnMcpServer, countTrustedHooksIn, pruneHookState,
   runCodexInit, postToolRouteFor, POST_TOOL_ROUTE, LEGACY_POST_TOOL_ROUTE,
+  parseTrustState, commandAt, trustedCommandsIn, pruneTrustKeys,
   type CodexHooksFile,
 } from '../src/cli/codex-init.js';
 import { checkCodexParity } from '../src/cli/doctor.js';
@@ -38,13 +39,20 @@ beforeEach(() => {
   rmSync(target, { recursive: true, force: true });
 });
 
+/** Codex trust-state keys use the SNAKE_CASE event name (verified live:
+ *  session_start, post_tool_use) — the position-join machinery depends
+ *  on it, so the fixture must match the real format. */
+function snakeCase(event: string): string {
+  return event.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase();
+}
+
 function trustAll(hooksPath: string, file: CodexHooksFile): string {
   const lines: string[] = [];
   let i = 0;
   for (const [event, groups] of Object.entries(file.hooks)) {
     for (let g = 0; g < groups.length; g++) {
       for (let h = 0; h < groups[g].hooks.length; h++) {
-        lines.push(`[hooks.state."${hooksPath}:${event.toLowerCase()}:${g}:${h}"]`);
+        lines.push(`[hooks.state."${hooksPath}:${snakeCase(event)}:${g}:${h}"]`);
         lines.push(`trusted_hash = "sha256:${(i++).toString(16).padStart(4, '0')}"`);
       }
     }
@@ -87,23 +95,69 @@ describe('codexHooks generator', () => {
   });
 });
 
-describe('postToolRouteFor (D3 migration policy)', () => {
-  const legacyFile = (): CodexHooksFile => codexHooks(RELAY, LEGACY_POST_TOOL_ROUTE);
+describe('postToolRouteFor (D3 migration policy — per-command trust)', () => {
+  const legacyCmd = `${RELAY} --client codex ${LEGACY_POST_TOOL_ROUTE}`;
 
   it('fresh installs get the canonical route', () => {
-    assert.equal(postToolRouteFor({}, 0, false), POST_TOOL_ROUTE);
+    assert.equal(postToolRouteFor([], false), POST_TOOL_ROUTE);
   });
 
-  it('a TRUSTED legacy wiring keeps its route — renaming would invalidate hash-pinned trust', () => {
-    assert.equal(postToolRouteFor(legacyFile(), 10, false), LEGACY_POST_TOOL_ROUTE);
+  it('a TRUSTED legacy command keeps its route — renaming would invalidate hash-pinned trust', () => {
+    assert.equal(postToolRouteFor([legacyCmd], false), LEGACY_POST_TOOL_ROUTE);
   });
 
-  it('an UNTRUSTED legacy wiring modernizes — there is no trust to preserve', () => {
-    assert.equal(postToolRouteFor(legacyFile(), 0, false), POST_TOOL_ROUTE);
+  it('trust on OTHER commands does not make an untrusted legacy route look preserved', () => {
+    // A trusted foreign hook (no Cairn marker) and a trusted canonical
+    // route must both leave the decision at canonical.
+    assert.equal(postToolRouteFor([`/usr/local/bin/foreign ${LEGACY_POST_TOOL_ROUTE}`], false), POST_TOOL_ROUTE);
+    assert.equal(postToolRouteFor([`${RELAY} --client codex ${POST_TOOL_ROUTE}`], false), POST_TOOL_ROUTE);
   });
 
   it('--migrate-routes always yields the canonical route', () => {
-    assert.equal(postToolRouteFor(legacyFile(), 10, true), POST_TOOL_ROUTE);
+    assert.equal(postToolRouteFor([legacyCmd], true), POST_TOOL_ROUTE);
+  });
+});
+
+describe('trust-state parsing and scoped pruning', () => {
+  it('parseTrustState joins [hooks.state] keys back to positions; commandAt resolves them', () => {
+    const hooksPath = codexHooksPath();
+    const file = codexHooks(RELAY, LEGACY_POST_TOOL_ROUTE);
+    const toml = [
+      `[hooks.state."${hooksPath}:post_tool_use:0:0"]`,
+      'trusted_hash = "sha256:aaaa"',
+      `[hooks.state."${hooksPath}:session_start:0:0"]`,
+      'enabled = false',
+      'trusted_hash = "sha256:bbbb"',
+      `[hooks.state."/other/hooks.json:stop:0:0"]`,
+      'trusted_hash = "sha256:cccc"',
+      `[hooks.state."${hooksPath}:stop:9:9"]`,
+      'trusted_hash = "sha256:dddd"',
+    ].join('\n');
+    const entries = parseTrustState(toml, hooksPath);
+    assert.equal(entries.length, 3, 'other files excluded');
+    assert.deepEqual(entries.map((e) => e.trusted), [true, false, true], 'disabled entry not trusted');
+    assert.match(commandAt(file, entries[0]) ?? '', / codex-post-tool$/);
+    assert.match(commandAt(file, entries[1]) ?? '', / session-start$/);
+    assert.equal(commandAt(file, entries[2]), null, 'nonexistent position resolves to null');
+    const trusted = trustedCommandsIn(toml, hooksPath, file);
+    assert.equal(trusted.length, 1, 'only resolvable trusted positions');
+    assert.match(trusted[0], / codex-post-tool$/);
+  });
+
+  it('pruneTrustKeys removes exactly the named sections', () => {
+    const hooksPath = codexHooksPath();
+    const toml = [
+      'model = "gpt-x"',
+      `[hooks.state."${hooksPath}:post_tool_use:0:0"]`,
+      'trusted_hash = "sha256:aaaa"',
+      `[hooks.state."${hooksPath}:stop:0:0"]`,
+      'trusted_hash = "sha256:bbbb"',
+    ].join('\n');
+    const pruned = pruneTrustKeys(toml, new Set([`${hooksPath}:post_tool_use:0:0`]));
+    assert.match(pruned, /^model = "gpt-x"/m);
+    assert.ok(!pruned.includes('post_tool_use'), 'named section removed');
+    assert.ok(pruned.includes(`${hooksPath}:stop:0:0`), 'unnamed section kept');
+    assert.equal(pruneTrustKeys(toml, new Set()), toml, 'no keys, no change');
   });
 });
 
@@ -132,6 +186,39 @@ describe('mergeCodexHooks', () => {
     const once = mergeCodexHooks({}, generated);
     const twice = mergeCodexHooks(once, generated);
     assert.deepEqual(twice, once);
+  });
+
+  it('is POSITION-STABLE: a Cairn-first layout keeps its indices (trust is pinned to them)', () => {
+    const generated = codexHooks(RELAY);
+    const existing: Partial<CodexHooksFile> = {
+      hooks: {
+        SessionStart: [
+          { hooks: [{ type: 'command', command: '/old-install/dist/src/hooks/hook-relay --client codex session-start' }] },
+          { hooks: [{ type: 'command', command: '/usr/local/bin/my-own-hook' }] },
+        ],
+      },
+    };
+    const merged = mergeCodexHooks(existing, generated);
+    assert.ok(merged.hooks.SessionStart[0].hooks[0].command.startsWith(RELAY), 'Cairn stays at index 0');
+    assert.equal(merged.hooks.SessionStart[1].hooks[0].command, '/usr/local/bin/my-own-hook', 'foreign stays at index 1');
+  });
+
+  it('keeps foreign handlers of a mixed group instead of deleting the group', () => {
+    const generated = codexHooks(RELAY);
+    const existing: Partial<CodexHooksFile> = {
+      hooks: {
+        Stop: [{
+          hooks: [
+            { type: 'command', command: '/usr/local/bin/my-stop-hook' },
+            { type: 'command', command: '/old-install/dist/src/hooks/hook-relay --client codex stop' },
+          ],
+        }],
+      },
+    };
+    const merged = mergeCodexHooks(existing, generated);
+    assert.equal(merged.hooks.Stop[0].hooks.length, 1, 'Cairn handler stripped from the mixed group');
+    assert.equal(merged.hooks.Stop[0].hooks[0].command, '/usr/local/bin/my-stop-hook', 'foreign handler survives');
+    assert.ok(merged.hooks.Stop[1].hooks[0].command.startsWith(RELAY), 'fresh Cairn group appended');
   });
 });
 
@@ -236,12 +323,15 @@ describe('runCodexInit (hermetic end to end)', () => {
     assert.equal(readFileSync(codexHooksPath(), 'utf-8'), seeded, 'trusted legacy wiring preserved verbatim');
     assert.equal(countTrustedHooksIn(readFileSync(codexConfigPath(), 'utf-8'), codexHooksPath()).trusted, 10, 'trust survives');
 
-    // Explicit migration: canonical route written, orphaned trust pruned.
+    // Explicit migration: canonical route written; ONLY the changed
+    // hook's trust is pruned — the other nine keep theirs (scoped prune).
     runCodexInit(RELAY, '/srv/server.js', false, true);
     const migrated = readFileSync(codexHooksPath(), 'utf-8');
     assert.match(migrated, / post-tool"/, 'canonical route written');
     assert.ok(!migrated.includes(LEGACY_POST_TOOL_ROUTE), 'deprecated route gone');
-    assert.equal(countTrustedHooksIn(readFileSync(codexConfigPath(), 'utf-8'), codexHooksPath()).trusted, 0, 'invalidated trust pruned for re-review');
+    const configAfter = readFileSync(codexConfigPath(), 'utf-8');
+    assert.equal(countTrustedHooksIn(configAfter, codexHooksPath()).trusted, 9, 'only the migrated hook re-reviews');
+    assert.ok(!configAfter.includes(':post_tool_use:'), 'the invalidated entry is gone');
   });
 
   it('rewrites an UNTRUSTED legacy wiring to the canonical route without --migrate-routes', () => {

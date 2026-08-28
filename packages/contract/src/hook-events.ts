@@ -92,7 +92,9 @@ export interface PostToolUseFailureEvent extends ToolHookEvent {
 
 export interface StopEvent extends HookEventBase {
   stop_hook_active: boolean;
-  last_assistant_message: string;
+  /** Nullable/absent in the wild: Codex 0.150.1 emits null when the turn
+   *  ended without assistant text. Consumers must guard. */
+  last_assistant_message?: string | null;
 }
 
 export interface SubagentStartEvent extends HookEventBase {
@@ -114,7 +116,8 @@ export interface PreCompactEvent extends HookEventBase {
 
 export interface PostCompactEvent extends HookEventBase {
   trigger: 'manual' | 'auto';
-  tokens_saved: number;
+  /** Absent on engines that do not report it (Codex 0.150.1). */
+  tokens_saved?: number;
 }
 
 export interface SessionEndEvent extends HookEventBase {
@@ -132,6 +135,10 @@ export interface FileChangedEvent extends HookEventBase {
  * is REQUIRED here — a payload without it is a RawHookPayload, not a
  * CairnHookEvent. (Core interfaces keep the field optional for legacy
  * tolerance; the union is the forward contract integrators code against.)
+ *
+ * Scope: the union covers the events Cairn WIRES, not every event an
+ * engine can emit (Codex 0.150.x also has PermissionRequest, Interrupt,
+ * …). An unlisted event arrives as a RawHookPayload; tolerate it.
  */
 export type CairnHookEvent =
   | (SessionStartEvent & { hook_event_name: 'SessionStart' })

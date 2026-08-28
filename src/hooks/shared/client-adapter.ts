@@ -71,6 +71,15 @@ const codexAdapter: ClientAdapter = {
   // No readTranscriptSnapshot: transcript_path is a rollout JSONL the
   // Claude-format parser cannot read (rollout parser is a recorded
   // follow-up); callers degrade to an empty snapshot.
+  //
+  // Ground-truth tool outcome via the rollout log, joined on tool_use_id
+  // (toolFailureSignal 'lookup'). Dynamic import: the lookup code loads
+  // only when a lookup-signal event is dispatched, keeping every other
+  // hook's import graph lean.
+  resolveToolOutcome: async (event) => {
+    const { findRolloutToolRecord } = await import('./rollout-lookup.js');
+    return findRolloutToolRecord(event.transcript_path, event.tool_use_id);
+  },
 };
 
 const registry = new Map<string, ClientAdapter>([

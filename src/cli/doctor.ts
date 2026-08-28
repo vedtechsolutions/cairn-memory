@@ -14,6 +14,7 @@ import { dirname, join } from 'node:path';
 import { SCHEMA_VERSION } from '../db/schema.js';
 import { resolveDbPath } from '../db/db-path.js';
 import { CAIRN_HOOK_DIR_MARKER } from '../constants/index.js';
+import { SYNC_ROUTES, ASYNC_ROUTES, CONTRACT_REVISION } from '@cairn/contract';
 import { getEmbeddingModelConfig } from '../utils/embeddings.js';
 import { verifyModelPackage, ArtifactVerificationError } from '../utils/artifact-verification.js';
 import { probeHookSocket, socketPath, pidPath } from '../mcp/socket-ownership.js';
@@ -125,6 +126,20 @@ async function checkDatabase(): Promise<CheckResult> {
 async function checkSocket(): Promise<CheckResult> {
   const live = await probeHookSocket();
   if (live) {
+    // A daemon left running across a package upgrade serves the OLD route
+    // table; async hooks aimed at a route it lacks fail silently (the
+    // relay's direct-node fallback catches the 404, but capture should
+    // not be living on the fallback path).
+    const missingRoutes = live.routes === null
+      ? []
+      : [...SYNC_ROUTES, ...ASYNC_ROUTES].filter((r) => !live.routes!.includes(`/${r}`));
+    const revisionDrift = live.contractRevision !== null && live.contractRevision !== CONTRACT_REVISION;
+    if (missingRoutes.length > 0 || revisionDrift) {
+      const what = missingRoutes.length > 0
+        ? `missing routes: ${missingRoutes.join(', ')}`
+        : `contract revision ${live.contractRevision} vs this build's ${CONTRACT_REVISION}`;
+      return { status: 'warn', detail: `hook socket owner (PID ${live.pid}) predates this install (${what}) — restart it: \`systemctl restart cairn-daemon\` (or restart the agent that owns the socket)` };
+    }
     return { status: 'ok', detail: `hook socket served by PID ${live.pid} at ${socketPath()}` };
   }
   // A socket file whose HTTP probe fails has two very different causes; the

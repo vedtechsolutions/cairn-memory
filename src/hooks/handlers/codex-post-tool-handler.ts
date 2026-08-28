@@ -1,18 +1,21 @@
 /**
- * Codex PostToolUse demux — one hook event, ground-truth routed.
+ * PostToolUse demux — one hook event, ground-truth routed. Serves the
+ * canonical /post-tool route and its deprecated /codex-post-tool alias.
  *
- * Codex fires PostToolUse for successes AND failures with no failure signal
- * in the payload, so this handler looks up the rollout record joined on
- * tool_use_id and routes: failed → error-learning (synthesized
- * PostToolUseFailureInput), completed → success-tracker, no match →
- * outcome-unknown tool event (success stays undefined — it can never count
- * as a success). Mirrors Claude's mutually-exclusive
- * PostToolUse/PostToolUseFailure split.
+ * Lookup-signal clients (Codex) fire PostToolUse for successes AND
+ * failures with no failure signal in the payload, so this handler asks
+ * the event's client ADAPTER for the ground-truth outcome
+ * (resolveToolOutcome — Codex: rollout record joined on tool_use_id) and
+ * routes: failed → error-learning (synthesized PostToolUseFailureInput),
+ * completed → success-tracker, no match → outcome-unknown tool event
+ * (success stays undefined — it can never count as a success). Mirrors
+ * Claude's mutually-exclusive PostToolUse/PostToolUseFailure split.
  */
 import type Database from 'better-sqlite3';
+import type { ToolOutcome } from '@cairn/contract';
 import type { PostToolUseInput, PostToolUseFailureInput } from '../shared/hook-io.js';
 import type { CachedHookContext } from '../shared/db-client.js';
-import { findRolloutToolRecord, type RolloutToolRecord } from '../shared/rollout-lookup.js';
+import { adapterFor } from '../shared/client-adapter.js';
 import { handleErrorLearning } from './error-learning-handler.js';
 import { handleSuccessTracker } from './success-tracker-handler.js';
 import { loadTracker, saveTracker } from '../shared/edit-tracker.js';
@@ -45,7 +48,7 @@ export interface DemuxOutcome {
  *  the status says. */
 export function demuxOutcome(
   input: Pick<PostToolUseInput, 'tool_name' | 'tool_response'>,
-  record: RolloutToolRecord | null,
+  record: ToolOutcome | null,
 ): DemuxOutcome {
   if (record) {
     if (record.status === 'failed' || (record.exitCode !== null && record.exitCode !== 0)) {
@@ -93,18 +96,25 @@ function markToolSeen(db: Database.Database, toolUseId: string | undefined): voi
 export async function handleCodexPostTool(
   input: PostToolUseInput,
   client: CachedHookContext,
-  /** Pre-resolved rollout record (the tailer already parsed the line it is
+  /** Pre-resolved outcome (the tailer already parsed the record it is
    *  routing — re-looking it up in a tail window the tailer may have
-   *  outrun would silently demote it to unknown). undefined = look up. */
-  preResolved?: RolloutToolRecord | null,
+   *  outrun would silently demote it to unknown). undefined = resolve
+   *  via the event's client adapter. */
+  preResolved?: ToolOutcome | null,
 ): Promise<CodexPostToolResult> {
   if (!DEMUX_TOOLS.includes(input.tool_name)) {
     return { output: null, action: 'skipped', exitCode: null };
   }
 
+  // Ground truth comes from the ADAPTER (the extension seam's promise):
+  // a lookup-signal client resolves from its own state; a client with no
+  // resolver degrades to the payload-text fallback / unknown.
+  const resolver = adapterFor(input).resolveToolOutcome;
   const record = preResolved !== undefined
     ? preResolved
-    : await findRolloutToolRecord(input.transcript_path, input.tool_use_id);
+    : resolver
+      ? await resolver(input)
+      : null;
   const { failed, exitCode, errorText } = demuxOutcome(input, record);
 
   if (failed === true) {

@@ -52,21 +52,23 @@ export type PostToolRoute = typeof POST_TOOL_ROUTE | typeof LEGACY_POST_TOOL_ROU
 
 /**
  * Which PostToolUse route to generate. Fresh installs get the canonical
- * `post-tool`; an install whose TRUSTED wiring names the deprecated
- * `codex-post-tool` keeps it verbatim — trust is hash-pinned to the exact
+ * `post-tool`; an install whose legacy `codex-post-tool` command is
+ * ITSELF trusted keeps it verbatim — trust is hash-pinned to the exact
  * command string, so renaming the route in place would silently disable
- * every Cairn hook until the user re-reviews. Migration is therefore an
- * explicit opt-in (`cairn init --migrate-routes`), which rides the
- * existing trust-invalidation warning path.
+ * the hook until the user re-reviews. Per-command trust matters: a
+ * trusted foreign hook (or an already-trusted canonical route) must not
+ * make an untrusted legacy command look preservation-worthy. Migration
+ * is an explicit opt-in (`cairn init --migrate-routes`), riding the
+ * trust-invalidation warning path.
  */
 export function postToolRouteFor(
-  existing: Partial<CodexHooksFile>,
-  trustedBefore: number,
+  trustedCommands: readonly string[],
   migrateRoutes: boolean,
 ): PostToolRoute {
   if (migrateRoutes) return POST_TOOL_ROUTE;
-  const hasLegacy = cairnCommandSet(existing).some((c) => c.endsWith(` ${LEGACY_POST_TOOL_ROUTE}`));
-  return hasLegacy && trustedBefore > 0 ? LEGACY_POST_TOOL_ROUTE : POST_TOOL_ROUTE;
+  const legacyTrusted = trustedCommands.some(
+    (c) => c.includes(CAIRN_HOOK_DIR_MARKER) && c.endsWith(` ${LEGACY_POST_TOOL_ROUTE}`));
+  return legacyTrusted ? LEGACY_POST_TOOL_ROUTE : POST_TOOL_ROUTE;
 }
 
 /** The canonical Codex hook set for this install's resolved relay command. */
@@ -99,10 +101,6 @@ export function codexHookCount(file: CodexHooksFile): number {
     (sum, groups) => sum + groups.reduce((s, g) => s + g.hooks.length, 0), 0);
 }
 
-function isCairnGroup(group: CodexMatcherGroup): boolean {
-  return group.hooks.some((h) => h.command.includes(CAIRN_HOOK_DIR_MARKER));
-}
-
 /** The sorted Cairn command strings in a hooks file — trust is hash-pinned
  *  per handler, so a changed command set means Codex will re-review. */
 export function cairnCommandSet(file: Partial<CodexHooksFile>): string[] {
@@ -117,15 +115,111 @@ export function cairnCommandSet(file: Partial<CodexHooksFile>): string[] {
   return commands.sort();
 }
 
-/** Merge: per event keep non-Cairn groups, replace Cairn ones; foreign
- *  events untouched; description ours (it documents the trust step). */
+/**
+ * Merge, POSITION-STABLE: Codex pins trust to (event, group, handler)
+ * INDICES as well as command hashes, so a merge that reorders groups
+ * silently invalidates trust for every shifted hook — including foreign
+ * ones — without changing any command. Therefore: the first all-Cairn
+ * group is replaced IN PLACE; extra all-Cairn groups are dropped; a
+ * mixed group keeps its foreign handlers (Cairn handlers stripped) at
+ * its original index; a file with no Cairn group appends at the end.
+ * Foreign events untouched; description ours (documents the trust step).
+ */
 export function mergeCodexHooks(existing: Partial<CodexHooksFile>, generated: CodexHooksFile): CodexHooksFile {
   const hooks: Record<string, CodexMatcherGroup[]> = { ...(existing.hooks ?? {}) };
   for (const [event, cairnGroups] of Object.entries(generated.hooks)) {
-    const preserved = (hooks[event] ?? []).filter((g) => !isCairnGroup(g));
-    hooks[event] = [...preserved, ...cairnGroups];
+    const merged: CodexMatcherGroup[] = [];
+    let placed = false;
+    for (const group of hooks[event] ?? []) {
+      const foreign = group.hooks.filter((h) => !h.command.includes(CAIRN_HOOK_DIR_MARKER));
+      if (foreign.length === group.hooks.length) {
+        merged.push(group); // purely foreign — untouched
+      } else if (foreign.length > 0) {
+        merged.push({ ...group, hooks: foreign }); // mixed — keep the foreign handlers, same slot
+      } else if (!placed) {
+        merged.push(...cairnGroups); // first all-Cairn slot — replace in place
+        placed = true;
+      }
+      // later all-Cairn groups: dropped (stale duplicates)
+    }
+    if (!placed) merged.push(...cairnGroups);
+    hooks[event] = merged;
   }
   return { description: generated.description, hooks };
+}
+
+/** Codex trust-state keys use the snake_case event name. */
+function snakeEvent(event: string): string {
+  return event.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase();
+}
+
+export interface TrustStateEntry {
+  /** The full quoted section key: `<hooksPath>:<snake_event>:<group>:<handler>`. */
+  key: string;
+  event: string;
+  group: number;
+  handler: number;
+  trusted: boolean;
+  disabled: boolean;
+}
+
+/** Parse every [hooks.state] section for a hooks file into structured
+ *  entries — the join point between config.toml trust and hooks.json
+ *  positions. Same scoped line scan as the counters. */
+export function parseTrustState(configToml: string, hooksJsonPath: string): TrustStateEntry[] {
+  const lines = configToml.split('\n');
+  const entries: TrustStateEntry[] = [];
+  const keyRe = new RegExp(`\\[hooks\\.state\\."(${hooksJsonPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}:([a-z0-9_]+):(\\d+):(\\d+))"\\]`);
+  for (let i = 0; i < lines.length; i++) {
+    const m = keyRe.exec(lines[i]);
+    if (!m) continue;
+    let trusted = false;
+    let disabled = false;
+    for (let j = i + 1; j < lines.length && !lines[j].trimStart().startsWith('['); j++) {
+      if (lines[j].includes('trusted_hash')) trusted = true;
+      if (/^\s*enabled\s*=\s*false/.test(lines[j])) disabled = true;
+    }
+    entries.push({ key: m[1], event: m[2], group: Number(m[3]), handler: Number(m[4]), trusted: trusted && !disabled, disabled });
+  }
+  return entries;
+}
+
+/** The command a trust entry's pinned position resolves to in a hooks
+ *  file, or null when the position no longer exists. */
+export function commandAt(file: Partial<CodexHooksFile>, entry: Pick<TrustStateEntry, 'event' | 'group' | 'handler'>): string | null {
+  for (const [event, groups] of Object.entries(file.hooks ?? {})) {
+    if (snakeEvent(event) !== entry.event) continue;
+    return groups[entry.group]?.hooks[entry.handler]?.command ?? null;
+  }
+  return null;
+}
+
+/** The command strings whose pinned positions currently hold live trust
+ *  (trusted_hash, not disabled) — per-command trust, which the file-wide
+ *  counters cannot give. */
+export function trustedCommandsIn(configToml: string, hooksJsonPath: string, file: Partial<CodexHooksFile>): string[] {
+  return parseTrustState(configToml, hooksJsonPath)
+    .filter((e) => e.trusted)
+    .map((e) => commandAt(file, e))
+    .filter((c): c is string => c !== null);
+}
+
+/** Remove exactly the [hooks.state] sections named by `keys` — scoped
+ *  pruning, so invalidating one changed Cairn command never wipes the
+ *  trust of unrelated (foreign) hooks sharing the file. */
+export function pruneTrustKeys(configToml: string, keys: ReadonlySet<string>): string {
+  if (keys.size === 0) return configToml;
+  const lines = configToml.split('\n');
+  const kept: string[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    const m = /\[hooks\.state\."([^"]+)"\]/.exec(lines[i]);
+    if (m && keys.has(m[1])) {
+      while (i + 1 < lines.length && !lines[i + 1].trimStart().startsWith('[')) i++;
+      continue;
+    }
+    kept.push(lines[i]);
+  }
+  return kept.join('\n');
 }
 
 /** Append-only MCP registration. TOML LITERAL strings (no escape
@@ -229,17 +323,18 @@ export function runCodexInit(relayCmd: string, serverPath: string, dryRun: boole
   const mcpRegistered = hasCairnMcpServer(config);
   const mcpBlock = mcpRegistered ? null : codexMcpBlock(serverPath);
 
-  // Trust is hash-pinned to the exact command strings: a changed set means
-  // Codex re-reviews, so "trusted" must never be reported across a change.
-  const trustBefore = countTrustedHooksIn(config, codexHooksPath());
-  const postToolRoute = postToolRouteFor(existing, trustBefore.trusted, migrateRoutes);
+  const trustEntries = parseTrustState(config, codexHooksPath());
+  const postToolRoute = postToolRouteFor(trustedCommandsIn(config, codexHooksPath(), existing), migrateRoutes);
   const generated = codexHooks(relayCmd, postToolRoute);
   const merged = mergeCodexHooks(existing, generated);
   const total = codexHookCount(merged);
 
-  const commandsChanged = existsSync(codexHooksPath())
-    && JSON.stringify(cairnCommandSet(existing)) !== JSON.stringify(cairnCommandSet(generated));
-  const invalidatesTrust = commandsChanged && trustBefore.trusted > 0;
+  // Trust is hash-pinned per (event, group, handler) POSITION: any state
+  // entry whose pinned position now resolves to a different command (or
+  // to none) can never hash-match again — prune exactly those, keeping
+  // the trust of unrelated hooks that kept their position and command.
+  const invalidated = trustEntries.filter((e) => commandAt(merged, e) !== commandAt(existing, e));
+  const invalidatesTrust = invalidated.some((e) => e.trusted);
 
   const wrote = dryRun ? 'would write' : 'writing';
   console.log(`  ✓ hooks.json — ${wrote} ${Object.keys(generated.hooks).length} Cairn hook events (${total} hooks total in file)`);
@@ -256,29 +351,37 @@ export function runCodexInit(relayCmd: string, serverPath: string, dryRun: boole
   }
 
   if (!dryRun) {
+    // Config FIRST, hooks.json second: a failure between the two writes
+    // must land fail-safe (trust pruned, old commands kept — an honest
+    // re-review), never fail-green (new commands installed while stale
+    // hashes still count as "trusted" and Codex silently skips them).
+    let wroteConfig = false;
     try {
-      backupOnce(codexHooksPath());
-      atomicWrite(codexHooksPath(), `${JSON.stringify(merged, null, 2)}\n`);
-      if (mcpBlock !== null || invalidatesTrust) {
+      if (mcpBlock !== null || invalidated.length > 0) {
         backupOnce(codexConfigPath());
-        let next = config;
-        // Prune state entries the changed commands orphaned, so doctor's
-        // trust report stays honest after this write.
-        if (invalidatesTrust) next = pruneHookState(next, codexHooksPath());
+        let next = pruneTrustKeys(config, new Set(invalidated.map((e) => e.key)));
         if (mcpBlock !== null) next = next + mcpBlock;
         atomicWrite(codexConfigPath(), next);
         config = next;
+        wroteConfig = true;
       }
+      backupOnce(codexHooksPath());
+      atomicWrite(codexHooksPath(), `${JSON.stringify(merged, null, 2)}\n`);
     } catch (err) {
-      console.log(`  ✗ could not write Codex config: ${(err as Error).message} — left untouched`);
+      console.log(`  ✗ could not write Codex config: ${(err as Error).message} — ${
+        wroteConfig
+          ? 'config.toml was updated but hooks.json was NOT; re-run `cairn init` (hooks re-review pending either way)'
+          : 'nothing was changed'}`);
       return;
     }
   }
 
   if (invalidatesTrust) {
-    console.log(`  ! HOOK COMMANDS CHANGED — the ${trustBefore.trusted} previously trusted hook(s) are`);
-    console.log(`    invalidated (Codex pins trust to exact commands). Start \`codex\` — the startup`);
-    console.log(`    review will ask you to re-approve the Cairn hooks — then re-run \`cairn doctor\`.`);
+    const count = invalidated.filter((e) => e.trusted).length;
+    console.log(`  ! HOOK COMMANDS CHANGED — ${count} previously trusted hook(s) are invalidated`);
+    console.log(`    (Codex pins trust to exact commands; unrelated hooks keep their trust).`);
+    console.log(`    Start \`codex\` — the startup review will ask you to re-approve the changed`);
+    console.log(`    Cairn hooks — then re-run \`cairn doctor\`.`);
     return;
   }
   const trust = countTrustedHooksIn(config, codexHooksPath());
