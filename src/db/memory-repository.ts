@@ -224,13 +224,14 @@ export class MemoryRepository {
     return briefing.topDecisionsRanked(this.db, project, limit);
   }
 
-  /** Exact-content existence probe (import merge-visibility: the
-   *  gateway's similarity dedup MERGES near-neighbours, and a bulk
-   *  importer must report a merge differently from an identical no-op). */
-  hasExactContent(content: string, kind: string, project: string | null): boolean {
-    return this.db.prepare(
-      'SELECT 1 FROM memories WHERE content = ? AND kind = ? AND project IS ? AND invalidated = 0 LIMIT 1',
-    ).get(content, kind, project) !== undefined;
+  /** The row the gateway's dedup WOULD merge an incoming memory into —
+   *  probed by bulk importers BEFORE create so an exact repeat can be a
+   *  true no-op and a merge can name the real pre-existing text (create
+   *  overwrites it with the longer version, so post-hoc reads lie). Same
+   *  query the gateway itself runs — one representation, one cost. */
+  findSimilarTo(content: string, project: string | null, kind: string): { id: string; content: string } | null {
+    const existing = writes.probeSimilar(this.db, content, project, kind);
+    return existing ? { id: existing.id, content: existing.content } : null;
   }
 
   /** Filter out memories that have been superseded by newer ones (via memory_edges). */

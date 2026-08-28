@@ -80,12 +80,24 @@ function parseTaskGroups(markdown: string): TaskGroup[] {
     const warnings: string[] = [];
     const scope = lines.find((l) => l.startsWith('scope:'))?.slice(6).trim() ?? '';
     const appliesTo = lines.find((l) => l.startsWith('applies_to:'))?.slice(11).trim() ?? '';
-    // cwd runs to the ';' segment boundary or end of line — paths contain
-    // spaces (a Windows 'C:\Users\Jane Doe\repo' must not truncate at
-    // the first space; review).
-    const cwd = /cwd=([^;]+?)(?:;|$)/.exec(appliesTo)?.[1]?.trim() || null;
+    // cwd runs to the ';' boundary, a space-separated `reuse_rule=`
+    // boundary (both real shapes), or end of line — spaced paths must
+    // not truncate at the first space, and the space-form must not glue
+    // reuse_rule onto the path (both reviewed rounds).
+    let cwd = /cwd=([^;]+?)(?:;|\s+reuse_rule=|$)/.exec(appliesTo)?.[1]?.trim() || null;
     if (!appliesTo) warnings.push(`task group "${name}": applies_to header missing — scoping falls back to --project/global`);
     else if (!cwd) warnings.push(`task group "${name}": applies_to has no cwd= segment — scoping falls back to --project/global`);
+    // Only ABSOLUTE paths map to a project: a relative cwd (or a Windows
+    // path evaluated on POSIX) would resolve against the IMPORTER's own
+    // working directory and inherit whatever repo the user is standing
+    // in (review, reproduced). Non-absolute → warn + fall back.
+    if (cwd && !cwd.startsWith('/') && !/^[A-Za-z]:[\\/]/.test(cwd)) {
+      warnings.push(`task group "${name}": cwd "${cwd}" is not absolute — scoping falls back to --project/global`);
+      cwd = null;
+    } else if (cwd && /^[A-Za-z]:[\\/]/.test(cwd) && process.platform !== 'win32') {
+      warnings.push(`task group "${name}": Windows path "${cwd}" cannot map on this platform — scoping falls back to --project/global`);
+      cwd = null;
+    }
 
     // Per-task keywords: ## Task <n> ... ### keywords\n- a, b, c
     const taskKeywords = new Map<number, string[]>();
@@ -145,7 +157,10 @@ function groupSections(group: TaskGroup): LearnSection[] {
   const make = (kind: LearnSection['kind'], bullet: string, extraTags: string[] = []): LearnSection => ({
     kind,
     content: stripTaskRefs(bullet),
-    tags: [...baseTags, ...keywordsForBullet(group, bullet), ...extraTags],
+    // Semantic markers BEFORE harvested keywords: the pipeline caps at
+    // MAX_TAGS from the front, and 'preference' silently falling off the
+    // end defeated the mapping it implements (review).
+    tags: [...baseTags, ...extraTags, ...keywordsForBullet(group, bullet)],
     project,
     context,
     originClient: 'codex',

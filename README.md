@@ -521,7 +521,7 @@ Test-environment overrides (all set automatically by `tests/hermetic-env.cjs`):
 ```bash
 cairn import --from codex-memories                 # ~/.codex/memories (structured MEMORY.md handbook)
 cairn import --from claude-mem                     # ~/.claude-mem/claude-mem.db (v13 schema; older formats best-effort)
-cairn import --from memory-md --path ./MEMORY.md   # any freeform MEMORY.md + sibling topic files
+cairn import --from memory-md --path ./MEMORY.md   # freeform MEMORY.md (+ auto-memory topic files; --include-notes for other siblings)
 cairn import --from codex-memories --dry-run       # preview without writing
 ```
 

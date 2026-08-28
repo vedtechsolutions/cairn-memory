@@ -37,12 +37,12 @@ export interface LearnResult {
   ingested: number;
   /** IDENTICAL content already stored — a true no-op (idempotent path). */
   exactDuplicates: number;
-  /** Distinct source content ABSORBED into a similar existing row by the
-   *  gateway's similarity merge. NOT a no-op: the source wording is gone
-   *  (the survivor keeps the longer text). A bulk importer is the one
-   *  caller that knows the sources were distinct, so it must say so —
-   *  'lossy-visible, never silent' (review). */
-  merged: Array<{ source: string; survivor: string }>;
+  /** Distinct source content the gateway MERGED with a similar existing
+   *  row (the store keeps the longer text). NOT a no-op — one of the two
+   *  wordings is gone. `existing` is the pre-merge text of the row it
+   *  merged with, captured BEFORE create overwrites it (a post-hoc read
+   *  named the wrong victim; review round 2). */
+  merged: Array<{ source: string; existing: string }>;
   errors: string[];
 }
 
@@ -60,14 +60,26 @@ export function learnSections(
   const errors: string[] = [];
   for (const section of sections) {
     try {
-      // Belt: the gateway clips too, but a source bullet exceeding the
-      // public limit must not depend on that.
-      const content = neutralizeMemoryText(section.content).slice(0, LIMITS.MAX_CONTENT_CHARS);
+      // ONE canonical representation, computed exactly as the gateway
+      // stores it: neutralize → sanitize → SCRUB → clip. Order matters
+      // twice over: clipping BEFORE scrubbing can cut a credential so
+      // the scrubber's pattern no longer matches (partial secret stored),
+      // and probing a different representation than storage misreports
+      // exact repeats as merges (review round 2, both executed).
+      const content = scrubSecrets(sanitize(neutralizeMemoryText(section.content))).text
+        .slice(0, LIMITS.MAX_CONTENT_CHARS);
       const project = section.project !== undefined ? section.project : defaultProject;
-      // Probe BEFORE create: after a merge the survivor may equal the
-      // submitted text (longer wins), so post-hoc comparison cannot
-      // distinguish exact from merged.
-      const exactExisted = repo.hasExactContent(content, section.kind, project);
+      // Probe with the gateway's OWN similarity match BEFORE create:
+      // an exact repeat becomes a TRUE no-op (create on a duplicate
+      // boosts confidence and unions tags — reinforcement is right for
+      // interactive learning, but a bulk re-run must not inflate
+      // confidence every pass), and a merge captures the pre-existing
+      // text before create overwrites it with the longer version.
+      const similar = repo.findSimilarTo(content, project, section.kind);
+      if (similar && similar.content === content) {
+        exactDuplicates++;
+        continue;
+      }
       const result = repo.create({
         content,
         kind: section.kind,
@@ -80,10 +92,11 @@ export function learnSections(
         ...(section.originClient ? { originClient: section.originClient } : {}),
       });
       if (!result.deduplicated) ingested++;
-      else if (exactExisted) exactDuplicates++;
       else {
-        const survivor = result.id ? repo.findById(result.id)?.content ?? '' : '';
-        merged.push({ source: safeExcerpt(section.content, 70), survivor: safeExcerpt(survivor, 70) });
+        merged.push({
+          source: safeExcerpt(section.content, 70),
+          existing: safeExcerpt(similar?.content ?? '(unidentified row)', 70),
+        });
       }
     } catch (err) {
       // Scrubbed excerpt only — never raw source content in diagnostics.

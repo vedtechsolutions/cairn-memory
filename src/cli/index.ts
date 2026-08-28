@@ -61,7 +61,12 @@ switch (command) {
       let argError: string | null = null;
       for (let i = 0; i < argv.length; i++) {
         const token = argv[i];
-        if (!token.startsWith('--')) { argError = `unexpected argument "${token}"`; break; }
+        if (!token.startsWith('--')) {
+          // Positional source form: `cairn import codex-memories`.
+          if (i === 0 && !values.from) { values.from = token; continue; }
+          argError = `unexpected argument "${token}"`;
+          break;
+        }
         const eq = token.indexOf('=');
         const name = eq === -1 ? token.slice(2) : token.slice(2, eq);
         if (BOOL_ARGS.has(name)) {
@@ -70,7 +75,10 @@ switch (command) {
         } else if (VALUE_ARGS.has(name)) {
           const value = eq !== -1 ? token.slice(eq + 1) : argv[++i];
           if (value === undefined || value.startsWith('--')) { argError = `--${name} requires a value`; break; }
-          values[name] = value;
+          // An explicitly EMPTY value means unset for every value flag
+          // (--project= previously scoped rows to ''; --path= errored
+          // with a blank path in the message).
+          if (value !== '') values[name] = value;
         } else {
           argError = `unknown flag --${name}`;
           break;
@@ -84,9 +92,7 @@ switch (command) {
       process.exit(runImport({
         from: values.from,
         path: values.path,
-        // An EMPTY --project= must not become project '' (neither global
-        // nor a real project; review) — treat as unset.
-        project: values.project ? values.project : null,
+        project: values.project ?? null,
         dryRun: flags.has('dry-run'),
         includeNotes: flags.has('include-notes'),
       }));

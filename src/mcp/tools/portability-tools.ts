@@ -5,7 +5,7 @@ import type { SessionCache } from '../../hooks/shared/session-cache.js';
 import { LIMITS, PROMOTION, type ContextMode, type LearnableKind, type MemoryKind, LEARNABLE_KINDS } from '../../constants/index.js';
 import { isPrivateProject, canReadPrivate } from '../../config/cairn-config.js';
 import { PrivateScopeChangeError } from '../../db/memory-repository/portability.js';
-import { learnSections } from '../../importers/learn-pipeline.js';
+import { learnSections, safeExcerpt } from '../../importers/learn-pipeline.js';
 import { sessionProjectId } from '../../utils/session-project.js';
 import { isCritical } from './helpers.js';
 import { buildFileSection, buildRecordSection, parseExportDocument } from '../../memory-tool/round-trip.js';
@@ -84,9 +84,11 @@ export function registerPortabilityTools(
       if (dryRun) {
         const lines = [
           `Dry run (${restoreMode ? 'restore' : 'learn'}): ${parsed.records.length} v2 records, ${parsed.files.length} files, ${v1.sections.length} v1 sections, ${parsed.errors.length + v1.errors.length} errors`,
-          ...parsed.records.map((r, i) => `${i + 1}. [${r.kind}] ${r.content.slice(0, 100)}${r.content.length > 100 ? '...' : ''}`),
+          // Scrubbed excerpts: dry-run input is untrusted markdown and a
+          // record can BEGIN with a credential (same rule as the CLI).
+          ...parsed.records.map((r, i) => `${i + 1}. [${r.kind}] ${safeExcerpt(r.content, 100)}`),
           ...parsed.files.map(f => `file: ${f.path}`),
-          ...v1.sections.map((s, i) => `v1 ${i + 1}. [${s.kind}] ${s.content.slice(0, 100)}`),
+          ...v1.sections.map((s, i) => `v1 ${i + 1}. [${s.kind}] ${safeExcerpt(s.content, 100)}`),
           ...[...parsed.errors, ...v1.errors].map(e => `⚠ section ${e.section} "${e.heading}": ${e.error}`),
         ];
         return { content: [{ type: 'text' as const, text: lines.join('\n') }] };

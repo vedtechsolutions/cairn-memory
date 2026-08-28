@@ -127,9 +127,17 @@ export function transformClaudeMem(path?: string): ClaudeMemImport {
     try {
       const tables = tableNames(db);
       // A non-trivial source snapshotting to NOTHING recognizable is a
-      // failure, never a quiet 'Nothing to import' (review).
+      // failure, never a quiet 'Nothing to import' (review) — UNLESS a
+      // v3-era index/ exists beside it, in which case the JSONL reader
+      // below is the legitimate path and must stay reachable (review
+      // round 2: the loud check made the documented best-effort path
+      // unreachable).
       if (![...tables].some((t) => ['observations', 'session_summaries', 'memory_items', 'sessions', 'memories'].includes(t))) {
-        throw new Error(`no recognizable claude-mem tables in ${dbPath} (found: ${[...tables].join(', ') || 'none'}) — is this really a claude-mem database?`);
+        const v3Index = statSync(root).isDirectory() && existsSync(join(root, 'index'));
+        if (!v3Index) {
+          throw new Error(`no recognizable claude-mem tables in ${dbPath} (found: ${[...tables].join(', ') || 'none'}) — is this really a claude-mem database?`);
+        }
+        notes.push('database has no recognizable tables — falling through to the v3 index/ JSONL reader');
       }
       const rowsOf = (table: string): Array<Record<string, unknown>> =>
         db.prepare(`SELECT * FROM ${table}`).all() as Array<Record<string, unknown>>;
@@ -150,8 +158,14 @@ export function transformClaudeMem(path?: string): ClaudeMemImport {
           if (section) { sections.push(section); count++; }
         }
         notes.push(`memory_items (server-beta schema): ${count} of ${memoryItems.length} imported`);
-        const migrated = tables.has('memory_sources')
-          ? new Set((rowsOf('memory_sources')).map((r) => `${String(r.legacy_table)}:${String(r.legacy_id)}`))
+        // Guard the diff on the columns actually existing — keying on a
+        // renamed column would silently produce 'undefined:undefined'
+        // keys, match nothing, and DOUBLE-import every worker row
+        // (review). Case-normalized both sides (review).
+        const sourcesUsable = tables.has('memory_sources')
+          && ['legacy_table', 'legacy_id'].every((c) => columnsOf(db, 'memory_sources').has(c));
+        const migrated = sourcesUsable
+          ? new Set((rowsOf('memory_sources')).map((r) => `${String(r.legacy_table).toLowerCase()}:${String(r.legacy_id)}`))
           : null;
         if (migrated) {
           let extra = 0;

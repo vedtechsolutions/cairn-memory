@@ -348,7 +348,7 @@ describe('review regressions (round 1)', () => {
     assert.equal(row.project, 'target-project-x');
   });
 
-  it('a spaced Windows path in applies_to keeps its full cwd', () => {
+  it('spaced/relative/foreign cwd paths never corrupt or steal scope', () => {
     const root = join(dir, 'winpath');
     mkdirSync(root, { recursive: true });
     writeFileSync(join(root, 'MEMORY.md'), [
@@ -356,27 +356,67 @@ describe('review regressions (round 1)', () => {
       'applies_to: cwd=C:\\Users\\Jane Doe\\repo; reuse_rule=checkout-specific',
       '## Failures and how to do differently',
       '- the build breaks when the path has spaces and is not quoted',
+      '',
+      '# Task Group: relative work', 'scope: s',
+      'applies_to: cwd=. reuse_rule=checkout-specific',
+      '## Failures and how to do differently',
+      '- a relative cwd must never resolve against the importing process',
+      '',
+      '# Task Group: spaced posix', 'scope: s',
+      'applies_to: cwd=/work/with space/repo reuse_rule=checkout-specific',
+      '## Failures and how to do differently',
+      '- the space form parses to the reuse_rule boundary without gluing it on',
     ].join('\n'));
     const result = transformCodexMemories(root);
-    assert.equal(result.sections[0].project, projectId('C:\\Users\\Jane Doe\\repo'),
-      'cwd parses to the ; boundary, not the first space');
+    const [win, rel, posix] = result.sections;
+    // Windows path on POSIX: parsed to the ';' boundary IN FULL (the
+    // warning names 'Jane Doe', not a truncation) but never mapped —
+    // resolving it here would walk up from the IMPORTER's own repo.
+    assert.equal(win.project, undefined);
+    assert.ok(result.notes.some(n => n.includes('Jane Doe') && n.includes('cannot map on this platform')));
+    // Relative cwd: refused with a warning, falls back.
+    assert.equal(rel.project, undefined);
+    assert.ok(result.notes.some(n => n.includes('not absolute')));
+    // Space-separated reuse_rule boundary: the path maps WITHOUT the
+    // reuse_rule text glued on.
+    assert.equal(posix.project, projectId('/work/with space/repo'));
   });
 
-  it('MERGES are reported apart from identical skips — never labeled as no-ops', () => {
-    const sections = [
-      { kind: 'pitfall' as const, content: 'never run the staging deploy before the migration lock is released by the operator', tags: [] },
-      { kind: 'pitfall' as const, content: 'never run the production deploy before the migration lock is released by the operator', tags: [] },
-    ];
-    const first = learnSections(repo, sections, null);
-    assert.equal(first.ingested + first.merged.length, 2, 'both sources accounted for');
-    if (first.merged.length > 0) {
-      assert.ok(first.merged[0].source.length > 0 && first.merged[0].survivor.length > 0,
-        'a merge names the absorbed source and the survivor');
-    }
-    // Identical re-import is exact, never merged.
-    const again = learnSections(repo, [sections[0]], null);
-    assert.equal(again.merged.length + again.ingested, again.ingested + again.merged.length);
-    assert.ok(again.exactDuplicates + again.merged.length + again.ingested === 1);
+  it('MERGES name the TRUE pre-existing text; exact repeats are TRUE no-ops', () => {
+    const staging = 'never run the staging deploy before the migration lock is released by the operator';
+    const production = 'never run the production deploy again before the migration lock is released by the operator';
+    const first = learnSections(repo, [{ kind: 'pitfall', content: staging, tags: [] }], null);
+    assert.equal(first.ingested, 1);
+    const conf1 = (db.prepare('SELECT confidence FROM memories WHERE kind = ?').get('pitfall') as { confidence: number }).confidence;
+
+    // The near-duplicate MERGES, and the report names the STAGING lesson
+    // as the pre-existing text (a post-create read would name the longer
+    // incoming text on both sides; review round 2).
+    const second = learnSections(repo, [{ kind: 'pitfall', content: production, tags: [] }], null);
+    assert.equal(second.merged.length, 1, 'the near-duplicate merges');
+    assert.equal(second.ingested, 0);
+    assert.match(second.merged[0].source, /production/);
+    assert.match(second.merged[0].existing, /staging/, 'the true victim is named, not the incoming text');
+
+    // Exact re-import of the SURVIVING text: a true no-op — no new row,
+    // no merge report, and NO confidence inflation.
+    const survivorText = (db.prepare('SELECT content FROM memories WHERE kind = ?').get('pitfall') as { content: string }).content;
+    const confBefore = (db.prepare('SELECT confidence FROM memories WHERE kind = ?').get('pitfall') as { confidence: number }).confidence;
+    const third = learnSections(repo, [{ kind: 'pitfall', content: survivorText, tags: [] }], null);
+    assert.equal(third.exactDuplicates, 1);
+    assert.equal(third.merged.length, 0, 'an exact repeat is never reported as a merge');
+    const confAfter = (db.prepare('SELECT confidence FROM memories WHERE kind = ?').get('pitfall') as { confidence: number }).confidence;
+    assert.equal(confAfter, confBefore, 'a bulk re-run must not inflate confidence');
+    assert.ok(conf1 <= confBefore, 'sanity: the one legitimate merge may boost');
+
+    // Canonicalization parity: content whose stored form differs from the
+    // raw source (double spaces, a scrubbed token) still reads as EXACT
+    // on re-import, never as a fabricated merge (review round 2).
+    const messy = 'the  deploy   token ghp_' + 'b'.repeat(36) + ' rotates every ninety days in staging vault';
+    learnSections(repo, [{ kind: 'fact', content: messy, tags: [] }], null);
+    const rerun = learnSections(repo, [{ kind: 'fact', content: messy, tags: [] }], null);
+    assert.equal(rerun.exactDuplicates, 1, 'canonicalized repeat is exact');
+    assert.equal(rerun.merged.length, 0, 'no fabricated loss report');
   });
 
   it('per-task keywords: a [Task 2] bullet carries Task 2 handles, not Task 1s', () => {

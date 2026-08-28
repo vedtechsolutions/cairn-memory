@@ -96,7 +96,7 @@ export function runImport(options: ImportOptions): number {
     // records were distinct, so it says exactly what happened to each.
     for (const m of result.merged) {
       console.log(`    ~ merged: "${m.source}"`);
-      console.log(`      into:   "${m.survivor}"`);
+      console.log(`      with existing: "${m.existing}" (the longer text is kept)`);
     }
     for (const e of result.errors) console.log(`    ⚠ ${e}`);
 

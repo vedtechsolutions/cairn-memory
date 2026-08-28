@@ -5,6 +5,7 @@ import {
   DEDUP,
   type LearnableKind,
   type MemorySource,
+  LIMITS
 } from '../../constants/index.js';
 import { CLIENT_CLAUDE } from '../../constants/clients.js';
 import { generateId, now, sanitize, scrubSecrets, tokenOverlap, buildFtsQuery } from '../../utils/index.js';
@@ -67,7 +68,11 @@ export function create(db: Database.Database, input: CreateMemoryInput): CreateR
     db.prepare(`
       UPDATE memories SET content = ?, confidence = ?, tags = ?, source = ?
       WHERE id = ?
-    `).run(newContent, newConfidence, JSON.stringify([...new Set([...existing.tags, ...tags])]), source, existing.id);
+    `).run(newContent, newConfidence,
+      // Union capped: repeated merges (bulk imports especially) would
+      // otherwise grow tags without bound past MAX_TAGS (review).
+      JSON.stringify([...new Set([...existing.tags, ...tags])].slice(0, LIMITS.MAX_TAGS)),
+      source, existing.id);
 
     return { id: existing.id, deduplicated: true };
   }
@@ -173,6 +178,12 @@ function defaultConfidence(kind: LearnableKind): number {
   if (kind === 'user_profile') return CONFIDENCE.USER_PROFILE;
   if (kind === 'reference') return CONFIDENCE.REFERENCE;
   return CONFIDENCE.LEARNED;
+}
+
+/** Import-probe: the row create() would merge this content into, after
+ *  the same canonicalization create() applies. */
+export function probeSimilar(db: Database.Database, content: string, project: string | null, kind: string): Memory | null {
+  return findSimilar(db, scrubSecrets(sanitize(content)).text, project, kind);
 }
 
 export function findSimilar(db: Database.Database, content: string, project: string | null, kind: string, inputEmbedding?: Buffer): Memory | null {

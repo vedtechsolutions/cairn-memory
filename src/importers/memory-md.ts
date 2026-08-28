@@ -40,6 +40,13 @@ const FRONTMATTER_KIND: Record<string, LearnSection['kind']> = {
   reference: 'fact',
 };
 
+/** Only the documented auto-memory types mark a sibling as a topic file
+ *  — ANY `type:` would let a README with `type: guide` through the gate
+ *  (review round 2). */
+export function isAutoMemoryType(type: string | null): boolean {
+  return type !== null && type in FRONTMATTER_KIND;
+}
+
 
 
 /** Transform one freeform markdown document into learn sections. */
@@ -47,7 +54,11 @@ export function sectionsFromFreeformMarkdown(rawMarkdown: string, baseTags: stri
   // CRLF normalize, then MASK fenced code blocks: a '## ' inside a fence
   // is an example, not a section boundary, and a '#' line inside one is
   // not a lesson (review). Imported lessons are prose — fences drop.
-  const noFences = rawMarkdown.replace(/\r\n/g, '\n').replace(/^```[\s\S]*?^```\s*$/gm, '');
+  // Fence forms per CommonMark: 3+ backticks or tildes, up to 3 leading
+  // spaces (review round 2: the narrow column-zero triple-backtick form
+  // left indented/tilde/longer fences parseable as lessons).
+  const noFences = rawMarkdown.replace(/\r\n/g, '\n')
+    .replace(/^ {0,3}(`{3,}|~{3,})[^\n]*\n[\s\S]*?^ {0,3}\1`*~*[ \t]*$/gm, '');
   const { body: markdown, type } = stripFrontmatter(noFences);
   const kindHint = type ? FRONTMATTER_KIND[type] : undefined;
   const typeTags = type ? [slugTag('type', type)] : [];
@@ -108,7 +119,7 @@ export function transformMemoryMd(path: string, opts: { includeSiblings?: boolea
       const full = join(dir, name);
       if (!statSync(full).isFile()) continue;
       const raw = readFileSync(full, 'utf-8');
-      const hasMemoryFrontmatter = stripFrontmatter(raw.replace(/\r\n/g, '\n')).type !== null;
+      const hasMemoryFrontmatter = isAutoMemoryType(stripFrontmatter(raw.replace(/\r\n/g, '\n')).type);
       if (!hasMemoryFrontmatter && !opts.includeSiblings) {
         excluded.push({ name, reason: 'no auto-memory frontmatter (use --include-notes to import siblings)' });
         continue;
