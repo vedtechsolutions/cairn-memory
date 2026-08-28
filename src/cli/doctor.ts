@@ -137,10 +137,17 @@ async function checkSocket(): Promise<CheckResult> {
     try {
       pid = Number(readFileSync(pidPath(), 'utf-8').trim());
       if (Number.isInteger(pid) && pid > 0) {
-        process.kill(pid, 0);
-        ownerAlive = true;
+        try {
+          process.kill(pid, 0);
+          ownerAlive = true;
+        } catch (err) {
+          // EPERM = the process EXISTS but this context may not signal it —
+          // exactly what a sandbox reports for a live daemon. Only ESRCH
+          // (and an absent PID file) mean the owner is actually gone.
+          ownerAlive = (err as NodeJS.ErrnoException).code === 'EPERM';
+        }
       }
-    } catch { /* absent PID file or dead process — ownerAlive stays false */ }
+    } catch { /* absent/unreadable PID file — ownerAlive stays false */ }
     if (ownerAlive) {
       return { status: 'warn', detail: `hook socket exists and its owner (PID ${pid}) is alive, but the probe could not reach it — likely a sandboxed environment; re-run doctor from an unsandboxed shell to confirm` };
     }

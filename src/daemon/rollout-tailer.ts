@@ -106,9 +106,12 @@ function readSessionMeta(path: string): Pick<FileState, 'sessionId' | 'cwd' | 's
  *  pinning is the real guard) but say so once, so a format change after a
  *  Codex upgrade shows up in logs instead of as silent capture loss. */
 function warnVersionOnce(state: FileState, cliVersion: string | null, path: string): void {
-  if (state.versionWarned || cliVersion === null) return;
-  if (!cliVersion.startsWith(ROLLOUT_TAILER.KNOWN_CLI_PREFIX)) {
-    console.error(`[cairn] rollout-tailer: ${path} written by codex ${cliVersion} (validated against ${ROLLOUT_TAILER.KNOWN_CLI_PREFIX}x) — parsing continues; verify capture after codex upgrades`);
+  if (state.versionWarned) return;
+  // A MISSING version is as canary-worthy as an unfamiliar one — every
+  // known rollout carries cli_version, so its absence implies a format
+  // change too.
+  if (cliVersion === null || !cliVersion.startsWith(ROLLOUT_TAILER.KNOWN_CLI_PREFIX)) {
+    console.error(`[cairn] rollout-tailer: ${path} written by codex ${cliVersion ?? '(no cli_version)'} (validated against ${ROLLOUT_TAILER.KNOWN_CLI_PREFIX}x) — parsing continues; verify capture after codex upgrades`);
   }
   state.versionWarned = true;
 }

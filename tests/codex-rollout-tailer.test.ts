@@ -218,7 +218,10 @@ describe('rollout tailer', () => {
     }
   });
 
-  it('an unknown cli_version is a log-only canary — capture continues', async () => {
+  it('an unknown or missing cli_version is a log-only canary — warned once, capture continues', async () => {
+    const warnings: string[] = [];
+    const realError = console.error;
+    console.error = (...args: unknown[]) => { warnings.push(args.join(' ')); };
     const tailer = startRolloutTailer({ ...client, cache: undefined });
     try {
       const f = join(dayDir, 'rollout-2026-08-28T00-00-09-tailer-i.jsonl');
@@ -229,7 +232,19 @@ describe('rollout tailer', () => {
       writeFileSync(f, meta +
         failedCommandLine('exec-futurever', `error TS2988: TAILER-I-${RUN} chronoflux divergence in future-version.ts`));
       assert.equal(await tailer.tick(), 1, 'future version still captures');
+      const canaries = warnings.filter((w) => w.includes('rollout-tailer') && w.includes('9.9.9'));
+      assert.equal(canaries.length, 1, 'exactly one canary warning emitted');
+
+      // Missing cli_version is equally canary-worthy.
+      const f2 = join(dayDir, 'rollout-2026-08-28T00-00-10-tailer-j.jsonl');
+      writeFileSync(f2, JSON.stringify({
+        timestamp: new Date().toISOString(), type: 'session_meta',
+        payload: { session_id: 'tailer-sess-j', id: 'tailer-sess-j', cwd: '/opt/cairn', originator: 'codex_exec' },
+      }) + '\n' + failedCommandLine('exec-nover', `error TS2987: TAILER-J-${RUN} spectral drift in no-version.ts`));
+      assert.equal(await tailer.tick(), 1, 'missing version still captures');
+      assert.equal(warnings.filter((w) => w.includes('(no cli_version)')).length, 1);
     } finally {
+      console.error = realError;
       tailer.stop();
     }
   });
