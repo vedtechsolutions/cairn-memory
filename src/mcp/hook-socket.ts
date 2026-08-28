@@ -12,6 +12,7 @@ import type { Server as McpInnerServer } from '@modelcontextprotocol/sdk/server/
 import { acquireSocketClaim, releaseSocketClaim, ensureCairnDirSecure, isOwnerOnly, socketPath, pidPath } from './socket-ownership.js';
 import { FS_PERMS } from '../constants/index.js';
 import { CLIENT_HEADER } from '../constants/clients.js';
+import { CONTRACT_REVISION } from '@cairn/contract';
 import type { HookDbClient, CachedHookContext } from '../hooks/shared/db-client.js';
 import { normalizeHookInput } from '../hooks/shared/client-adapter.js';
 import { SessionCache } from '../hooks/shared/session-cache.js';
@@ -257,6 +258,10 @@ const routes: Record<string, {
   },
 };
 
+/** Names of every served hook route — exported so the contract drift
+ *  guard can assert the contract's route classification matches reality. */
+export const SERVED_HOOK_ROUTES: readonly string[] = Object.keys(routes).map((r) => r.slice(1));
+
 /**
  * Start the hook socket server in this process, if no other process already
  * serves it. Shares the caller's DB connection — no duplicate repos.
@@ -338,6 +343,7 @@ export async function startHookSocket(
         uptime: Math.floor((Date.now() - startupTime) / 1000),
         mode,
         routes: Object.keys(routes),
+        contract_revision: CONTRACT_REVISION,
       }));
       return;
     }
