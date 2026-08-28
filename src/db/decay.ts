@@ -28,7 +28,7 @@
  */
 import type Database from 'better-sqlite3';
 import {
-  CONFIDENCE, DECAY, NON_DECAYING_KINDS, STABILITY_BY_KIND, SOURCE_WEIGHT,
+  CONFIDENCE, DECAY, LIMITS, NON_DECAYING_KINDS, STABILITY_BY_KIND, SOURCE_WEIGHT,
 } from '../constants/index.js';
 
 const MS_PER_DAY = 86_400_000;
@@ -115,6 +115,38 @@ export function applyConfidenceDecay(db: Database.Database, nowMs: number = Date
       AND kind NOT IN (${NON_DECAYING_PLACEHOLDERS})
   `).run(CONFIDENCE.DELETE_THRESHOLD, ...NON_DECAYING_KINDS);
 
+  // Prune the accumulated dead tail. Decay floors confidence AT the delete
+  // threshold, so a never-recalled memory that decayed to the floor sits at
+  // exactly the threshold and the strict `< threshold` delete above never
+  // reaches it — those would otherwise accumulate forever. Remove them once
+  // clearly dead: at the floor, never recalled, and old. The high-value kinds
+  // (correction/user_profile/decision, and rules via NON_DECAYING) are exempt.
+  const pruneCutoff = new Date(nowMs - DECAY.PRUNE_DEAD_AGE_DAYS * MS_PER_DAY).toISOString();
+  const deadRows = db.prepare(`
+    SELECT id FROM memories
+    WHERE invalidated = 0
+      AND confidence <= ?
+      AND recall_count = 0
+      AND created_at < ?
+      AND kind NOT IN ('task_state', 'correction', 'user_profile', 'decision')
+      AND kind NOT IN (${NON_DECAYING_PLACEHOLDERS})
+    LIMIT ?
+  `).all(CONFIDENCE.DELETE_THRESHOLD, pruneCutoff, ...NON_DECAYING_KINDS, LIMITS.CLEANUP_MAX_DELETE) as Array<{ id: string }>;
+
+  let pruned = 0;
+  if (deadRows.length > 0) {
+    // Capped, id-scoped delete (mirrors cairn_cleanup's deleteByFilter): bounds
+    // the blast radius if the criteria were ever subtly wrong, and spreads a
+    // first-run purge of an accumulated DB across maintenance cycles so
+    // borderline rows get more chances to be recalled — which exempts them —
+    // before removal. (Not `DELETE ... LIMIT`: this SQLite build lacks it.)
+    const ids = deadRows.map(r => r.id);
+    const placeholders = ids.map(() => '?').join(',');
+    pruned = db.prepare(`DELETE FROM memories WHERE id IN (${placeholders})`).run(...ids).changes;
+    // Forensic trail — decay runs unattended and this delete is irreversible.
+    console.error(`[cairn] decay: pruned ${pruned} dead memory row(s) (floored, never recalled, ${DECAY.PRUNE_DEAD_AGE_DAYS}d+ old)`);
+  }
+
   // Also clean up invalidated memories older than 30 days
   const thirtyDaysAgo = new Date(nowMs - 30 * MS_PER_DAY).toISOString();
   db.prepare(`
@@ -126,6 +158,6 @@ export function applyConfidenceDecay(db: Database.Database, nowMs: number = Date
 
   return {
     decayed: totalDecayed,
-    deleted: deleteResult.changes,
+    deleted: deleteResult.changes + pruned,
   };
 }

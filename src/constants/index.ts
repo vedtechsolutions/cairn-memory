@@ -77,6 +77,12 @@ export const DECAY = {
    *  lossless (the charge accrues until it clears the bar) and avoids
    *  rewriting every row to record microscopic decay on frequent runs */
   MIN_CHARGE_DAYS: 0.01,
+  /** Age (days) after which a memory that decayed to the confidence floor and
+   *  was NEVER recalled is pruned as clearly dead. Decay floors at
+   *  DELETE_THRESHOLD, so these never fall under the strict `< threshold`
+   *  delete and would otherwise accumulate forever. High-value kinds
+   *  (rule/correction/user_profile/decision) are exempt from this prune. */
+  PRUNE_DEAD_AGE_DAYS: 60,
 } as const;
 
 /** Explicit confidence-repair targets (scripts/repair-confidence.mjs).

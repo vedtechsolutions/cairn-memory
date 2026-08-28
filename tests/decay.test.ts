@@ -17,7 +17,7 @@ import { stripV27Surface } from './helpers/schema-rewind.js';
 import { applyConfidenceDecay, effectiveAgeDays } from '../src/db/decay.js';
 import { runMaintenance } from '../src/db/maintenance.js';
 import { MemoryRepository } from '../src/db/memory-repository.js';
-import { CONFIDENCE, DECAY, STABILITY_BY_KIND } from '../src/constants/index.js';
+import { CONFIDENCE, DECAY, LIMITS, STABILITY_BY_KIND } from '../src/constants/index.js';
 
 const DAY = 86_400_000;
 const T0 = Date.UTC(2026, 0, 1); // fixed synthetic timeline — no real clock
@@ -145,10 +145,51 @@ describe('Incremental decay — frequency independence (the pre-v25 bug)', () =>
       'corrected must retain more than learned at equal age');
   });
 
-  it('floors at DELETE_THRESHOLD and the floored memory survives the delete pass', () => {
-    seed(db, 'm', { confidence: 0.12 });
+  it('floors a recalled memory at DELETE_THRESHOLD and keeps it', () => {
+    // A memory that has EVER been recalled is exempt from the dead-tail prune,
+    // so it floors at the threshold and survives.
+    seed(db, 'm', { confidence: 0.12, recallCount: 3 });
     applyConfidenceDecay(db, T0 + 365 * DAY);
     assert.equal(conf(db, 'm'), CONFIDENCE.DELETE_THRESHOLD);
+  });
+
+  it('prunes a floored, never-recalled, old memory as clearly dead', () => {
+    seed(db, 'dead', { kind: 'fact', confidence: 0.12 }); // recallCount 0, created at T0
+    applyConfidenceDecay(db, T0 + (DECAY.PRUNE_DEAD_AGE_DAYS + 5) * DAY);
+    const count = (db.prepare('SELECT COUNT(*) AS n FROM memories WHERE id = ?').get('dead') as { n: number }).n;
+    assert.equal(count, 0, 'floored + never-recalled + old is pruned');
+  });
+
+  it('keeps a floored, never-recalled memory younger than the prune age', () => {
+    seed(db, 'young', { kind: 'fact', confidence: 0.12 });
+    applyConfidenceDecay(db, T0 + (DECAY.PRUNE_DEAD_AGE_DAYS - 5) * DAY);
+    assert.equal(conf(db, 'young'), CONFIDENCE.DELETE_THRESHOLD, 'too young to prune — kept at the floor');
+  });
+
+  it('never prunes protected kinds (decision/user_profile) even when old and never recalled', () => {
+    seed(db, 'dec', { kind: 'decision', confidence: 0.12 });
+    seed(db, 'prof', { kind: 'user_profile', confidence: 0.12 });
+    applyConfidenceDecay(db, T0 + (DECAY.PRUNE_DEAD_AGE_DAYS + 100) * DAY);
+    const count = (id: string): number => (db.prepare('SELECT COUNT(*) AS n FROM memories WHERE id = ?').get(id) as { n: number }).n;
+    assert.equal(count('dec'), 1, 'decisions are exempt from the dead-tail prune');
+    assert.equal(count('prof'), 1, 'user_profile is exempt from the dead-tail prune');
+  });
+
+  it('caps a single prune run at CLEANUP_MAX_DELETE and drains the tail across runs', () => {
+    // A large accumulated dead tail must not vanish in one uncapped shot: the
+    // prune mirrors cairn_cleanup's cap, bounding blast radius and spreading the
+    // purge across maintenance cycles so borderline rows get more chances to be
+    // recalled (which exempts them) before removal.
+    const total = LIMITS.CLEANUP_MAX_DELETE + 20;
+    for (let i = 0; i < total; i++) seed(db, `dead-${i}`, { kind: 'fact', confidence: 0.12 });
+    const remaining = (): number =>
+      (db.prepare("SELECT COUNT(*) AS n FROM memories WHERE id LIKE 'dead-%'").get() as { n: number }).n;
+
+    applyConfidenceDecay(db, T0 + (DECAY.PRUNE_DEAD_AGE_DAYS + 5) * DAY);
+    assert.equal(remaining(), total - LIMITS.CLEANUP_MAX_DELETE, 'first run prunes at most the cap');
+
+    applyConfidenceDecay(db, T0 + (DECAY.PRUNE_DEAD_AGE_DAYS + 6) * DAY);
+    assert.equal(remaining(), 0, 'a second run drains the rest of the dead tail');
   });
 
   it('skips malformed timestamps without writing NaN', () => {
