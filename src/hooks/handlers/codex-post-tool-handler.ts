@@ -85,13 +85,23 @@ export function isToolSeen(db: Database.Database, toolUseId: string): boolean {
   } catch { return false; }
 }
 
-function markToolSeen(db: Database.Database, toolUseId: string | undefined): void {
-  if (!toolUseId) return;
+/**
+ * ATOMIC claim of a tool_use_id. A check-then-mark pair is not enough:
+ * a hook invocation can pass the seen-check, await its resolver, and
+ * resume AFTER a concurrent tailer invocation marked and routed — both
+ * would route (reproduced live: two 'success-routed' for one id). The
+ * INSERT OR IGNORE makes exactly one caller win; only the winner may
+ * dispatch. No id (or a DB error) claims true — dedup is an optimization
+ * and its failure must never drop capture.
+ */
+function claimTool(db: Database.Database, toolUseId: string | undefined): boolean {
+  if (!toolUseId) return true;
   try {
-    db.prepare(
-      'INSERT OR REPLACE INTO maintenance_meta (key, value) VALUES (?, ?)',
+    const result = db.prepare(
+      'INSERT OR IGNORE INTO maintenance_meta (key, value) VALUES (?, ?)',
     ).run(`codex_seen:${toolUseId}`, new Date().toISOString());
-  } catch { /* best-effort */ }
+    return result.changes > 0;
+  } catch { return true; }
 }
 
 export async function handleCodexPostTool(
@@ -129,11 +139,14 @@ export async function handleCodexPostTool(
   const { failed, exitCode, errorText } = demuxOutcome(input, record);
 
   if (failed === true) {
-    // Claim the id BEFORE dispatching: a tailer tick landing mid-routing
-    // would otherwise double-count the error (escalation fires early, the
-    // investigation chain gets a duplicate attempt). A lost record on a
-    // throw is the better failure — routing is already best-effort.
-    markToolSeen(client.db, input.tool_use_id);
+    // Atomically claim BEFORE dispatching: the loser of a hook/tailer
+    // race exits here instead of double-counting the error (escalation
+    // firing early, a duplicate investigation attempt). A lost record on
+    // a throw after winning is the better failure — routing is already
+    // best-effort.
+    if (!claimTool(client.db, input.tool_use_id)) {
+      return { output: null, action: 'skipped', exitCode: null };
+    }
     // The REAL error text must be the first line: the classifier derives its
     // errorKey from it, and a fixed "Exit code N" preamble would collapse
     // every codex failure into one key — dedup would then suppress learning
@@ -155,7 +168,9 @@ export async function handleCodexPostTool(
   }
 
   if (failed === false) {
-    markToolSeen(client.db, input.tool_use_id);
+    if (!claimTool(client.db, input.tool_use_id)) {
+      return { output: null, action: 'skipped', exitCode: null };
+    }
     // DEMUX_TOOLS is a subset of success-tracker's gate (D8 landed), so
     // every confirmed success here is tracked.
     await handleSuccessTracker(input, client);

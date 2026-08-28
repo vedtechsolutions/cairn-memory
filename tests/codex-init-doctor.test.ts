@@ -176,6 +176,40 @@ describe('trust-state parsing and scoped pruning', () => {
       'the tampered command is never reported as trusted');
   });
 
+  it('an externally reordered hooks.json cannot LAUNDER a stale hash through the shadow refresh', () => {
+    mkdirSync(codexDir(), { recursive: true });
+    // Wire Cairn, then add a foreign SessionStart group AFTER Cairn's and
+    // re-init so the shadow records both positions; trust everything.
+    runCodexInit(RELAY, '/srv/server.js', false);
+    const wired = JSON.parse(readFileSync(codexHooksPath(), 'utf-8')) as CodexHooksFile;
+    wired.hooks.SessionStart.push({ hooks: [{ type: 'command', command: '/usr/local/bin/my-hook' }] });
+    writeFileSync(codexHooksPath(), `${JSON.stringify(wired, null, 2)}\n`);
+    runCodexInit(RELAY, '/srv/server.js', false); // refreshes the shadow for 11 positions
+    const trusted = JSON.parse(readFileSync(codexHooksPath(), 'utf-8')) as CodexHooksFile;
+    writeFileSync(codexConfigPath(), trustAll(codexHooksPath(), trusted));
+    assert.equal(countTrustedHooksIn(readFileSync(codexConfigPath(), 'utf-8'), codexHooksPath(), trusted).trusted, 11);
+
+    // EXTERNAL swap of the two SessionStart groups: same commands, moved
+    // positions — every hash now sits at a position it never attested.
+    const swapped = JSON.parse(readFileSync(codexHooksPath(), 'utf-8')) as CodexHooksFile;
+    [swapped.hooks.SessionStart[0], swapped.hooks.SessionStart[1]] =
+      [swapped.hooks.SessionStart[1], swapped.hooks.SessionStart[0]];
+    writeFileSync(codexHooksPath(), `${JSON.stringify(swapped, null, 2)}\n`);
+    const config = readFileSync(codexConfigPath(), 'utf-8');
+    assert.equal(countTrustedHooksIn(config, codexHooksPath(), swapped).trusted, 10,
+      'pre-init: the shadow already refuses the moved Cairn position');
+
+    // Re-init sees NO command delta (merged === existing) — the refresh
+    // must not re-attest the moved position back to 11 (the laundering).
+    runCodexInit(RELAY, '/srv/server.js', false);
+    const finalFile = JSON.parse(readFileSync(codexHooksPath(), 'utf-8')) as CodexHooksFile;
+    const finalConfig = readFileSync(codexConfigPath(), 'utf-8');
+    assert.equal(countTrustedHooksIn(finalConfig, codexHooksPath(), finalFile).trusted, 10,
+      'the moved Cairn position re-reviews; laundering back to 11/11 is the bug');
+    assert.equal(parseTrustState(finalConfig, codexHooksPath()).length, 10,
+      'its stale entry is pruned, not merely discounted');
+  });
+
   it('pruneTrustKeys removes exactly the named sections', () => {
     const hooksPath = codexHooksPath();
     const toml = [

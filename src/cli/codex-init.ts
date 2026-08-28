@@ -379,8 +379,21 @@ export function runCodexInit(relayCmd: string, serverPath: string, dryRun: boole
   // approval at the next Codex review — an approve-all would re-enable
   // what they deliberately turned off. A kept disabled entry is inert
   // (the hook stays off) and is reported as disabled, never trusted.
-  const invalidated = trustEntries.filter(
-    (e) => !e.disabled && commandAt(merged, e) !== commandAt(existing, e));
+  const oldShadow = readTrustShadow();
+  const invalidated = trustEntries.filter((e) => {
+    if (e.disabled) return false;
+    if (commandAt(merged, e) !== commandAt(existing, e)) return true;
+    // LAUNDERING GUARD: an externally reordered hooks.json is identical
+    // between `existing` and `merged`, so there is no command delta — but
+    // a Cairn position whose command mismatches what our LAST init
+    // recorded there carries a hash we cannot vouch for. Without pruning
+    // it here, the unconditional shadow refresh after the write would
+    // re-attest it (reproduced: a swapped foreign group left its stale
+    // hash counted as trust for Cairn's session-start).
+    const cmd = commandAt(merged, e);
+    return oldShadow !== null && cmd !== null
+      && cmd.includes(CAIRN_HOOK_DIR_MARKER) && oldShadow[e.key] !== cmd;
+  });
   const invalidatesTrust = invalidated.some((e) => e.trusted);
 
   const wrote = dryRun ? 'would write' : 'writing';
@@ -426,7 +439,7 @@ export function runCodexInit(relayCmd: string, serverPath: string, dryRun: boole
 
   if (invalidatesTrust) {
     const count = invalidated.filter((e) => e.trusted).length;
-    console.log(`  ! HOOK COMMANDS CHANGED — ${count} previously trusted hook(s) are invalidated`);
+    console.log(`  ! HOOK TRUST INVALIDATED — ${count} previously trusted hook(s) changed or moved`);
     console.log(`    (Codex pins trust to exact commands; unrelated hooks keep their trust).`);
     console.log(`    Start \`codex\` — the startup review will ask you to re-approve the changed`);
     console.log(`    Cairn hooks — then re-run \`cairn doctor\`.`);
