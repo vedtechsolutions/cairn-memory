@@ -1,1 +1,11 @@
-export {};
+/**
+ * @cairn/contract — the integration contract for Cairn.
+ *
+ * Types and constants only, zero dependencies. Everything here is frozen
+ * under an additive-stability guarantee: values may be added, never
+ * changed or removed within a major version, and consumers must tolerate
+ * unknown values.
+ */
+
+export * from './clients.js';
+export * from './vocabulary.js';
