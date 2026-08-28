@@ -52,7 +52,9 @@ export function registerPlanTool(
     },
     async (params) => {
       const mode = getMode();
-      const project = params.project;
+      // Resolve a bare name (e.g. "cairn") to its full id for get/list reads;
+      // create keeps params.project (an explicit new scope is the user's call).
+      const project = planRepo.resolveProject(params.project) ?? undefined;
 
       switch (params.action) {
         case 'create':

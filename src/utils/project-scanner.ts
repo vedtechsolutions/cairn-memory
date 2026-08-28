@@ -3,9 +3,9 @@
  * Captures project name, tech stack, directory structure, entry points.
  * Designed to run in < 200ms for projects up to 10,000 files.
  */
-import { readdirSync, readFileSync, existsSync } from 'node:fs';
+import { readdirSync, readFileSync, existsSync, statSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
-import { join, basename } from 'node:path';
+import { join, basename, dirname, resolve } from 'node:path';
 import { PROJECT_SCAN } from '../constants/index.js';
 import { now } from './time.js';
 
@@ -33,6 +33,63 @@ export function getGitHash(cwd: string): string | null {
       stdio: ['pipe', 'pipe', 'pipe'],
     });
     return result.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+/** Locate a repo's config file from `cwd`, walking up and resolving worktree /
+ *  submodule `.git` files (which point at a gitdir whose `commondir` holds the
+ *  shared config). Pure fs — no subprocess — so it is safe in read-only
+ *  contexts like the governance inspector. */
+function findGitConfigPath(cwd: string): string | null {
+  let dir = resolve(cwd);
+  for (let depth = 0; depth < 64; depth++) {
+    const dotGit = join(dir, '.git');
+    if (existsSync(dotGit)) {
+      if (statSync(dotGit).isDirectory()) return join(dotGit, 'config');
+      // `.git` is a file: "gitdir: <path>" (worktree or submodule).
+      const m = /^gitdir:\s*(.+)$/m.exec(readFileSync(dotGit, 'utf-8'));
+      if (!m) return null;
+      const gitdir = resolve(dir, m[1].trim());
+      const commondirFile = join(gitdir, 'commondir');
+      const base = existsSync(commondirFile)
+        ? resolve(gitdir, readFileSync(commondirFile, 'utf-8').trim())
+        : gitdir;
+      return join(base, 'config');
+    }
+    const parent = dirname(dir);
+    if (parent === dir) return null; // reached filesystem root
+    dir = parent;
+  }
+  return null;
+}
+
+/** Extract the `origin` remote url from git config text. */
+function parseOriginUrl(config: string): string | null {
+  let inOrigin = false;
+  for (const line of config.split('\n')) {
+    const section = /^\s*\[(.+?)\]\s*$/.exec(line);
+    if (section) {
+      inOrigin = /^remote\s+"origin"$/i.test(section[1].trim());
+      continue;
+    }
+    if (inOrigin) {
+      const url = /^\s*url\s*=\s*(.+?)\s*$/.exec(line);
+      if (url) return url[1].trim() || null;
+    }
+  }
+  return null;
+}
+
+/** Get the `origin` remote URL by reading `.git/config` (no subprocess, so it
+ *  is safe in the read-only inspector). Returns null when there is no git repo
+ *  or no `origin` remote. Used to derive a clone-stable project identity. */
+export function getGitRemote(cwd: string): string | null {
+  try {
+    const configPath = findGitConfigPath(cwd);
+    if (!configPath || !existsSync(configPath)) return null;
+    return parseOriginUrl(readFileSync(configPath, 'utf-8'));
   } catch {
     return null;
   }

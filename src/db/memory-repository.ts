@@ -1,5 +1,6 @@
 import type Database from 'better-sqlite3';
 import { CONFIDENCE, type MemoryKind } from '../constants/index.js';
+import { resolveProjectParam } from './project-resolver.js';
 import type { ContextFingerprint } from '../utils/fingerprint.js';
 import { trackCoRecall as trackCoRecallImpl } from '../utils/prediction.js';
 import type {
@@ -43,6 +44,12 @@ export type {
  *  keeping the public API (and all its import sites) stable. */
 export class MemoryRepository {
   constructor(private db: Database.Database) {}
+
+  /** Resolve a user/agent-typed project param — a bare name resolves to the
+   *  full id when unambiguous, else passes through unchanged (fail closed). */
+  resolveProject(raw: string | null | undefined): string | null | undefined {
+    return resolveProjectParam(this.db, raw);
+  }
 
   create(input: CreateMemoryInput): CreateResult {
     return writes.create(this.db, input);

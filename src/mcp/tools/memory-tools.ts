@@ -71,6 +71,9 @@ export function registerMemoryTools(
       const critical = isCritical(mode);
       if (critical) return critical;
 
+      // Resolve a bare project name (e.g. "cairn") to its full id for scoping.
+      const resolvedProject = repo.resolveProject(project) ?? null;
+
       const limit = modeAdjustedLimit(mode, maxResults);
 
       // Generate query embedding if model is ready (non-blocking fallback to FTS)
@@ -90,7 +93,7 @@ export function registerMemoryTools(
       // retrieved results carry recall side effects.
       const rerankActive = rerankerImpl.isEnabled();
       const recallOptions = {
-        project: project ?? null,
+        project: resolvedProject,
         maxResults: rerankActive ? Math.max(RERANK.CANDIDATES, limit) : limit,
         ...(rerankActive ? { readOnly: true } : {}),
       };
@@ -462,7 +465,9 @@ export function registerMemoryTools(
       if (critical) return critical;
 
       const cleanupFilter = {
-        project: filter.project,
+        // Destructive op: an explicit empty/unknown project must match NOTHING,
+        // never fall through to "all" — keep the raw value when it doesn't resolve.
+        project: filter.project === undefined ? undefined : (repo.resolveProject(filter.project) ?? filter.project),
         kind: filter.kind,
         maxConfidence: filter.max_confidence,
         olderThanDays: filter.older_than_days,
