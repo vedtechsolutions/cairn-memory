@@ -2,12 +2,17 @@
 
 ## [Unreleased]
 
+## [5.2.0] - 2026-08-28
+
 ### Fixed — reliability pass (cross-agent audit)
 
 - **Stable project identity.** Project ids now derive from the normalized `origin` git remote (stable across clones/machines/paths) instead of a filesystem-path hash, with a non-destructive lazy migration of existing memories and a bare-name resolver so `cairn` resolves to the full id. Fixes recall/plan misses and is the prerequisite for team sync.
 - **Cross-project recall leak.** A project-specific memory stored without an explicit project no longer silently lands in global scope — `cairn_learn` now defaults an omitted project to the current project (`user_profile`/`correction` stay global; explicit scope is respected). Active recall stays permissive but filters a global whose fingerprint belongs to a different project.
+- **Dead-memory pruning.** The store no longer grows without bound. Decay floors a never-recalled memory's confidence at the delete threshold, so it previously sat just above the strict `< threshold` delete forever; a conservative prune now reaps a memory only when it is floored, never recalled, older than 60 days, and not a high-value kind (corrections, user profiles, decisions, and rules are exempt, and `cairn_weaken`-invalidated memories are excluded — only decay-floored rows are ever pruned). The delete is capped per maintenance run and logged to stderr.
 - **Plan completion visibility.** Completing a plan with unfinished steps now reports the open-step count (e.g. `completed (warn: 2 of 3 steps were not done)`) instead of silently marking it done.
 - **Local-time display.** Human-facing timestamps (`cairn_stats`) can be shown in a local timezone via the `CAIRN_TZ` env var (an IANA zone like `America/Jamaica`); storage stays UTC for sync, and dates are unchanged when `CAIRN_TZ` is unset.
+
+## [5.1.0] - 2026-08-27
 
 ### Changed — repository renamed to `cairn`
 
@@ -290,8 +295,6 @@
 - **Value-drift is context-aware.** Supersession compares a value against others sharing a context word ("775 tests" vs "1487 tests"), and vetoes unit mismatches ("30 seconds" vs "30000 milliseconds" is the same value, not a drift) — calibrated from an adversarial false-positive sweep over the real store (0 false positives on 277 real fact/decision memories).
 - **Shared suppression policy.** Superseded memories and `contradicts` edges are both excluded from graph-neighbor expansion, so a suppressed memory can't leak back into recall as a "related" neighbor.
 - **Observability.** Writes report `supersededId` / `contradictionWith` / `conflictSignal`; `MemoryRepository.getContradictions(project)` exposes unresolved pairs; the staleness classifier returns a structured reason. Schema v24 adds `superseded_by` + `superseded_at`.
-
-## [5.1.0] - 2026-07-09
 
 ### Changed (2026-07-09 refactor — god-file splits + dedup)
 
