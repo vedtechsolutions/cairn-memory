@@ -54,7 +54,9 @@ export function classifySuccess(toolChain: ToolEvent[], dedup?: SuccessDedup): S
   }
 
   // Identify the pattern type
-  const editTools = toolChain.filter(t => t.tool === 'Edit' || t.tool === 'Write');
+  // apply_patch is Codex's edit tool. MultiEdit's absence here is
+  // pre-existing Claude behavior, deliberately untouched by parity work.
+  const editTools = toolChain.filter(t => t.tool === 'Edit' || t.tool === 'Write' || t.tool === 'apply_patch');
   const readTools = toolChain.filter(t => t.tool === 'Read');
   const files = [...new Set(editTools.map(t => t.file).filter(Boolean))] as string[];
 

@@ -7,7 +7,7 @@ import type { PostToolUseInput } from '../shared/hook-io.js';
 import type { CachedHookContext } from '../shared/db-client.js';
 import { basename } from 'node:path';
 import { existsSync, readFileSync, statSync } from 'node:fs';
-import { CONFIDENCE, LIMITS, TOKEN_BUDGET } from '../../constants/index.js';
+import { CONFIDENCE, LIMITS, TOKEN_BUDGET, isEditToolName } from '../../constants/index.js';
 import { loadTracker, saveTracker, type ResumeCursor } from '../shared/edit-tracker.js';
 import { classifySuccess, type ToolEvent } from '../../utils/success-classifier.js';
 import { extractPatchFilePaths, patchTextOf } from '../shared/patch-paths.js';
@@ -32,9 +32,9 @@ export async function handleSuccessTracker(
 }
 
 function handleSuccessTrackerBusiness(input: PostToolUseInput, client: CachedHookContext): SuccessTrackerResult {
-  // apply_patch is Codex's edit tool (D8) — governance recording above
-  // stays Claude-scoped, but file-level tracking treats it like Write/Edit.
-  if (!['Write', 'Edit', 'MultiEdit', 'Bash', 'apply_patch'].includes(input.tool_name)) {
+  // Governance recording above stays Claude-scoped; business tracking
+  // covers every edit-type tool plus Bash.
+  if (input.tool_name !== 'Bash' && !isEditToolName(input.tool_name)) {
     return { tracked: false };
   }
 
@@ -67,7 +67,7 @@ function handleSuccessTrackerBusiness(input: PostToolUseInput, client: CachedHoo
           const inProgress = activePlan.steps.find(s => s.status === 'in_progress');
           if (inProgress) {
             const editedFiles = tracker.toolChain
-              .filter(t => t.file && (t.tool === 'Edit' || t.tool === 'Write' || t.tool === 'MultiEdit'))
+              .filter(t => t.file && isEditToolName(t.tool))
               .map(t => basename(t.file!))
               .slice(-3);
             if (editedFiles.length > 0) {
@@ -94,7 +94,7 @@ function handleSuccessTrackerBusiness(input: PostToolUseInput, client: CachedHoo
         const activeChain = client.investigationRepo.getActiveChain(project, input.session_id);
         if (activeChain) {
           const editedFiles = tracker.toolChain
-            .filter(t => t.file && t.success && (t.tool === 'Edit' || t.tool === 'Write' || t.tool === 'MultiEdit'))
+            .filter(t => t.file && t.success && isEditToolName(t.tool))
             .map(t => basename(t.file!))
             .slice(-3);
           const resolution = editedFiles.length > 0
@@ -116,8 +116,7 @@ function handleSuccessTrackerBusiness(input: PostToolUseInput, client: CachedHoo
   // File-level tracking for edit-type tools — boost confidence on surfaced
   // pitfalls. apply_patch (Codex) counts: its file paths come from the
   // patch envelope headers.
-  const isEditTool = input.tool_name === 'Write' || input.tool_name === 'Edit'
-    || input.tool_name === 'MultiEdit' || input.tool_name === 'apply_patch';
+  const isEditTool = isEditToolName(input.tool_name);
   if (isEditTool && filePaths.length > 0) {
     let needsBoost = false;
     for (const fp of filePaths) {
@@ -236,7 +235,7 @@ function extractCursorLine(
 
 function extractFilePaths(input: PostToolUseInput): string[] {
   const patchText = patchTextOf(input);
-  if (patchText !== null) return extractPatchFilePaths(patchText);
+  if (patchText !== null) return extractPatchFilePaths(patchText, input.cwd);
 
   const paths: string[] = [];
   const fp = input.tool_input.file_path as string | undefined;

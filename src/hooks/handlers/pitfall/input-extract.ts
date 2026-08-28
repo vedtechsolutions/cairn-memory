@@ -9,7 +9,7 @@ import { PROACTIVE } from '../../../constants/index.js';
  *  and Codex apply_patch envelopes (D8). */
 export function extractFilePaths(input: PreToolUseInput): string[] {
   const patchText = patchTextOf(input);
-  if (patchText !== null) return extractPatchFilePaths(patchText);
+  if (patchText !== null) return extractPatchFilePaths(patchText, input.cwd);
 
   const paths: string[] = [];
   const fp = (input.tool_input.file_path ?? input.tool_input.path) as string | undefined;
@@ -27,6 +27,19 @@ export function extractFilePaths(input: PreToolUseInput): string[] {
 /** Extract code content from tool_input for content-aware FTS matching */
 export function extractCodeContent(input: PreToolUseInput): string | null {
   const maxChars = PROACTIVE.CONTENT_QUERY_MAX_CHARS;
+
+  // apply_patch: the ADDED lines are the code content — the counterpart of
+  // Edit's new_string. Envelope headers and context/removed lines are
+  // boilerplate that would drown the FTS query.
+  const patchText = patchTextOf(input);
+  if (patchText !== null) {
+    const added = patchText
+      .split('\n')
+      .filter((l) => l.startsWith('+') && !l.startsWith('+++'))
+      .map((l) => l.slice(1))
+      .join(' ');
+    return added.length > 0 ? added.slice(0, maxChars) : null;
+  }
 
   if (input.tool_name === 'Edit') {
     const newStr = input.tool_input.new_string as string | undefined;

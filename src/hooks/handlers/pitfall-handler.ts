@@ -14,7 +14,7 @@ import { projectId } from '../../utils/project-id.js';
 import { basename, extname } from 'node:path';
 import { loadTracker, saveTracker } from '../shared/edit-tracker.js';
 import { passesCrossProjectGuard, deriveProjectIdentityTokens } from '../../utils/cross-project-guard.js';
-import { PROACTIVE, RELEVANCE } from '../../constants/index.js';
+import { PROACTIVE, RELEVANCE, isEditToolName } from '../../constants/index.js';
 import { SessionCache } from '../shared/session-cache.js';
 import { isReadOnlyCommand } from './pitfall/readonly-command.js';
 import { extractFilePaths } from './pitfall/input-extract.js';
@@ -77,12 +77,16 @@ export function handlePitfallCheck(input: PreToolUseInput, client: CachedHookCon
   // Explicit annotation: without noUncheckedIndexedAccess, filePaths[0] is
   // inferred as plain `string` even though Bash calls have no file path.
   const filePath: string | undefined = filePaths[0] ?? undefined;
-  const command = input.tool_input.command as string | undefined;
+  // For apply_patch, tool_input.command is a patch BLOB, not a shell
+  // command — feeding it here would fill the FTS query with envelope
+  // boilerplate ("begin", "patch", "update", "file"). Content-aware
+  // matching for patches comes from extractCodeContent instead.
+  const command = input.tool_name === 'apply_patch'
+    ? undefined
+    : input.tool_input.command as string | undefined;
   const ext = filePath ? extname(filePath).slice(1) : null;
   const fileLabel = filePath ? basename(filePath) : (ext ?? 'this operation');
-  // apply_patch is Codex's edit tool — its file paths come from the patch
-  // envelope headers (D8), so file-targeted warnings apply to it too.
-  const isEditTool = ['Write', 'Edit', 'MultiEdit', 'apply_patch'].includes(input.tool_name);
+  const isEditTool = isEditToolName(input.tool_name);
 
   // --- Load tracker: in-memory (cache) or file I/O (standalone) ---
   const tracker = client.cache?.getTracker(input.session_id) ?? loadTracker(input.session_id);

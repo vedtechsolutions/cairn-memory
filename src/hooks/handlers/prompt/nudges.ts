@@ -34,7 +34,7 @@ export function applyWorkflowNudges(ctx: PromptCtx): void {
   // Layer 2b: Decision reminder
   if (!tracker.decisionReminderFired && mode === 'normal' && tracker.toolChain.length >= 3) {
     const recentChain = tracker.toolChain.slice(-6);
-    const hasEdits = recentChain.some(t => t.tool === 'Edit' || t.tool === 'Write');
+    const hasEdits = recentChain.some(t => t.tool === 'Edit' || t.tool === 'Write' || t.tool === 'apply_patch');
     const hasBashSuccess = recentChain.some(t => t.tool === 'Bash' && t.success);
     if (hasEdits && hasBashSuccess) {
       output.push('[CAIRN] You have been making changes successfully. If you made architectural decisions, store them with cairn_learn(kind: "decision", content: "chose X because Y").');

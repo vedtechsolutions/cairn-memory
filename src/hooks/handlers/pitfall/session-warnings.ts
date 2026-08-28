@@ -3,7 +3,7 @@
  * re-edit) with per-(type, file) cooldowns persisted on the edit tracker.
  */
 import type { EditTracker } from '../../shared/edit-tracker.js';
-import { PROACTIVE } from '../../../constants/index.js';
+import { PROACTIVE, isEditToolName } from '../../../constants/index.js';
 
 /**
  * A1/A2/A3 each get a 60s per-(type, file) cooldown to prevent the same
@@ -78,7 +78,7 @@ export function detectEditFailLoop(chain: Array<{ tool: string; file?: string; s
 
   for (const event of chain) {
     if (!sawEdit) {
-      if ((event.tool === 'Edit' || event.tool === 'Write' || event.tool === 'MultiEdit') && event.file === filePath) {
+      if (isEditToolName(event.tool) && event.file === filePath) {
         sawEdit = true;
       }
     } else if (!sawFailAfterEdit) {
@@ -88,7 +88,7 @@ export function detectEditFailLoop(chain: Array<{ tool: string; file?: string; s
         sawFailAfterEdit = true;
       }
     } else {
-      if ((event.tool === 'Edit' || event.tool === 'Write' || event.tool === 'MultiEdit') && event.file === filePath) {
+      if (isEditToolName(event.tool) && event.file === filePath) {
         return true;
       }
     }

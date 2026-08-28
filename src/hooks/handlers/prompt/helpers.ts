@@ -58,7 +58,7 @@ export function checkTranscriptForCairnCalls(transcriptPath: string): boolean {
 }
 
 export function summarizeRecentActions(events: Array<{ tool: string; file?: string; success?: boolean; timestamp?: number }>): string | null {
-  const writeOrEdit = events.filter(e => (e.tool === 'Write' || e.tool === 'Edit') && e.file);
+  const writeOrEdit = events.filter(e => (e.tool === 'Write' || e.tool === 'Edit' || e.tool === 'apply_patch') && e.file);
   if (writeOrEdit.length === 0) return null;
 
   const lastAction = writeOrEdit[writeOrEdit.length - 1];

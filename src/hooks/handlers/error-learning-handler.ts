@@ -60,6 +60,10 @@ export async function handleErrorLearning(
   client: CachedHookContext,
 ): Promise<ErrorLearningResult> {
   const result = handleErrorLearningBusiness(input, client);
+  // Governance recording is deliberately Claude-scoped (apply_patch
+  // excluded): the governance adapter validates Claude tool shapes, and
+  // Codex mutations stay outside its evidence trail — a documented
+  // capability delta, not an oversight.
   if (!['Write', 'Edit', 'MultiEdit', 'Bash'].includes(input.tool_name)) return result;
   return { ...result, recorder: await recordGovernanceEventFailOpen(client.db, input) };
 }
@@ -270,7 +274,13 @@ function handleErrorLearningBusiness(input: PostToolUseFailureInput, client: Cac
   const fp = generateFingerprint({
     projectContext,
     filePath: extractFilePaths(input)[0],
-    command: input.tool_input.command as string | undefined,
+    // apply_patch's command is a patch BLOB — its envelope words and diff
+    // body would be baked into the STORED pitfall's fingerprint forever
+    // (measured: a TS pitfall picked up "go" and "javascript" language
+    // signals from a comment and an import in the diff).
+    command: input.tool_name === 'apply_patch'
+      ? undefined
+      : input.tool_input.command as string | undefined,
     tags: classification.tags,
   });
 
@@ -363,7 +373,7 @@ function buildWarningMessage(errorText: string, filePath?: string): string {
 
 function extractFilePaths(input: PostToolUseFailureInput): string[] {
   const patchText = patchTextOf(input);
-  if (patchText !== null) return extractPatchFilePaths(patchText);
+  if (patchText !== null) return extractPatchFilePaths(patchText, input.cwd);
 
   const paths: string[] = [];
   const fp = input.tool_input.file_path as string | undefined;

@@ -20,7 +20,7 @@ import { LIMITS, ROLLOUT_LOOKUP } from '../../constants/index.js';
 
 export interface CodexPostToolResult {
   output: null;
-  action: 'error-routed' | 'success-routed' | 'success-untracked' | 'unknown-outcome' | 'skipped';
+  action: 'error-routed' | 'success-routed' | 'unknown-outcome' | 'skipped';
   exitCode: number | null;
 }
 
@@ -135,10 +135,10 @@ export async function handleCodexPostTool(
 
   if (failed === false) {
     markToolSeen(client.db, input.tool_use_id);
-    const tracked = await handleSuccessTracker(input, client);
-    // 'success-untracked' = confirmed success but nothing recorded (e.g.
-    // apply_patch is outside success-tracker's tool gate until D8 lands).
-    return { output: null, action: tracked.tracked ? 'success-routed' : 'success-untracked', exitCode };
+    // DEMUX_TOOLS is a subset of success-tracker's gate (D8 landed), so
+    // every confirmed success here is tracked.
+    await handleSuccessTracker(input, client);
+    return { output: null, action: 'success-routed', exitCode };
   }
 
   // Outcome unknown — keep the tool chain continuous without asserting an
