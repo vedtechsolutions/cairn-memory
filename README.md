@@ -509,10 +509,14 @@ Test-environment overrides (all set automatically by `tests/hermetic-env.cjs`):
 
 - Location: `~/.cairn/cairn.db`
 - Engine: SQLite 3 with WAL mode + FTS5 + sqlite-vec (vector similarity)
-- Schema version: 28
+- Schema version: 30
 - Configurable via `CAIRN_DB_PATH` env var
 - Embeddings: 384-dim via `@huggingface/transformers` (all-MiniLM-L6-v2, q8) — selected from the model registry (`src/constants/embedding-models.ts`) via `CAIRN_EMBEDDING_MODEL` (default `minilm-l6`; challengers `nomic-v1.5` / `nomic-v1.5-256` / `embeddinggemma-300m`). Schema v26 tags every stored vector with its model: vector reads filter on the active model, and after a model switch the backfill worker re-embeds mismatched rows while FTS+RRF carry retrieval
 - Reranking (opt-in): `CAIRN_RERANK=1` enables a cross-encoder stage on `cairn_recall` (RRF top-20 → rerank → top-k; MCP server only); model via `CAIRN_RERANK_MODEL` (default `jina-turbo-v1`, registry in `src/constants/reranker-models.ts`)
+
+## Tokens-Saved Report
+
+`cairn report` (or `cairn report --days=90`) shows what the memory system is worth in tokens — honestly. Gross savings has two labeled components: **compact-saved** (your agent's own reported compaction savings — measured) and **impact-proxy** (verified pitfall saves × a fixed estimate — clearly marked as an estimate). Injected briefings and warnings are counted as a **cost** column, and net = gross − cost, even when that's negative. Aggregates persist for a year (schema v30), independent of the 7-day hook-telemetry prune. Recording is on by default; disable with `{"report":{"rollup":false}}` in `~/.cairn/config.json` or `CAIRN_ROLLUP=0`.
 
 ## Scope Controls
 

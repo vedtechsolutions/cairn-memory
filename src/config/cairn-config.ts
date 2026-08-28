@@ -26,11 +26,21 @@ export interface CairnScopeConfig {
   privateProjects: ReadonlySet<string>;
 }
 
-export interface CairnConfig {
-  scope: CairnScopeConfig;
+export interface CairnReportConfig {
+  /** telemetry_rollup writes (default true). Only a literal false
+   *  disables — the report is default-on, opt-out. */
+  rollup: boolean;
 }
 
-const EMPTY_CONFIG: CairnConfig = { scope: { privateProjects: new Set() } };
+export interface CairnConfig {
+  scope: CairnScopeConfig;
+  report: CairnReportConfig;
+}
+
+const EMPTY_CONFIG: CairnConfig = {
+  scope: { privateProjects: new Set() },
+  report: { rollup: true },
+};
 
 export function cairnConfigPath(): string {
   return process.env.CAIRN_CONFIG_PATH ?? join(homedir(), '.cairn', 'config.json');
@@ -57,15 +67,22 @@ function parseConfig(raw: string): CairnConfig | 'bad-shape' {
   const parsed = JSON.parse(raw) as unknown;
   if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return 'bad-shape';
   const scope = (parsed as { scope?: unknown }).scope;
-  if (scope === undefined) return EMPTY_CONFIG; // scope simply not configured
+  if (scope === undefined) {
+    const reportOnly = parseReport((parsed as { report?: unknown }).report);
+    if (reportOnly === 'bad-shape') return 'bad-shape';
+    return { scope: EMPTY_CONFIG.scope, report: reportOnly };
+  }
   if (scope === null || typeof scope !== 'object') return 'bad-shape';
+  const report = parseReport((parsed as { report?: unknown }).report);
+  if (report === 'bad-shape') return 'bad-shape';
   const list = (scope as { privateProjects?: unknown }).privateProjects;
   if (list === undefined) {
     // A deliberately empty scope block is legal; a NON-empty one without
     // privateProjects is almost certainly a typo (private_projects,
     // privateProject) — and a typo silently deactivating every private
     // project is the failure this warning exists for.
-    return Object.keys(scope as object).length === 0 ? EMPTY_CONFIG : 'bad-shape';
+    if (Object.keys(scope as object).length !== 0) return 'bad-shape';
+    return { scope: EMPTY_CONFIG.scope, report };
   }
   if (!Array.isArray(list)) return 'bad-shape';
   // Non-string members mean a malformed file, not ignorable noise — being
@@ -75,7 +92,22 @@ function parseConfig(raw: string): CairnConfig | 'bad-shape' {
     scope: {
       privateProjects: new Set(list.filter((p): p is string => p.length > 0)),
     },
+    report,
   };
+}
+
+/** report block: absent = defaults; a literal rollup:false disables; any
+ *  other malformed shape warns like the scope block (same fail-open-with-
+ *  signal policy — a silently ignored opt-out is a broken promise too). */
+function parseReport(raw: unknown): CairnReportConfig | 'bad-shape' {
+  if (raw === undefined) return { rollup: true };
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return 'bad-shape';
+  const rollup = (raw as { rollup?: unknown }).rollup;
+  if (rollup === undefined) {
+    return Object.keys(raw as object).length === 0 ? { rollup: true } : 'bad-shape';
+  }
+  if (typeof rollup !== 'boolean') return 'bad-shape';
+  return { rollup };
 }
 
 export function loadCairnConfig(): CairnConfig {

@@ -10,6 +10,8 @@
  * coherent.
  */
 import type { PostCompactInput } from '../shared/hook-io.js';
+import { recordRollup } from '../../db/telemetry-rollup.js';
+import { ROLLUP_METRICS } from '../../constants/index.js';
 import type { CachedHookContext } from '../shared/db-client.js';
 import { loadTracker, saveTracker } from '../shared/edit-tracker.js';
 
@@ -30,6 +32,12 @@ export function handlePostCompact(
     client.cache.setTracker(input.session_id, tracker);
   } else {
     saveTracker(tracker, input.session_id);
+  }
+
+  // Tokens-saved report: the CLIENT-reported savings from this compaction
+  // — the one gross number that is measured, not estimated.
+  if (client?.db) {
+    recordRollup(client.db, input.session_id, ROLLUP_METRICS.COMPACT_SAVED, 'postcompact', tracker.lastCompactTokensSaved);
   }
 
   return { tokensSaved: tracker.lastCompactTokensSaved };

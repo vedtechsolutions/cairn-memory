@@ -6,6 +6,8 @@
  * async: true — no blocking.
  */
 import { readStdinJson, type PostToolUseInput } from './shared/hook-io.js';
+import { recordRollup } from '../db/telemetry-rollup.js';
+import { ROLLUP, ROLLUP_METRICS } from '../constants/index.js';
 import { createHookDbClient } from './shared/db-client.js';
 import { basename } from 'node:path';
 import { CONFIDENCE, LIMITS, TOKEN_BUDGET } from '../constants/index.js';
@@ -120,6 +122,7 @@ try {
         const dbPath = process.env.CAIRN_DB_PATH ?? undefined;
         const client = createHookDbClient(dbPath);
 
+        let verifiedImpacts = 0;
         for (const fp of filePaths) {
           const surfacedForFile = tracker.surfacedPitfalls[fp];
           if (surfacedForFile && surfacedForFile.length > 0) {
@@ -127,12 +130,15 @@ try {
               // Prediction verified: pitfall surfaced + tool succeeded → stronger boost
               client.memoryRepo.boostConfidence(memId, CONFIDENCE.PREDICTION_VERIFIED_BOOST);
               client.memoryRepo.incrementImpact(memId);
+              verifiedImpacts++;
               // Mark as successful recall for session continuity scoring
               try { markRecallSuccess(client.db, input.session_id, memId); } catch { /* best-effort */ }
             }
             delete tracker.surfacedPitfalls[fp];
           }
         }
+        // Tokens-saved report proxy (see success-tracker-handler twin).
+        recordRollup(client.db, input.session_id, ROLLUP_METRICS.IMPACT_PROXY, 'success-tracker', verifiedImpacts * ROLLUP.IMPACT_PROXY_TOKENS);
 
         client.close();
       }

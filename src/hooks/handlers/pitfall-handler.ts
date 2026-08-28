@@ -7,6 +7,9 @@
  * handlePitfallCheck entry point and re-exports the public surface.
  */
 import type { PreToolUseInput } from '../shared/hook-io.js';
+import { recordRollup } from '../../db/telemetry-rollup.js';
+import { ROLLUP_METRICS } from '../../constants/index.js';
+import { estimateTokensFast } from '../../utils/tokens.js';
 import type { CachedHookContext } from '../shared/db-client.js';
 import { capabilitiesOf } from '../shared/client-adapter.js';
 import { readState } from '../shared/state-io.js';
@@ -205,5 +208,8 @@ export function handlePitfallCheck(input: PreToolUseInput, client: CachedHookCon
     client.cache.setSkipGate(skipGateKey, null);
   }
 
+  if (outputStr) {
+    recordRollup(client.db, input.session_id, ROLLUP_METRICS.INJECTED, 'pitfall-check', estimateTokensFast(outputStr));
+  }
   return { output: outputStr, pitfallsSurfaced: capped.length };
 }

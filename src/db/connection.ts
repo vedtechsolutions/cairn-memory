@@ -32,6 +32,7 @@ import {
 import { DB } from '../constants/index.js';
 import { migrateToV28 } from './migrations/v28-governance.js';
 import { migrateToV29 } from './migrations/v29-origin-client.js';
+import { migrateToV30 } from './migrations/v30-telemetry-rollup.js';
 
 const LAST_LEGACY_SCHEMA_VERSION = 27;
 
@@ -144,6 +145,9 @@ function ensureSchema(db: Database.Database): void {
   }
   if (currentVersion < 29 && SCHEMA_VERSION >= 29) {
     migrateToV29(db);
+  }
+  if (currentVersion < 30 && SCHEMA_VERSION >= 30) {
+    migrateToV30(db);
   }
 
   ensureFtsIntegrity(db);

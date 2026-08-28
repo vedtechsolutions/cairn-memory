@@ -3,6 +3,9 @@
  * Pure business logic: no stdin/stdout/process.exit.
  */
 import type { SubagentStartInput } from '../shared/hook-io.js';
+import { recordRollup } from '../../db/telemetry-rollup.js';
+import { ROLLUP_METRICS } from '../../constants/index.js';
+import { estimateTokensFast } from '../../utils/tokens.js';
 import type { HookDbClient } from '../shared/db-client.js';
 import { projectId } from '../../utils/project-id.js';
 import { capabilitiesOf } from '../shared/client-adapter.js';
@@ -63,6 +66,7 @@ export function handleSubagentContext(input: SubagentStartInput, client: HookDbC
     const text = capabilitiesOf(input).crossAgentFraming
       ? `${CROSS_AGENT_CONTEXT_FRAMING}\n${lines.join('\n')}`
       : lines.join('\n');
+    recordRollup(client.db, input.session_id, ROLLUP_METRICS.INJECTED, 'subagent-context', estimateTokensFast(text));
     output = JSON.stringify({
       hookSpecificOutput: {
         hookEventName: 'SubagentStart',

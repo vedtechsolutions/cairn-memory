@@ -197,6 +197,32 @@ export const LEARNABLE_SUCCESS_PATTERNS = [
 
 // --- Limits -----------------------------------------------------------------
 
+/** Tokens-saved report (Phase 1 step 4). Numbers are INTERNAL tuning,
+ *  never contract. */
+export const ROLLUP = {
+  /** Estimated tokens to re-derive one VERIFIED-useful memory (an impact
+   *  event: a surfaced lesson followed by a confirmed success). This is a
+   *  deliberate, conservative stand-in — re-deriving a pitfall typically
+   *  means re-reading files and re-hitting the error — and the report
+   *  labels every number built from it as an estimate. */
+  IMPACT_PROXY_TOKENS: 150,
+  /** Rollup rows outlive the 7-day telemetry prune by design; a year
+   *  bounds growth (~a few rows per session event). */
+  RETENTION_DAYS: 365,
+  /** Default report window. */
+  REPORT_DAYS: 30,
+} as const;
+
+/** Rollup metric names (internal vocabulary, not contract). */
+export const ROLLUP_METRICS = {
+  /** COST: context Cairn injected (briefings, warnings, subagent context). */
+  INJECTED: 'injected',
+  /** GROSS, client-reported: PostCompact tokens_saved. */
+  COMPACT_SAVED: 'compact_saved',
+  /** GROSS, estimated: verified impact events x IMPACT_PROXY_TOKENS. */
+  IMPACT_PROXY: 'impact_proxy',
+} as const;
+
 export const LIMITS = {
   MAX_TAGS: 5,
   MAX_CONTENT_CHARS: 2000,

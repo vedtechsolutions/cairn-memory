@@ -10,6 +10,7 @@ function printHelp(): void {
 
 Usage:
   cairn [serve]     Start the MCP server over stdio (default)
+  cairn report      Tokens-saved report (--days=N, default 30)
   cairn init        Write Cairn's client config (--dry-run to preview,
                     --migrate-routes to modernize deprecated hook routes)
   cairn build-relay Compile the fast C hook relay (optional; needs a C compiler)
@@ -21,6 +22,18 @@ Usage:
 const command = process.argv[2];
 
 switch (command) {
+  case 'report': {
+    try {
+      const { runReport } = await import('./report.js');
+      const daysArg = process.argv.find((a) => a.startsWith('--days='));
+      const days = daysArg ? Math.max(1, parseInt(daysArg.slice(7), 10) || 0) : undefined;
+      process.exit(await runReport(days));
+    } catch (err) {
+      console.error(`cairn report: failed — ${(err as Error).message}`);
+      process.exit(1);
+    }
+    break;
+  }
   case 'init': {
     try {
       const { runInit } = await import('./init.js');

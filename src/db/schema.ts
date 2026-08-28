@@ -4,7 +4,7 @@
 
 import { GOVERNANCE_DDL } from './governance-schema.js';
 
-export const SCHEMA_VERSION = 29;
+export const SCHEMA_VERSION = 30;
 
 export const CREATE_MEMORIES_TABLE = `
 CREATE TABLE IF NOT EXISTS memories (
@@ -230,6 +230,20 @@ CREATE TABLE IF NOT EXISTS hook_telemetry (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 )`;
 
+/** v30 — durable tokens-saved aggregates. hook_telemetry is pruned at 7
+ *  days; the report needs months, so aggregates persist here (own long
+ *  retention in maintenance). One row per (session, surface) event. */
+export const CREATE_TELEMETRY_ROLLUP_TABLE = `
+CREATE TABLE IF NOT EXISTS telemetry_rollup (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id TEXT NOT NULL,
+  day TEXT NOT NULL,
+  metric TEXT NOT NULL,
+  surface TEXT NOT NULL DEFAULT '',
+  tokens INTEGER NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+)`;
+
 export const CREATE_PROJECT_CONTEXT_TABLE = `
 CREATE TABLE IF NOT EXISTS project_context (
   project TEXT NOT NULL,
@@ -355,6 +369,7 @@ export const CREATE_INDEXES = [
   'CREATE INDEX IF NOT EXISTS idx_plan_decisions_plan ON plan_decisions(plan_id)',
   'CREATE INDEX IF NOT EXISTS idx_reminders_active ON reminders(active, project)',
   'CREATE INDEX IF NOT EXISTS idx_telemetry_hook ON hook_telemetry(hook_name, created_at DESC)',
+  'CREATE INDEX IF NOT EXISTS idx_rollup_day ON telemetry_rollup(day, metric)',
 ];
 
 // --- All DDL in order -------------------------------------------------------
@@ -371,6 +386,7 @@ export const ALL_DDL: string[] = [
   CREATE_PLAN_DECISIONS_TABLE,
   CREATE_COMPACTION_SNAPSHOTS_TABLE,
   CREATE_HOOK_TELEMETRY_TABLE,
+  CREATE_TELEMETRY_ROLLUP_TABLE,
   CREATE_REMINDERS_TABLE,
   CREATE_REMINDERS_FTS,
   ...CREATE_REMINDERS_FTS_TRIGGERS,

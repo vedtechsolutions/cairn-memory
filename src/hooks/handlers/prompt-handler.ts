@@ -8,6 +8,9 @@
  * routing → recall layers). The per-call shared state lives on PromptCtx.
  */
 import type { UserPromptSubmitInput } from '../shared/hook-io.js';
+import { recordRollup } from '../../db/telemetry-rollup.js';
+import { ROLLUP_METRICS } from '../../constants/index.js';
+import { estimateTokensFast } from '../../utils/tokens.js';
 import type { CachedHookContext } from '../shared/db-client.js';
 import { wrapContextOutput } from '../shared/client-adapter.js';
 import { SessionCache } from '../shared/session-cache.js';
@@ -174,6 +177,9 @@ export function handlePromptCheck(input: UserPromptSubmitInput, client: CachedHo
   }
 
   const finalOutput = output.length > 0 ? output.join('\n') : null;
+  if (finalOutput) {
+    recordRollup(client.db, input.session_id, ROLLUP_METRICS.INJECTED, 'prompt-check', estimateTokensFast(finalOutput));
+  }
 
   // Cache ONLY null outputs — non-null outputs carry side-effect semantics
   // (flag sets, injected memory IDs) that must not be skipped on replay.

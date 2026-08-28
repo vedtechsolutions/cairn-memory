@@ -4,6 +4,9 @@
 
 ### Added
 
+- Added `cairn report` — an honest tokens-saved report: gross (client-reported compaction savings + a clearly-labeled estimated impact proxy), injection cost per surface, and net; `--days=N` selects the window.
+- Added durable telemetry rollup (schema v30): per-session token aggregates persist past the 7-day telemetry prune (own 1-year retention); disable recording with `{"report":{"rollup":false}}` in the config file or `CAIRN_ROLLUP=0`.
+
 - Added scope controls: projects marked private in `~/.cairn/config.json` (env override `CAIRN_CONFIG_PATH`) never surface in other projects on any surface — briefings, prompt/pitfall injections, subagent context, and recall including graph enrichment.
 - Added `from_private` acknowledgment requirement to `cairn_promote` when promoting a memory out of a private project.
 - Added `scope: "project"` parameter to `cairn_recall` for project-only results (globals excluded).

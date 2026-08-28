@@ -3,6 +3,7 @@
  * Called periodically or on session start.
  */
 import type Database from 'better-sqlite3';
+import { pruneRollup } from './telemetry-rollup.js';
 import { CONFIDENCE, LIMITS, STALENESS, CONSOLIDATION, DECAY, ROLLOUT_TAILER } from '../constants/index.js';
 import { now, buildFtsQuery, tokenOverlap } from '../utils/index.js';
 import type { ContextFingerprint } from '../utils/fingerprint.js';
@@ -103,6 +104,9 @@ export function cleanupTelemetry(db: Database.Database): number {
     const result = db.prepare(`
       DELETE FROM hook_telemetry WHERE created_at < datetime('now', '-7 days')
     `).run();
+    // telemetry_rollup outlives the 7-day prune BY DESIGN (the tokens-
+    // saved report needs months); it gets its own long retention.
+    pruneRollup(db);
     return result.changes;
   } catch {
     return 0; // Table may not exist yet
