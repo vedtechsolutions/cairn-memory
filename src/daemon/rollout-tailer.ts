@@ -39,6 +39,8 @@ interface FileState {
    *  zero-length file at first sight) — re-evaluated each tick until it
    *  resolves, so an early-sighted session is never permanently skipped. */
   metaResolved: boolean;
+  /** Version-canary warning emitted once per file. */
+  versionWarned: boolean;
 }
 
 interface TailerHandle { stop(): void; tick(): Promise<number>; }
@@ -76,15 +78,14 @@ function readRange(path: string, start: number, end: number): string {
 /** First line of a rollout is session_meta — id, cwd, source (subagent).
  *  metaResolved:false means "not readable YET" (empty/torn first line);
  *  the tailer retries it every tick rather than skipping the session. */
-function readSessionMeta(path: string): Pick<FileState, 'sessionId' | 'cwd' | 'skip' | 'metaResolved'> {
+function readSessionMeta(path: string): Pick<FileState, 'sessionId' | 'cwd' | 'skip' | 'metaResolved'> & { cliVersion: string | null } {
+  const unresolved = { sessionId: null, cwd: process.cwd(), skip: false, metaResolved: false, cliVersion: null };
   try {
     const head = readRange(path, 0, Math.min(statSync(path).size, ROLLOUT_TAILER.META_READ_BYTES));
     const newlineAt = head.indexOf('\n');
-    if (newlineAt < 0) {
-      return { sessionId: null, cwd: process.cwd(), skip: false, metaResolved: false };
-    }
+    if (newlineAt < 0) return unresolved;
     const meta = JSON.parse(head.slice(0, newlineAt)) as {
-      payload?: { session_id?: string; id?: string; cwd?: string; source?: unknown };
+      payload?: { session_id?: string; id?: string; cwd?: string; source?: unknown; cli_version?: string };
     };
     const p = meta.payload ?? {};
     const isSubagent = p.source !== undefined && p.source !== null &&
@@ -94,18 +95,38 @@ function readSessionMeta(path: string): Pick<FileState, 'sessionId' | 'cwd' | 's
       cwd: p.cwd ?? process.cwd(),
       skip: isSubagent,
       metaResolved: true,
+      cliVersion: typeof p.cli_version === 'string' ? p.cli_version : null,
     };
   } catch {
-    return { sessionId: null, cwd: process.cwd(), skip: false, metaResolved: false };
+    return unresolved;
   }
+}
+
+/** D5's version canary: unknown Codex versions still parse (item_completed
+ *  pinning is the real guard) but say so once, so a format change after a
+ *  Codex upgrade shows up in logs instead of as silent capture loss. */
+function warnVersionOnce(state: FileState, cliVersion: string | null, path: string): void {
+  if (state.versionWarned || cliVersion === null) return;
+  if (!cliVersion.startsWith(ROLLOUT_TAILER.KNOWN_CLI_PREFIX)) {
+    console.error(`[cairn] rollout-tailer: ${path} written by codex ${cliVersion} (validated against ${ROLLOUT_TAILER.KNOWN_CLI_PREFIX}x) — parsing continues; verify capture after codex upgrades`);
+  }
+  state.versionWarned = true;
 }
 
 /**
  * Start the tailer loop. Returns a handle with stop() and a directly
  * awaitable tick() (used by tests; the interval calls the same tick).
  */
-export function startRolloutTailer(client: CachedHookContext): TailerHandle {
+export function startRolloutTailer(
+  client: CachedHookContext,
+  /** birthtimeSlackMs override is a TEST lever: birthtimes cannot be
+   *  backdated, so a test simulating a pre-existing file passes a large
+   *  negative slack to force the pre-start classification. */
+  opts: { birthtimeSlackMs?: number } = {},
+): TailerHandle {
   const files = new Map<string, FileState>();
+  const startedAtMs = Date.now();
+  const birthtimeSlackMs = opts.birthtimeSlackMs ?? ROLLOUT_TAILER.BIRTHTIME_SLACK_MS;
 
   async function tick(): Promise<number> {
     let processed = 0;
@@ -118,23 +139,35 @@ export function startRolloutTailer(client: CachedHookContext): TailerHandle {
       for (const name of names) {
         const path = join(dir, name);
         let size: number;
-        try { size = statSync(path).size; } catch { continue; }
+        let bornAfterStart = false;
+        try {
+          const st = statSync(path);
+          size = st.size;
+          // birthtime 0 (filesystem without it) safely reads as pre-start.
+          // The slack absorbs the coarse-clock lag birthtimes carry.
+          bornAfterStart = st.birthtimeMs >= startedAtMs - birthtimeSlackMs;
+        } catch { continue; }
 
         let state = files.get(path);
         if (!state) {
-          // First sight: no historical backfill — start at current EOF.
-          // An empty file registers with offset 0, so everything written
-          // after first sight is "new" once its meta resolves.
-          state = { offset: size, ...readSessionMeta(path) };
+          // First sight. No-backfill applies to files that PREDATE the
+          // tailer (their history was another lifetime's business); a file
+          // born after we started has no such history — begin at 0, so a
+          // brand-new session's first commands are not lost to poll timing.
+          const meta = readSessionMeta(path);
+          state = { offset: bornAfterStart ? 0 : size, versionWarned: false, ...meta };
           files.set(path, state);
-          continue;
+          warnVersionOnce(state, meta.cliVersion, path);
+          if (!bornAfterStart) continue;
         }
         if (!state.metaResolved) {
           // Retry the meta read without advancing the offset — the session
           // must not be permanently skipped just because the tailer saw the
           // file before Codex flushed the first line.
-          Object.assign(state, readSessionMeta(path));
+          const meta = readSessionMeta(path);
+          Object.assign(state, meta);
           if (!state.metaResolved) continue;
+          warnVersionOnce(state, meta.cliVersion, path);
         }
         if (state.skip || size <= state.offset) continue;
 

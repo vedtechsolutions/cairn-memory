@@ -937,6 +937,17 @@ export const ROLLOUT_TAILER = {
   META_READ_BYTES: 8192,
   /** Seen-marker retention; markers exist only to dedup hook vs tailer. */
   MARKER_TTL_MS: 24 * 60 * 60 * 1000,
+  /** Codex version line the rollout parsing was validated against; other
+   *  versions still parse (item_completed pinning is the real guard) but
+   *  log a canary warning so silent capture loss is diagnosable. */
+  KNOWN_CLI_PREFIX: '0.150.',
+  /** Files born within this window BEFORE tailer start still count as
+   *  born-after. File birthtimes come from the kernel's COARSE clock,
+   *  which can lag Date.now() by milliseconds — without slack, a session
+   *  starting just as the tailer does is misread as pre-existing. A file
+   *  this young is a brand-new session either way, so capturing it from
+   *  byte 0 is the desired behavior on both sides of the race. */
+  BIRTHTIME_SLACK_MS: 1000,
 } as const;
 
 // --- Embedding model registry (roadmap W2) ----------------------------------

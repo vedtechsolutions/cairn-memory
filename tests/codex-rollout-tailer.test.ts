@@ -68,7 +68,9 @@ describe('rollout tailer', () => {
     writeFileSync(f, metaLine('tailer-sess-a') +
       failedCommandLine('exec-historic', `error TS2998: HIST-${RUN} historic — must NOT be captured`));
 
-    const tailer = startRolloutTailer({ ...client, cache: undefined });
+    // Negative slack forces the pre-existing classification: birthtimes
+    // cannot be backdated, and this file was written milliseconds ago.
+    const tailer = startRolloutTailer({ ...client, cache: undefined }, { birthtimeSlackMs: -3_600_000 });
     try {
       // Tick 1: registration only — the historic failure is behind EOF.
       assert.equal(await tailer.tick(), 0);
@@ -192,6 +194,41 @@ describe('rollout tailer', () => {
         "SELECT COUNT(*) AS n FROM memories WHERE content LIKE '%TAILER-G-' || ? || '%'",
       ).get(RUN) as { n: number };
       assert.equal(rows.n, 1);
+    } finally {
+      tailer.stop();
+    }
+  });
+
+  it('captures from byte 0 in files BORN AFTER the tailer started (no early-command loss)', async () => {
+    // No-backfill is for files that predate the tailer; a session that
+    // starts after it has no history to skip, and its first commands must
+    // not be lost to poll timing.
+    const tailer = startRolloutTailer({ ...client, cache: undefined });
+    try {
+      const f = join(dayDir, 'rollout-2026-08-28T00-00-08-tailer-h.jsonl');
+      writeFileSync(f, metaLine('tailer-sess-h') +
+        failedCommandLine('exec-early', `error TS2989: TAILER-H-${RUN} instantaneous ignition fault in early-bird.ts`));
+      assert.equal(await tailer.tick(), 1, 'captured on FIRST sight');
+      const rows = client.db.prepare(
+        "SELECT COUNT(*) AS n FROM memories WHERE content LIKE '%TAILER-H-' || ? || '%'",
+      ).get(RUN) as { n: number };
+      assert.equal(rows.n, 1);
+    } finally {
+      tailer.stop();
+    }
+  });
+
+  it('an unknown cli_version is a log-only canary — capture continues', async () => {
+    const tailer = startRolloutTailer({ ...client, cache: undefined });
+    try {
+      const f = join(dayDir, 'rollout-2026-08-28T00-00-09-tailer-i.jsonl');
+      const meta = JSON.stringify({
+        timestamp: new Date().toISOString(), type: 'session_meta',
+        payload: { session_id: 'tailer-sess-i', id: 'tailer-sess-i', cwd: '/opt/cairn', originator: 'codex_exec', cli_version: '9.9.9' },
+      }) + '\n';
+      writeFileSync(f, meta +
+        failedCommandLine('exec-futurever', `error TS2988: TAILER-I-${RUN} chronoflux divergence in future-version.ts`));
+      assert.equal(await tailer.tick(), 1, 'future version still captures');
     } finally {
       tailer.stop();
     }
