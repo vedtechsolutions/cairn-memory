@@ -35,7 +35,7 @@
   ],
   "scripts": {
     "clean": "rm -rf dist",
-    "build": "tsc && npm run build:relay",
+    "build": "tsc -b tsconfig.build.json && npm run build:relay",
     "build:relay": "cc -O2 -D_FORTIFY_SOURCE=2 -fstack-protector-strong -fPIE -pie -Wall -Wextra -Wformat -Werror=format-security -o dist/src/hooks/hook-relay src/hooks/hook-relay.c && cp src/hooks/hook-relay.sh dist/src/hooks/hook-relay.sh && chmod +x dist/src/hooks/hook-relay.sh",
     "start": "node dist/src/mcp/server.js",
     "daemon": "node dist/src/daemon/cairn-daemon.js",
@@ -70,5 +70,8 @@
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.15.0",
     "typescript": "^5.8.3"
-  }
+  },
+  "workspaces": [
+    "packages/contract"
+  ]
 }
