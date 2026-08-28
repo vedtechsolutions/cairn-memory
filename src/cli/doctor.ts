@@ -17,6 +17,11 @@ import { getEmbeddingModelConfig } from '../utils/embeddings.js';
 import { verifyModelPackage, ArtifactVerificationError } from '../utils/artifact-verification.js';
 import { probeHookSocket, socketPath } from '../mcp/socket-ownership.js';
 import { binaryUsable, relayShellPath } from './relay.js';
+import { readFileSync } from 'node:fs';
+import {
+  codexDir, codexHooksPath, codexConfigPath, codexHookCount,
+  countTrustedCairnHooks, hasCairnMcpServer, type CodexHooksFile,
+} from './codex-init.js';
 
 const MIN_NODE_MAJOR = 20;
 /** Hook dir relative to this module: dist/src/cli/ → dist/src/hooks. */
@@ -121,7 +126,42 @@ async function checkSocket(): Promise<CheckResult> {
   if (live) {
     return { status: 'ok', detail: `hook socket served by PID ${live.pid} at ${socketPath()}` };
   }
+  // A socket file with no identifiable owner usually means doctor is running
+  // inside an agent's sandbox (no /proc visibility) — seen live from a Codex
+  // shell — not that the daemon is down.
+  if (existsSync(socketPath())) {
+    return { status: 'warn', detail: `hook socket exists at ${socketPath()} but its owner is unknown — likely a sandboxed environment (no /proc access); re-run doctor from an unsandboxed shell to confirm` };
+  }
   return { status: 'ok', detail: `no live hook-socket owner (an agent client starts one on demand at ${socketPath()})` };
+}
+
+/** Per-agent parity: is Codex wired, and has the one-time trust happened? */
+function checkCodexParity(): CheckResult {
+  if (!existsSync(codexDir())) {
+    return { status: 'ok', detail: 'Codex CLI not detected (nothing to wire)' };
+  }
+  const hooksPath = codexHooksPath();
+  if (!existsSync(hooksPath)) {
+    return { status: 'warn', detail: 'Codex CLI detected but Cairn hooks are not installed — run `cairn init`' };
+  }
+  let file: CodexHooksFile;
+  try {
+    file = JSON.parse(readFileSync(hooksPath, 'utf-8')) as CodexHooksFile;
+  } catch {
+    return { status: 'warn', detail: `${hooksPath} is not valid JSON — re-run \`cairn init\`` };
+  }
+  const total = codexHookCount(file);
+  const wired = JSON.stringify(file).includes('dist/src/hooks/');
+  if (!wired || total === 0) {
+    return { status: 'warn', detail: 'Codex hooks.json exists but carries no Cairn hooks — run `cairn init`' };
+  }
+  const config = existsSync(codexConfigPath()) ? readFileSync(codexConfigPath(), 'utf-8') : '';
+  const mcp = hasCairnMcpServer(config) ? 'MCP registered' : 'MCP NOT registered (run `cairn init`)';
+  const trusted = countTrustedCairnHooks(config, hooksPath);
+  if (trusted >= total) {
+    return { status: 'ok', detail: `Codex wired and trusted (${trusted}/${total} hooks; ${mcp})` };
+  }
+  return { status: 'warn', detail: `Codex wired, awaiting one-time trust review (${trusted}/${total} hooks trusted; ${mcp}) — start \`codex\` and accept the Cairn hooks` };
 }
 
 const CHECKS: Check[] = [
@@ -131,6 +171,7 @@ const CHECKS: Check[] = [
   { name: 'embedding model', run: checkEmbeddingModel },
   { name: 'database', run: checkDatabase },
   { name: 'hook socket', run: checkSocket },
+  { name: 'codex parity', run: checkCodexParity },
 ];
 
 const GLYPH: Record<CheckStatus, string> = { ok: '✓', warn: '!', fail: '✗' };

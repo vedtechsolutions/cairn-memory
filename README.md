@@ -346,6 +346,29 @@ relay needs a POSIX shell (`bash` + `curl`); on Windows, run `cairn build-relay`
 for the compiled relay, or use WSL. Install paths containing spaces are not
 currently supported by the generated hook commands.
 
+### 3c. Codex CLI (cross-agent parity)
+
+Cairn gives Codex the same automatic experience Claude Code gets — session
+briefing, ambient recall, pre-tool pitfall warnings, and auto-capture of
+errors/decisions/successes into the same shared store, with per-memory
+`origin_client` provenance. `cairn init` wires it when `~/.codex` exists:
+it generates `~/.codex/hooks.json` (every event through the relay with
+`--client codex`) and registers the MCP server in `~/.codex/config.toml`.
+
+**One manual step**: Codex hash-pins hooks and silently skips them until you
+approve them once. After `cairn init`, start `codex` — the startup review
+lists the 10 "Cairn memory hooks"; accept them (or use `/hooks`). Trust
+survives reinstalls as long as the hook commands don't change; `cairn
+doctor`'s `codex parity` check reports wired / awaiting-trust state.
+
+Notes: non-interactive `codex exec` rejects MCP tool calls under its default
+approval policy — use `codex exec --approve-for-me` when a script needs
+`cairn_*` tools (hooks are unaffected). Failed code-mode `apply_patch`
+calls emit no hook or rollout record in Codex 0.150.x and are not capturable
+(documented gap); shell failures — the dominant error class — are fully
+captured, with a daemon-side rollout tailer as the zero-config fallback when
+hooks are untrusted (`CAIRN_TAILER=0` disables).
+
 ### 4. Verify Installation
 
 ```bash

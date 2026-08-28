@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Added — Codex parity step 5: zero-config wiring + per-agent doctor
+
+- **`cairn init` now wires Codex automatically** when `~/.codex` exists: generates `hooks.json` from the install's resolved relay (all ten events, `--client codex`, Codex's 3s SessionEnd cap respected, context limits explicit), merges idempotently with any non-Cairn hooks preserved, and registers the MCP server in `config.toml` via a scoped append — no TOML dependency. Prints exactly what the one-time trust review will show.
+- **`cairn doctor` gained a `codex parity` check** — wired / awaiting-trust / not-installed, with trusted-hook counts read from `[hooks.state]` and MCP registration status — and the hook-socket check now says "owner unknown — likely a sandboxed environment" instead of implying the daemon is down when `/proc` is invisible (as observed from Codex's own sandbox).
+- README documents the Codex setup, the trust step, and the `codex exec --approve-for-me` requirement for MCP tool calls in scripts.
+
 ### Added — Codex parity Slice C: file-aware patches, anchored lessons, briefing framing
 
 - **`apply_patch` is now a first-class edit tool.** A shared patch-envelope parser (`*** Add/Update/Delete File:` headers only, never bodies) feeds Codex patch targets into the same file-level loop Claude's Write/Edit use: pre-edit pitfall warnings, post-success confidence boosts, per-file edit counts, and failure events — verified live with a patch touching a file carrying a known pitfall.
