@@ -31,7 +31,7 @@
       { "hooks": [ { "type": "command", "command": "/opt/cairn/dist/src/hooks/hook-relay --client codex postcompact", "timeout": 10 } ] }
     ],
     "SessionEnd": [
-      { "hooks": [ { "type": "command", "command": "/opt/cairn/dist/src/hooks/hook-relay --client codex session-end", "timeout": 10 } ] }
+      { "hooks": [ { "type": "command", "command": "/opt/cairn/dist/src/hooks/hook-relay --client codex session-end", "timeout": 3 } ] }
     ]
   }
 }
