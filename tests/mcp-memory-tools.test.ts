@@ -23,6 +23,7 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 
 import { openDatabase } from '../src/db/connection.js';
 import { MemoryRepository } from '../src/db/memory-repository.js';
+import { projectId } from '../src/utils/project-id.js';
 import { EdgeRepository } from '../src/db/edge-repository.js';
 import { SessionCache } from '../src/hooks/shared/session-cache.js';
 import { registerMemoryTools } from '../src/mcp/tools/memory-tools.js';
@@ -295,6 +296,25 @@ describe('cairn_learn', () => {
     assert.match(reply.text, /Input validation error/);
     assert.equal(countRows(), 0);
   });
+
+  it('defaults a pitfall with no project to the current project, not global', async () => {
+    // The root fix for the cross-project leak: a project-specific memory stored
+    // without an explicit project must NOT silently land in global scope.
+    const reply = await call('cairn_learn', { content: 'Batch DB writes inside a single transaction for speed', kind: 'pitfall' });
+    assert.equal(reply.isError, false);
+    const rows = db.prepare('SELECT project FROM memories WHERE content LIKE ?').all('%Batch DB writes%') as Array<{ project: string | null }>;
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].project, projectId(process.cwd()), 'omitted project defaults to the current project');
+  });
+
+  it('keeps corrections and an explicit null scope global', async () => {
+    await call('cairn_learn', { content: 'Prefer distilled one-sentence lessons over raw user text', kind: 'correction' });
+    await call('cairn_learn', { content: 'A deliberately global fact for everyone', kind: 'fact', project: null });
+    const correction = db.prepare("SELECT project FROM memories WHERE kind = 'correction'").get() as { project: string | null };
+    const explicitGlobal = db.prepare("SELECT project FROM memories WHERE content LIKE '%deliberately global%'").get() as { project: string | null };
+    assert.equal(correction.project, null, 'corrections default global');
+    assert.equal(explicitGlobal.project, null, 'explicit project:null stays global');
+  });
 });
 
 // --- cairn_recall --------------------------------------------------------------
@@ -348,6 +368,18 @@ describe('cairn_recall', () => {
     assert.match(reply.text, /exponential backoff/);
     assert.match(reply.text, /secrets rotate quarterly/);
     assert.doesNotMatch(reply.text, /queue size limits/);
+  });
+
+  it('surfaces a fingerprint-less global in a scoped recall (permissive — the agent asked)', async () => {
+    // Active recall is deliberately permissive: a general global lesson must
+    // still surface when scoped to a project (unlike the conservative passive
+    // paths). The real defense against mis-scoped globals is at write time.
+    repo.create({ content: 'Webhook handler config lives in the settings module', kind: 'fact', project: 'proj-a' });
+    repo.create({ content: 'Webhook secrets rotate quarterly per security policy', kind: 'fact', project: null });
+
+    const reply = await call('cairn_recall', { query: 'webhook settings', project: 'proj-a' });
+    assert.match(reply.text, /handler config lives in the settings/, 'same-project memory surfaces');
+    assert.match(reply.text, /secrets rotate quarterly/, 'general global still surfaces (not over-blocked)');
   });
 
   it('returns only global memories when no project is given', async () => {

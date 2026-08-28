@@ -69,7 +69,9 @@ async function main(): Promise<void> {
   // a staleness bound of zero with no IPC cost.
   const sessionCache = new SessionCache();
 
-  registerMemoryTools(server, memoryRepo, getContextMode, server.server, edgeRepo, sessionCache);
+  // contextRepo (last arg) lets cairn_recall build a project query fingerprint
+  // for the cross-project guard; undefined keeps the default reranker.
+  registerMemoryTools(server, memoryRepo, getContextMode, server.server, edgeRepo, sessionCache, undefined, contextRepo);
   registerPlanTool(server, planRepo, memoryRepo, getContextMode, sessionCache);
   registerReminderTools(server, reminderRepo, getContextMode, sessionCache);
   registerPortabilityTools(server, memoryRepo, getContextMode, sessionCache);
