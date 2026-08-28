@@ -11,3 +11,5 @@ export * from './clients.js';
 export * from './vocabulary.js';
 export * from './hook-events.js';
 export * from './routes.js';
+export * from './memory-paths.js';
+export * from './round-trip.js';
