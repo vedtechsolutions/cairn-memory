@@ -126,26 +126,36 @@ export function exportPortableFiles(db: Database.Database): PortableFile[] {
  *  eleven non-id portable fields; telemetry and revision take column
  *  defaults on insert and are NEVER copied from the payload. Returns
  *  whether the row was created or an existing id was overwritten. */
+/** Thrown when a restore record would change an existing PRIVATE row's
+ *  project scope without standing + acknowledgment. Restore is a WHOLE-
+ *  DOCUMENT transaction, so this aborts everything — a partial commit
+ *  would silently break the all-or-nothing backup contract. */
+export class PrivateScopeChangeError extends Error {
+  constructor(public readonly recordId: string, public readonly fromProject: string) {
+    super(`record ${recordId} would change the scope of a memory in private project "${fromProject}"`);
+  }
+}
+
 export function restoreRecord(
   db: Database.Database,
   record: PortableRecord & { id: string },
-  opts: { allowPrivateScopeChange?: boolean } = {},
-): 'inserted' | 'updated' | 'skipped_private' {
+  opts: { allowPrivateScopeChange?: boolean; sessionProjectId?: string | null } = {},
+): 'inserted' | 'updated' {
   if ((record as { kind: string }).kind === 'rule') {
     throw new Error('rule memories are not portable');
   }
   const existing = db.prepare('SELECT kind, project FROM memories WHERE id = ?').get(record.id) as { kind: string; project: string | null } | undefined;
   if (existing?.kind === 'rule') throw new Error('rule memories are not portable');
   // Scope-policy invariant, enforced at the REPOSITORY boundary so no
-  // restore caller can bypass it: promotion (with its from_private
-  // acknowledgment) is the one door out of a private project. A restore
-  // record that would move an existing private row to global — or to any
-  // other project — is a second door unless equally acknowledged.
+  // restore caller can bypass it: moving content out of a private project
+  // requires BOTH standing (the session runs inside that project — same
+  // binding as every private read) AND the explicit acknowledgment. The
+  // throw aborts the whole document (all-or-nothing contract preserved).
   if (existing && existing.project !== null
     && record.project !== existing.project
     && isPrivateProject(existing.project)
-    && opts.allowPrivateScopeChange !== true) {
-    return 'skipped_private';
+    && !(opts.allowPrivateScopeChange === true && opts.sessionProjectId === existing.project)) {
+    throw new PrivateScopeChangeError(record.id, existing.project);
   }
   db.prepare(`
     INSERT INTO memories (id, content, kind, project, tags, confidence, source, created_at,
@@ -189,9 +199,6 @@ export function restoreFile(db: Database.Database, file: PortableFile): void {
 export interface RestoreCounts {
   restored: number;
   overwritten: number;
-  /** Records refused because they would change an existing PRIVATE row's
-   *  project scope without acknowledgment (see restoreRecord). */
-  skippedPrivate: number;
   files: number;
 }
 
@@ -202,20 +209,17 @@ export function restoreDocument(
   db: Database.Database,
   records: ReadonlyArray<PortableRecord & { id: string }>,
   files: readonly PortableFile[],
-  opts: { allowPrivateScopeChange?: boolean } = {},
+  opts: { allowPrivateScopeChange?: boolean; sessionProjectId?: string | null } = {},
 ): RestoreCounts {
   let restored = 0;
   let overwritten = 0;
-  let skippedPrivate = 0;
   const run = db.transaction(() => {
     for (const record of records) {
-      const outcome = restoreRecord(db, record, opts);
-      if (outcome === 'inserted') restored++;
-      else if (outcome === 'updated') overwritten++;
-      else skippedPrivate++;
+      if (restoreRecord(db, record, opts) === 'inserted') restored++;
+      else overwritten++;
     }
     for (const file of files) restoreFile(db, file);
   });
   run.immediate();
-  return { restored, overwritten, skippedPrivate, files: files.length };
+  return { restored, overwritten, files: files.length };
 }

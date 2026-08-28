@@ -4,6 +4,7 @@ import type { MemoryRepository } from '../../db/memory-repository.js';
 import type { SessionCache } from '../../hooks/shared/session-cache.js';
 import { LIMITS, PROMOTION, type ContextMode, type LearnableKind, type MemoryKind, LEARNABLE_KINDS } from '../../constants/index.js';
 import { isPrivateProject, canReadPrivate } from '../../config/cairn-config.js';
+import { PrivateScopeChangeError } from '../../db/memory-repository/portability.js';
 import { sessionProjectId } from '../../utils/session-project.js';
 import { isCritical } from './helpers.js';
 import { buildFileSection, buildRecordSection, parseExportDocument } from '../../memory-tool/round-trip.js';
@@ -95,7 +96,19 @@ export function registerPortabilityTools(
         // rolls the whole document back; the cache bumps only on commit.
         let counts;
         try {
-          counts = repo.restoreAll(parsed.records as Array<(typeof parsed.records)[number] & { id: string }>, parsed.files, { allowPrivateScopeChange: fromPrivate === true });
+          try {
+            counts = repo.restoreAll(
+              parsed.records as Array<(typeof parsed.records)[number] & { id: string }>,
+              parsed.files,
+              { allowPrivateScopeChange: fromPrivate === true, sessionProjectId: sessionProjectId() });
+          } catch (err) {
+            if (err instanceof PrivateScopeChangeError) {
+              // The transaction rolled back — the all-or-nothing contract
+              // holds, and the message says so before anything else.
+              return { content: [{ type: 'text' as const, text: `error: restore aborted, NOTHING was written — ${err.message}. Changing a private memory's scope requires running from a session inside that project with from_private: true.` }], isError: true };
+            }
+            throw err;
+          }
         } catch (err) {
           return { content: [{ type: 'text' as const, text: `error: restore aborted, nothing was written — ${(err as Error).message}` }], isError: true };
         }
@@ -103,13 +116,7 @@ export function registerPortabilityTools(
         return {
           content: [{
             type: 'text' as const,
-            text: [
-              `restored: ${counts.restored}`, `overwritten: ${counts.overwritten}`,
-              ...(counts.skippedPrivate > 0
-                ? [`skipped: ${counts.skippedPrivate} record(s) would change a PRIVATE project's scope — re-run with from_private: true to acknowledge`]
-                : []),
-              `files: ${counts.files}`,
-            ].join('\n'),
+            text: [`restored: ${counts.restored}`, `overwritten: ${counts.overwritten}`, `files: ${counts.files}`].join('\n'),
           }],
         };
       }
@@ -214,7 +221,12 @@ export function registerPortabilityTools(
       const files = unfiltered ? repo.exportPortableFiles() : [];
 
       if (records.length === 0 && files.length === 0) {
-        return { content: [{ type: 'text' as const, text: 'No memories match the filter criteria.' }] };
+        // The exclusion note must survive this path too: a DB whose only
+        // matches are private must not read as "nothing exists".
+        const note = excludedPrivate > 0
+          ? ` (${excludedPrivate} record(s) from private project(s) excluded — export from within the project to include them)`
+          : '';
+        return { content: [{ type: 'text' as const, text: `No memories match the filter criteria.${note}` }] };
       }
 
       const lines: string[] = [
@@ -275,12 +287,21 @@ export function registerPortabilityTools(
         return { content: [{ type: 'text' as const, text: `error: confidence too low (${memory.confidence.toFixed(2)} < ${PROMOTION.MIN_CONFIDENCE.toFixed(2)})` }], isError: true };
       }
 
-      // Scope policy: promotion is the ONE door out of a private project —
-      // a global memory surfaces everywhere, which is exactly what private
-      // means to prevent. Requires an explicit acknowledgment, never a
-      // silent escape.
-      if (isPrivateProject(memory.project) && fromPrivate !== true) {
-        return { content: [{ type: 'text' as const, text: `error: project "${memory.project}" is marked private in the scope config — promoting makes this memory visible in ALL projects. Re-run with from_private: true to acknowledge.` }], isError: true };
+      // Scope policy: promotion is a door out of a private project — a
+      // global memory surfaces everywhere, which is exactly what private
+      // prevents. It requires STANDING (the session runs inside the
+      // project — same binding as every private read) and then the
+      // explicit acknowledgment. The outside-refusal deliberately does
+      // NOT name the flag: for an autonomous agent, an error that says
+      // "re-run with the flag" is the path of least resistance, and the
+      // flag alone would not work anyway.
+      if (isPrivateProject(memory.project)) {
+        if (memory.project !== sessionProjectId()) {
+          return { content: [{ type: 'text' as const, text: `error: project "${memory.project}" is marked private — its memories can be promoted only from a session inside that project.` }], isError: true };
+        }
+        if (fromPrivate !== true) {
+          return { content: [{ type: 'text' as const, text: `error: project "${memory.project}" is marked private — promoting makes this memory visible in ALL projects. Re-run with from_private: true to acknowledge.` }], isError: true };
+        }
       }
 
       const ok = repo.promote(id);

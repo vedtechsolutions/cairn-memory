@@ -28,6 +28,12 @@ export function registerResources(
     { description: 'Full active plan with all steps, decisions, and notes' },
     async (uri, variables) => {
       const project = variables.project as string;
+      // Session-bound like the briefing resource below — plan content
+      // (step descriptions, decision rationale) is richer than most
+      // memory rows and gets the same protection.
+      if (!canReadPrivate(project, sessionProjectId())) {
+        return { contents: [{ uri: uri.href, mimeType: 'text/plain', text: `[Cairn] ${project} is marked private — its plan is available only from a session inside that project.` }] };
+      }
       const plan = planRepo.getActive(project);
       if (!plan) {
         return { contents: [{ uri: uri.href, mimeType: 'text/plain', text: 'No active plan for this project.' }] };

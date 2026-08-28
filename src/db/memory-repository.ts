@@ -270,7 +270,7 @@ export class MemoryRepository {
   }
 
   /** Strict restore-by-id: no merge, no boosts, no conflict detection */
-  restore(record: PortableRecord & { id: string }, opts: { allowPrivateScopeChange?: boolean } = {}): 'inserted' | 'updated' | 'skipped_private' {
+  restore(record: PortableRecord & { id: string }, opts: { allowPrivateScopeChange?: boolean; sessionProjectId?: string | null } = {}): 'inserted' | 'updated' {
     return portability.restoreRecord(this.db, record, opts);
   }
 
@@ -280,7 +280,7 @@ export class MemoryRepository {
   }
 
   /** Strict-restore a whole document in ONE immediate transaction */
-  restoreAll(records: ReadonlyArray<PortableRecord & { id: string }>, files: readonly PortableFile[], opts: { allowPrivateScopeChange?: boolean } = {}): portability.RestoreCounts {
+  restoreAll(records: ReadonlyArray<PortableRecord & { id: string }>, files: readonly PortableFile[], opts: { allowPrivateScopeChange?: boolean; sessionProjectId?: string | null } = {}): portability.RestoreCounts {
     return portability.restoreDocument(this.db, records, files, opts);
   }
 

@@ -1,4 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { canReadPrivate } from '../../config/cairn-config.js';
+import { sessionProjectId } from '../../utils/session-project.js';
 import * as z from 'zod/v4';
 import type { ReminderRepository } from '../../db/reminder-repository.js';
 import type { SessionCache } from '../../hooks/shared/session-cache.js';
@@ -35,6 +37,9 @@ export function registerReminderTools(
       }),
     },
     async ({ trigger, action, project, max_fires: maxFires, trigger_type: triggerType, trigger_config: triggerConfig }) => {
+      if (project && !canReadPrivate(project, sessionProjectId())) {
+        return { content: [{ type: 'text', text: `error: project "${project}" is marked private — its reminders are managed only from a session inside that project` }], isError: true };
+      }
       const critical = isCritical(getMode());
       if (critical) return critical;
 
@@ -74,7 +79,9 @@ export function registerReminderTools(
       const critical = isCritical(getMode());
       if (critical) return critical;
 
-      const reminders = repo.listActive(repo.resolveProject(project));
+      const listPid = sessionProjectId();
+      const reminders = repo.listActive(repo.resolveProject(project))
+        .filter(r => canReadPrivate(r.project, listPid));
       if (reminders.length === 0) {
         return { content: [{ type: 'text', text: 'No active reminders.' }] };
       }
@@ -102,6 +109,10 @@ export function registerReminderTools(
       }),
     },
     async ({ id, permanent }) => {
+      const existing = repo.findById(id);
+      if (existing && !canReadPrivate(existing.project, sessionProjectId())) {
+        return { content: [{ type: 'text', text: 'error: this reminder belongs to a private project — manage it from a session inside that project' }], isError: true };
+      }
       if (permanent) {
         const ok = repo.delete(id);
         if (ok) sessionCache?.bumpMemoryVersion();

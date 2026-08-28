@@ -44,15 +44,24 @@ export function cairnConfigPath(): string {
 interface ConfigCache { path: string; mtimeMs: number; size: number; ino: number; config: CairnConfig }
 let cache: ConfigCache | null = null;
 const MTIME_GRANULARITY_MS = 2;
-let warnedInvalidAt: number | null = null;
+/** One warning per problem per file VERSION (mtime+size+ino — mtime alone
+ *  can collide across versions), so a broken privacy config is loud once
+ *  rather than silent or spammy. */
+let warnedIdentity: string | null = null;
 
-function parseConfig(raw: string): CairnConfig {
+/** Parse, distinguishing "no scope configured" (a legal minimal file)
+ *  from a WRONG-SHAPED scope block (a typo like private_projects, or a
+ *  string where a list belongs) — the latter silently deactivating every
+ *  private project is the likelier user error and must warn. */
+function parseConfig(raw: string): CairnConfig | 'bad-shape' {
   const parsed = JSON.parse(raw) as unknown;
-  if (parsed === null || typeof parsed !== 'object') return EMPTY_CONFIG;
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return 'bad-shape';
   const scope = (parsed as { scope?: unknown }).scope;
-  if (scope === null || typeof scope !== 'object') return EMPTY_CONFIG;
+  if (scope === undefined) return EMPTY_CONFIG; // scope simply not configured
+  if (scope === null || typeof scope !== 'object') return 'bad-shape';
   const list = (scope as { privateProjects?: unknown }).privateProjects;
-  if (!Array.isArray(list)) return EMPTY_CONFIG;
+  if (list === undefined) return EMPTY_CONFIG;
+  if (!Array.isArray(list)) return 'bad-shape';
   return {
     scope: {
       privateProjects: new Set(list.filter((p): p is string => typeof p === 'string' && p.length > 0)),
@@ -62,12 +71,24 @@ function parseConfig(raw: string): CairnConfig {
 
 export function loadCairnConfig(): CairnConfig {
   const path = cairnConfigPath();
-  // throwIfNoEntry: the absent-file case is the COMMON case and must not
-  // pay exception cost on hot filters (measured ~15us/throw vs ~1us).
-  const st = statSync(path, { throwIfNoEntry: false });
+  // throwIfNoEntry covers only ENOENT; any OTHER stat error (EACCES, a
+  // directory in the path replaced by a file, ...) must honor the
+  // tolerant-reader contract too — empty config, but WITH a signal: an
+  // unreadable privacy config silently failing open is the worst outcome.
+  let st: ReturnType<typeof statSync>;
+  try {
+    st = statSync(path, { throwIfNoEntry: false });
+  } catch (err) {
+    if (warnedIdentity !== 'stat-error') {
+      console.error(`[cairn] config at ${path} could not be read (${(err as NodeJS.ErrnoException).code ?? 'stat failed'}) — scope settings are INACTIVE`);
+      warnedIdentity = 'stat-error';
+    }
+    cache = null;
+    return EMPTY_CONFIG;
+  }
   if (!st) {
-    // Absent (or unstatable) file IS the default config; drop any cache
-    // so deleting the file reverts behavior immediately.
+    // Absent file IS the default config; drop any cache so deleting the
+    // file reverts behavior immediately.
     cache = null;
     return EMPTY_CONFIG;
   }
@@ -75,18 +96,26 @@ export function loadCairnConfig(): CairnConfig {
     && cache.size === st.size && cache.ino === st.ino) {
     return cache.config;
   }
+  const identity = `${st.mtimeMs}:${st.size}:${st.ino}`;
   let config: CairnConfig;
+  let problem: string | null = null;
   try {
-    config = parseConfig(readFileSync(path, 'utf-8'));
-  } catch {
-    // PRESENT but unparseable must not degrade silently: an invalid file
-    // fails open (no restrictions), and for a privacy setting that needs
-    // a signal. Once per file version, not per access.
-    if (warnedInvalidAt !== st.mtimeMs) {
-      console.error(`[cairn] config at ${path} is invalid JSON — scope settings are INACTIVE until fixed`);
-      warnedInvalidAt = st.mtimeMs;
+    const parsed = parseConfig(readFileSync(path, 'utf-8'));
+    if (parsed === 'bad-shape') {
+      problem = 'has an unrecognized shape (expected { "scope": { "privateProjects": ["<id>"] } })';
+      config = EMPTY_CONFIG;
+    } else {
+      config = parsed;
     }
+  } catch {
+    problem = 'is invalid JSON';
     config = EMPTY_CONFIG;
+  }
+  // PRESENT but broken must not degrade silently — one warning per file
+  // version (a privacy setting failing open needs a signal).
+  if (problem !== null && warnedIdentity !== identity) {
+    console.error(`[cairn] config at ${path} ${problem} — scope settings are INACTIVE until fixed`);
+    warnedIdentity = identity;
   }
   if (Date.now() - st.mtimeMs >= MTIME_GRANULARITY_MS) {
     cache = { path, mtimeMs: st.mtimeMs, size: st.size, ino: st.ino, config };
@@ -120,5 +149,5 @@ export function canReadPrivate(memoryProject: string | null, sessionProjectId: s
 /** TEST-ONLY cache reset (config path changes between hermetic tests). */
 export function resetConfigCacheForTests(): void {
   cache = null;
-  warnedInvalidAt = null;
+  warnedIdentity = null;
 }
