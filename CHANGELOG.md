@@ -2,13 +2,11 @@
 
 ## [Unreleased]
 
-### Added
-
-- Published `cairn-contract@1.0.0-dev.0` to npm under MIT (LICENSE, README, and repository metadata added) — the standalone integration contract for adapter authors; the `cairn-memory` runtime is unaffected and keeps bundling its own copy.
-
 ## [5.4.0] - 2026-08-29
 
 ### Added
+
+- Published `cairn-contract@1.0.0-dev.0` to npm under MIT (LICENSE, README, and repository metadata added) — the standalone integration contract for adapter authors; the `cairn-memory` runtime is unaffected and keeps bundling its own copy.
 
 - Added `cairn import --from codex-memories|claude-mem|memory-md`: one-way, idempotent migration of existing memories through the standard scrubbing/dedup pipeline, with dry-run preview and a reported exclusion list.
 - Added marketplace plugins: the repository now serves as a plugin marketplace for both Claude Code (`/plugin marketplace add vedtechsolutions/cairn-memory`) and Codex CLI (`codex plugin marketplace add vedtechsolutions/cairn-memory`). Thin plugins — the `cairn-memory` npm package remains the one runtime; the Claude plugin wires hooks + MCP, the Codex plugin wires MCP (hooks stay with `cairn init` so their one-time trust approval survives updates).
