@@ -2,6 +2,8 @@ import { createHash } from 'node:crypto';
 
 import type Database from 'better-sqlite3';
 
+import { ApplyValidationError } from './errors.js';
+
 /**
  * Typed access to the free-core replica tables (brief D3 ownership map):
  * sync_entity_map, sync_alias_log, sync_conflict_sets, sync_contributors
@@ -9,8 +11,8 @@ import type Database from 'better-sqlite3';
  * called INSIDE the apply batch transaction — nothing opens its own.
  *
  * Cardinality (X26): a local row carries at most one association —
- * enforced by the UNIQUE(local_memory_id) constraint; creating a binding
- * deletes any existing association for that row in the same transaction.
+ * enforced by the UNIQUE(local_memory_id) constraint and the fail-closed
+ * displacement assertion below.
  */
 
 export type EntityMapState = 'bound' | 'shadow-assoc';
@@ -25,6 +27,7 @@ export interface EntityMapEntry {
   projection_hash: string;
   inert_projection: string | null;
   contributors: string | null;
+  updated_at: string;
 }
 
 export function getByEntityId(db: Database.Database, entityId: string): EntityMapEntry | undefined {
@@ -44,12 +47,25 @@ export interface BindInput {
   projectionHash: string;
 }
 
-/** Create or update a binding. Closes any other association the row
- *  carries and any prior entry under this entity id (rebind after
- *  alias/fork) — cardinality holds in both directions. */
+/** Displacing a DIFFERENT entity's association is never a side effect:
+ *  a shadow-assoc holds the only offline-materializable copy of its
+ *  entity (Π), and silently deleting it violates D2's no-vanish rule
+ *  (slice-4 Codex gate #2). Only an explicit transition (T7-class, M3)
+ *  may close-and-materialize; until then the batch fails closed. */
+function assertNoForeignAssociation(db: Database.Database, localMemoryId: string, entityId: string): void {
+  const existing = db.prepare('SELECT entity_id FROM sync_entity_map WHERE local_memory_id = ? AND entity_id != ?')
+    .get(localMemoryId, entityId) as { entity_id: string } | undefined;
+  if (existing) {
+    throw new ApplyValidationError(
+      `row ${localMemoryId} already carries an association to entity ${existing.entity_id} — displacement requires an explicit transition`,
+    );
+  }
+}
+
+/** Create or update a binding. Cardinality (X26) fails closed: a row
+ *  carrying another entity's association refuses the batch. */
 export function bindEntity(db: Database.Database, input: BindInput): void {
-  db.prepare('DELETE FROM sync_entity_map WHERE local_memory_id = ? AND entity_id != ?')
-    .run(input.localMemoryId, input.entityId);
+  assertNoForeignAssociation(db, input.localMemoryId, input.entityId);
   db.prepare(`
     INSERT INTO sync_entity_map (entity_id, local_memory_id, project, state, canonical_version, canonical_hash, projection_hash, inert_projection, contributors, updated_at)
     VALUES (?, ?, ?, 'bound', ?, ?, ?, NULL, NULL, datetime('now'))
@@ -70,8 +86,7 @@ export interface ShadowAssocInput extends BindInput {
 }
 
 export function writeShadowAssoc(db: Database.Database, input: ShadowAssocInput): void {
-  db.prepare('DELETE FROM sync_entity_map WHERE local_memory_id = ? AND entity_id != ?')
-    .run(input.localMemoryId, input.entityId);
+  assertNoForeignAssociation(db, input.localMemoryId, input.entityId);
   db.prepare(`
     INSERT INTO sync_entity_map (entity_id, local_memory_id, project, state, canonical_version, canonical_hash, projection_hash, inert_projection, contributors, updated_at)
     VALUES (?, ?, ?, 'shadow-assoc', ?, ?, ?, ?, ?, datetime('now'))

@@ -48,10 +48,24 @@ export interface ProjectionFields {
   anchor: string | null;
 }
 
-/** P applied to an inbound payload: neutralize + scrub every free-text
- *  field. The result is BOTH what gets stored and what gets hashed. */
+const clean = (text: string): string => scrubSecrets(neutralizeMemoryText(sanitize(text))).text;
+
+/** Recursive cleaner for structured free-text carriers (fingerprint
+ *  facets): every string value is neutralized + scrubbed. */
+export function cleanDeep(value: unknown): unknown {
+  if (typeof value === 'string') return clean(value);
+  if (Array.isArray(value)) return value.map(cleanDeep);
+  if (value !== null && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([k, v]) => [k, cleanDeep(v)]));
+  }
+  return value;
+}
+
+/** P applied to an inbound payload: neutralize + scrub EVERY
+ *  future-rendered free-text surface — content, context, tags, anchor
+ *  (slice-4 Codex gate: tags/anchor were copied raw). The result is
+ *  BOTH what gets stored and what gets hashed. */
 export function projectPayload(record: PortableRecord): ProjectionFields {
-  const clean = (text: string): string => scrubSecrets(neutralizeMemoryText(sanitize(text))).text;
   let context: ProjectionFields['context'] = null;
   if (record.context) {
     const ctx: { why?: string; how_to_apply?: string } = {};
@@ -63,9 +77,9 @@ export function projectPayload(record: PortableRecord): ProjectionFields {
     kind: record.kind,
     project: record.project,
     content: clean(record.content),
-    tags: [...record.tags].sort(),
+    tags: record.tags.map((t) => clean(t)).sort(),
     context,
-    anchor: record.anchor,
+    anchor: record.anchor === null ? null : clean(record.anchor),
   };
 }
 
@@ -109,8 +123,10 @@ interface RowFieldsRow {
 }
 
 /** H(canon(local_row_bytes)) — the local side of every projection guard.
+ *  Named for its DOMAIN: this is a projection-domain hash of the stored
+ *  row, never comparable to a canonical_content_hash (review rename).
  *  Reads the row as stored; returns null when the row is absent. */
-export function canonicalHashOfRow(db: Database.Database, memoryId: string): string | null {
+export function projectionHashOfRow(db: Database.Database, memoryId: string): string | null {
   const row = db.prepare(
     'SELECT kind, project, content, tags, context, anchor FROM memories WHERE id = ?',
   ).get(memoryId) as RowFieldsRow | undefined;

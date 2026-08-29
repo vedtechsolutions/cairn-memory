@@ -1,10 +1,7 @@
 import type Database from 'better-sqlite3';
 import {
-  CANONICALIZATION_VERSION, CONTENT_HASH_VERSION,
-  isSyncEventType, validateRecordPayload, SHAREABLE_KINDS,
   type SyncEvent, type SyncUpsertEvent, type SyncTombstoneEvent,
   type SyncAliasEvent, type SyncConflictOpenEvent, type SyncResolveCommitEvent,
-  type SyncEntityEnvelope, type PortableRecord,
 } from 'waykeep-contract';
 
 import { generateId } from '../../utils/index.js';
@@ -12,8 +9,9 @@ import {
   getByEntityId, closeEntry, recordAlias, mergeContributors, contributorsOf,
   openConflictSet, resolveConflictSet, bumpGeneration, readGeneration, bindEntity,
 } from './entity-map.js';
-import { canonicalHashOfRow, isLocallyRetracted } from './projection.js';
-import { applyUpsert, insertProjectedRow, writeForkNotice, type InertProjection, type UpsertOutcome } from './upsert-apply.js';
+import { projectionHashOfRow } from './projection.js';
+import { validateBatch, validatePayload } from './validator.js';
+import { applyUpsert, insertProjectedRow, writeForkNotice, hasUnpushedLocalIntent, type InertProjection, type UpsertOutcome } from './upsert-apply.js';
 import { ApplyValidationError, ProtocolInvariantError } from './errors.js';
 
 /**
@@ -57,33 +55,6 @@ function writeCursor(db: Database.Database, project: string, seq: number): void 
   `).run(CURSOR_NS, `cursor:${project}`, String(seq));
 }
 
-/** Inbound apply predicate (D2, enrollment-free): versions supported,
- *  shape valid, kind known, project matches the caller's binding. */
-function validateEnvelope(env: SyncEntityEnvelope, targetProject: string): PortableRecord {
-  if (env.canonicalization_version !== CANONICALIZATION_VERSION || env.hash_version !== CONTENT_HASH_VERSION) {
-    throw new ApplyValidationError(`unsupported canonicalization/hash version (${env.canonicalization_version}/${env.hash_version})`);
-  }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(env.payload);
-  } catch {
-    throw new ApplyValidationError(`entity ${env.entity_id}: payload is not valid JSON`);
-  }
-  const record = validateRecordPayload(parsed);
-  if (!record.id) throw new ApplyValidationError(`entity ${env.entity_id}: payload record carries no id`);
-  // D7's frozen v1 allowlist, enforced INBOUND too: correction
-  // (user-voice, highest injection authority), user_profile, reference,
-  // goal, task_state and rule never replicate into this store —
-  // regardless of what a server or a hostile teammate sends.
-  if (!(SHAREABLE_KINDS as readonly string[]).includes(record.kind)) {
-    throw new ApplyValidationError(`entity ${env.entity_id}: kind '${record.kind}' is not team-shareable`);
-  }
-  if (record.project !== targetProject) {
-    throw new ApplyValidationError(`entity ${env.entity_id}: record project does not match the caller's target binding`);
-  }
-  return record;
-}
-
 function tombstoneLocalRow(db: Database.Database, memoryId: string): void {
   db.prepare(`
     INSERT INTO memory_tombstones (memory_id, action, project, kind, content, deleted_at)
@@ -92,16 +63,25 @@ function tombstoneLocalRow(db: Database.Database, memoryId: string): void {
   db.prepare('DELETE FROM memories WHERE id = ?').run(memoryId);
 }
 
-function applyTombstone(db: Database.Database, ev: SyncTombstoneEvent): EventOutcome {
+function applyTombstone(db: Database.Database, targetProject: string, ev: SyncTombstoneEvent): EventOutcome {
   const entry = getByEntityId(db, ev.entity_id);
   if (!entry) return 'replay-noop';
+  // Project boundary: a batch for project A must never touch project
+  // B's rows — a cross-project tombstone previously deleted them
+  // (slice-4 Codex gate #1).
+  if (entry.project !== targetProject) {
+    throw new ApplyValidationError(`tombstone for entity ${ev.entity_id} targets project '${entry.project}', not the caller's binding`);
+  }
+  // Version guard: a tombstone older than the bound version is stale
+  // stream history, not a retraction of newer state (gate #5).
+  if (ev.entity_version <= entry.canonical_version) return 'replay-noop';
   if (entry.state === 'shadow-assoc') {
     // S3: close the association only — the local row is untouched.
     closeEntry(db, ev.entity_id);
     return 'assoc-closed';
   }
-  const localHash = canonicalHashOfRow(db, entry.local_memory_id);
-  if (localHash !== null && (localHash !== entry.projection_hash || isLocallyRetracted(db, entry.local_memory_id))) {
+  const localHash = projectionHashOfRow(db, entry.local_memory_id);
+  if (localHash !== null && hasUnpushedLocalIntent(db, entry.local_memory_id, entry)) {
     // S9 fork-preserve: an unpushed local edit — including a pending
     // local retraction, which the projection cannot see (review C3) —
     // is never destroyed: close the binding and force the row local-only.
@@ -121,21 +101,43 @@ function applyAlias(db: Database.Database, project: string, ev: SyncAliasEvent):
   recordAlias(db, ev.from_entity_id, ev.to_entity_id, ev.as_of_version, ev.seq);
   if (!fromEntry) return 'replay-noop';
 
+  // Validate BEFORE deleting anything: the loser's row may be the only
+  // local representation, and an absent or cross-project target must
+  // fail the transaction, never erase it (slice-4 Codex gate #7).
+  if (fromEntry.project !== project) {
+    throw new ApplyValidationError(`alias source entity ${ev.from_entity_id} belongs to project '${fromEntry.project}', not the caller's binding`);
+  }
   const toEntry = getByEntityId(db, ev.to_entity_id);
+  if (!toEntry) {
+    throw new ApplyValidationError(`alias target entity ${ev.to_entity_id} is unknown — stream order violation`);
+  }
+  if (toEntry.project !== project) {
+    throw new ApplyValidationError(`alias target entity ${ev.to_entity_id} belongs to project '${toEntry.project}', not the caller's binding`);
+  }
+  if (toEntry.state === 'shadow-assoc' && !toEntry.inert_projection) {
+    throw new ApplyValidationError(`alias target entity ${ev.to_entity_id} is shadowed without an inert projection — not materializable`);
+  }
+
   // T6: tombstone L's row; if E is not materialized, materialize it
-  // from an assoc's inert projection Π (X26); merge provenance.
+  // from the assoc's inert projection Π (X26); merge provenance.
   if (fromEntry.state === 'bound') tombstoneLocalRow(db, fromEntry.local_memory_id);
   closeEntry(db, ev.from_entity_id);
-  if (toEntry?.state === 'shadow-assoc' && toEntry.inert_projection) {
+  if (toEntry.state === 'shadow-assoc' && toEntry.inert_projection) {
     // The assoc's local row is the opted-out row, NOT E's content: E
     // materializes as its OWN new row (team content must not vanish).
     const inert = JSON.parse(toEntry.inert_projection) as InertProjection;
     const newId = generateId();
     insertProjectedRow(db, newId, inert);
+    closeEntry(db, ev.to_entity_id);
     bindEntity(db, {
       entityId: ev.to_entity_id, localMemoryId: newId, project,
-      version: toEntry.canonical_version, canonicalHash: toEntry.canonical_hash, projectionHash: toEntry.projection_hash,
+      version: toEntry.canonical_version, canonicalHash: toEntry.canonical_hash,
+      projectionHash: projectionHashOfRow(db, newId) ?? toEntry.projection_hash,
     });
+    // The assoc's contributor snapshot C is part of E's provenance.
+    if (toEntry.contributors) {
+      mergeContributors(db, ev.to_entity_id, JSON.parse(toEntry.contributors) as string[], ev.seq);
+    }
   }
   // Provenance lives in the sync_contributors projection — the map's
   // snapshot column is populated only for shadow-assocs (review C5).
@@ -153,7 +155,7 @@ function applyConflictOpen(db: Database.Database, project: string, ev: SyncConfl
 }
 
 function applyResolveCommit(db: Database.Database, project: string, ev: SyncResolveCommitEvent): EventOutcome {
-  const record = validateEnvelope(ev.canonical, project);
+  const record = validatePayload(ev.canonical, project);
   // D1 (frozen): within composed applications, TOMBSTONES BEFORE
   // UPSERTS. The reverse order let the canonical's exact-match see a
   // still-live member — minting a spurious near-dup set, or, when the
@@ -161,7 +163,12 @@ function applyResolveCommit(db: Database.Database, project: string, ev: SyncReso
   // one member" resolution), halting the project on T8a (review C1).
   for (const entityId of ev.tombstoned_entity_ids) {
     if (entityId === ev.canonical.entity_id) continue;
-    applyTombstone(db, { type: 'tombstone', seq: ev.seq, entity_id: entityId, entity_version: 0, deleted_by: '', deleted_at: '' });
+    // A resolve tombstone always supersedes the member's bound version.
+    const member = getByEntityId(db, entityId);
+    applyTombstone(db, project, {
+      type: 'tombstone', seq: ev.seq, entity_id: entityId,
+      entity_version: (member?.canonical_version ?? 0) + 1, deleted_by: '', deleted_at: '',
+    });
   }
   applyUpsert(db, project, ev.canonical, record);
   mergeContributors(db, ev.canonical.entity_id, ev.contributors, ev.seq);
@@ -178,13 +185,12 @@ export function applyEventBatch(db: Database.Database, targetProject: string, ev
     const startCursor = readCursor(db, targetProject);
     let cursor = startCursor;
     const outcomes: ApplyBatchResult['outcomes'] = [];
+    // Fail-closed validation of the WHOLE batch before any handler
+    // runs: closed vocabulary, per-event runtime shape, bounds, unique
+    // sequences (validator.ts). Nothing malformed advances the cursor.
+    validateBatch(events);
     const ordered = [...events].sort((a, b) => a.seq - b.seq);
     for (const ev of ordered) {
-      if (!isSyncEventType(ev.type)) {
-        // Closed vocabulary: an unknown event type is a protocol failure,
-        // never a skip (contract header policy).
-        throw new ApplyValidationError(`unknown event type '${(ev as { type: string }).type}' in the closed vocabulary`);
-      }
       if (ev.seq <= startCursor) {
         outcomes.push({ seq: ev.seq, type: ev.type, outcome: 'replay-noop' });
         continue;
@@ -193,10 +199,10 @@ export function applyEventBatch(db: Database.Database, targetProject: string, ev
       switch (ev.type) {
         case 'upsert': {
           const up = ev as SyncUpsertEvent;
-          outcome = applyUpsert(db, targetProject, up.entity, validateEnvelope(up.entity, targetProject));
+          outcome = applyUpsert(db, targetProject, up.entity, validatePayload(up.entity, targetProject));
           break;
         }
-        case 'tombstone': outcome = applyTombstone(db, ev as SyncTombstoneEvent); break;
+        case 'tombstone': outcome = applyTombstone(db, targetProject, ev as SyncTombstoneEvent); break;
         case 'alias': outcome = applyAlias(db, targetProject, ev as SyncAliasEvent); break;
         case 'conflict-open': outcome = applyConflictOpen(db, targetProject, ev as SyncConflictOpenEvent); break;
         case 'resolve-commit': outcome = applyResolveCommit(db, targetProject, ev as SyncResolveCommitEvent); break;

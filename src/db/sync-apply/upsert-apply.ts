@@ -3,11 +3,12 @@ import type { SyncEntityEnvelope, PortableRecord } from 'waykeep-contract';
 
 import { generateId } from '../../utils/index.js';
 import {
-  projectPayload, canonicalRowBytes, hashCanonical, canonicalHashOfRow, isLocallyRetracted,
+  projectPayload, canonicalRowBytes, hashCanonical, projectionHashOfRow, isLocallyRetracted, cleanDeep,
   type ProjectionFields,
 } from './projection.js';
+import { ApplyValidationError } from './errors.js';
 import {
-  getByEntityId, getByLocalMemoryId, bindEntity, writeShadowAssoc,
+  getByEntityId, getByLocalMemoryId, bindEntity, writeShadowAssoc, closeEntry,
   mergeContributors, openConflictSet, deterministicConflictSetId,
 } from './entity-map.js';
 import { ProtocolInvariantError } from './errors.js';
@@ -25,6 +26,7 @@ export interface InertProjection {
   record: ProjectionFields;
   confidence: number;
   source: string;
+  fingerprint: Record<string, unknown> | null;
   author: string;
   origin_client: string;
   created_at: string;
@@ -37,6 +39,7 @@ export function buildInertProjection(env: SyncEntityEnvelope, record: PortableRe
     record: projectPayload(record),
     confidence: record.confidence,
     source: record.source,
+    fingerprint: record.fingerprint === null ? null : (cleanDeep(record.fingerprint) as Record<string, unknown>),
     author: env.author,
     origin_client: env.origin_client,
     created_at: env.created_at,
@@ -50,11 +53,44 @@ export function buildInertProjection(env: SyncEntityEnvelope, record: PortableRe
 export function insertProjectedRow(db: Database.Database, id: string, p: InertProjection): void {
   db.prepare(`
     INSERT INTO memories (id, content, kind, project, tags, confidence, source, origin_client, author,
-                          created_at, updated_at, recall_count, invalidated, expires_at, context, anchor)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?)
+                          created_at, updated_at, recall_count, invalidated, expires_at, fingerprint, context, anchor)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?)
   `).run(id, p.record.content, p.record.kind, p.record.project, JSON.stringify(p.record.tags),
     p.confidence, p.source, p.origin_client, p.author, p.created_at, p.updated_at,
-    p.expires_at, p.record.context ? JSON.stringify(p.record.context) : null, p.record.anchor);
+    p.expires_at, p.fingerprint ? JSON.stringify(p.fingerprint) : null,
+    p.record.context ? JSON.stringify(p.record.context) : null, p.record.anchor);
+}
+
+/** "Unpushed local intent" — the dirty half of the clean/diverged
+ *  partition (slice-4 gates, both reviewers). Projection equality alone
+ *  is NOT intent equality: local retractions set flags outside the
+ *  projection, and an explicit confidence change journals without
+ *  changing projected bytes. Dirty ⟺ projection differs, OR the row is
+ *  locally retracted, OR a journal entry for the row postdates the last
+ *  map write (>= : a same-second tie counts as intent — over-forking is
+ *  safe, silent overwrite is not). Autonomous churn journals nothing,
+ *  so it never false-forks. */
+export function hasUnpushedLocalIntent(db: Database.Database, memoryId: string, entry: { projection_hash: string; updated_at?: string }): boolean {
+  const localHash = projectionHashOfRow(db, memoryId);
+  if (localHash !== entry.projection_hash) return true;
+  if (isLocallyRetracted(db, memoryId)) return true;
+  const since = (entry as { updated_at?: string }).updated_at;
+  if (!since) return false;
+  return db.prepare('SELECT 1 FROM sync_journal WHERE memory_id = ? AND created_at >= ? LIMIT 1')
+    .get(memoryId, since) !== undefined;
+}
+
+/** A pre-existing row may be reused for a binding ONLY when it provably
+ *  is the same row: same project, same as-stored projection bytes. Any
+ *  other coincidence of ids is a UUID collision and fails the batch
+ *  closed (slice-4 Codex gate #2 — a cross-project same-id probe
+ *  corrupted the map and the R22 hash). */
+function assertRebindLegal(db: Database.Database, id: string, project: string, pHash: string): void {
+  const row = db.prepare('SELECT project FROM memories WHERE id = ?').get(id) as { project: string | null } | undefined;
+  if (!row) return;
+  if (row.project !== project || projectionHashOfRow(db, id) !== pHash) {
+    throw new ApplyValidationError(`id ${id} exists with different project or bytes — refusing collision rebind`);
+  }
 }
 
 function storedHashes(env: SyncEntityEnvelope, projected: ProjectionFields): { ch: string; ph: string } {
@@ -101,7 +137,7 @@ function selectExactMatch(
 
   const classes: Array<Array<{ id: string; share_state: string | null; boundTo?: ReturnType<typeof getByLocalMemoryId> }>> = [[], [], []];
   for (const c of candidates) {
-    if (canonicalHashOfRow(db, c.id) !== pHash) continue;
+    if (projectionHashOfRow(db, c.id) !== pHash) continue;
     const entry = getByLocalMemoryId(db, c.id);
     if (entry?.state === 'bound') { classes[0].push({ ...c, boundTo: entry }); continue; }
     // A row already carrying a shadow-assoc is EXCLUDED before the
@@ -127,7 +163,7 @@ export function applyUpsert(db: Database.Database, project: string, env: SyncEnt
     if (existing.state === 'shadow-assoc') {
       // S8 (refresh half): still projection-equal ⇒ update the assoc in
       // place. The materializing half is the worker milestone.
-      const localHash = canonicalHashOfRow(db, existing.local_memory_id);
+      const localHash = projectionHashOfRow(db, existing.local_memory_id);
       if (localHash === ph) {
         writeShadowAssoc(db, {
           entityId: env.entity_id, localMemoryId: existing.local_memory_id, project,
@@ -137,14 +173,25 @@ export function applyUpsert(db: Database.Database, project: string, env: SyncEnt
         });
         return 'assoc-refreshed';
       }
-      // Diverged remote edit of a shadowed row (S8 materializing half)
-      // is out of M1 scope: leave the assoc at its version — the worker
-      // milestone materializes. Deliberately no row write.
-      return 'replay-noop';
+      // S8 materializing half: the remote edit diverged from the local
+      // row, so the edit must not stay invisible AND must not be
+      // consumed unrepresentably (slice-4 Codex gate #6 — the previous
+      // no-op advanced the cursor past an unrecoverable edit). Close
+      // the assoc and materialize E from the NEW payload as its own
+      // row (§6 S8).
+      const s8Id = generateId();
+      insertProjectedRow(db, s8Id, buildInertProjection(env, record));
+      closeEntry(db, env.entity_id);
+      bindEntity(db, {
+        entityId: env.entity_id, localMemoryId: s8Id, project,
+        version: env.entity_version, canonicalHash: ch,
+        projectionHash: projectionHashOfRow(db, s8Id) ?? ph,
+      });
+      mergeContributors(db, env.entity_id, env.contributors, env.entity_version);
+      return 'applied-edit';
     }
-    // Bound: T2 (clean) or T3 (diverged).
-    const localHash = canonicalHashOfRow(db, existing.local_memory_id);
-    if (localHash !== existing.projection_hash || isLocallyRetracted(db, existing.local_memory_id)) {
+    // Bound: T2 (clean) or T3 (diverged — any unpushed local intent).
+    if (hasUnpushedLocalIntent(db, existing.local_memory_id, existing)) {
       // T3 fork (M1-minimal): the incoming edit materializes as a NEW
       // row and takes the binding; the locally-edited row — including a
       // locally-RETRACTED one, which the projection hash cannot see
@@ -154,24 +201,39 @@ export function applyUpsert(db: Database.Database, project: string, env: SyncEnt
       insertProjectedRow(db, forkId, buildInertProjection(env, record));
       db.prepare("UPDATE memories SET share_state = 'local' WHERE id = ?").run(existing.local_memory_id);
       writeForkNotice(db, existing.local_memory_id, { entity: env.entity_id, path: 'T3', seq: env.entity_version });
-      bindEntity(db, { entityId: env.entity_id, localMemoryId: forkId, project, version: env.entity_version, canonicalHash: ch, projectionHash: ph });
+      // The old row keeps its binding row-side until closeEntry via the
+      // ON CONFLICT rebind below; ph from the row as written (R22).
+      bindEntity(db, { entityId: env.entity_id, localMemoryId: forkId, project, version: env.entity_version, canonicalHash: ch, projectionHash: projectionHashOfRow(db, forkId) ?? ph });
       mergeContributors(db, env.entity_id, env.contributors, env.entity_version);
       return 'forked';
     }
+    // Every MUTABLE wire field applies — kind, source, fingerprint and
+    // expires_at were previously left stale (slice-4 Codex gate #4).
+    // Immutable: id, created_at, author (the creator).
+    const inert = buildInertProjection(env, record);
     db.prepare(`
-      UPDATE memories SET content = ?, tags = ?, context = ?, anchor = ?, confidence = ?,
+      UPDATE memories SET content = ?, kind = ?, tags = ?, context = ?, anchor = ?, confidence = ?,
+        source = ?, fingerprint = ?, expires_at = ?,
         embedding = NULL, embedding_model = NULL
       WHERE id = ?
-    `).run(projected.content, JSON.stringify(projected.tags),
+    `).run(projected.content, projected.kind, JSON.stringify(projected.tags),
       projected.context ? JSON.stringify(projected.context) : null,
-      projected.anchor, record.confidence, existing.local_memory_id);
+      projected.anchor, record.confidence, record.source,
+      inert.fingerprint ? JSON.stringify(inert.fingerprint) : null, record.expires_at,
+      existing.local_memory_id);
     // The revision trigger just stamped the local clock; the SERVER
     // timestamp is authoritative for replicated state (D13 — review
     // C10). updated_at is not in the trigger's UPDATE OF list, so this
     // does not re-fire it. The old vector described the old content —
     // cleared above for the backfill worker to re-embed (review C6).
     db.prepare('UPDATE memories SET updated_at = ? WHERE id = ?').run(env.updated_at, existing.local_memory_id);
-    bindEntity(db, { entityId: env.entity_id, localMemoryId: existing.local_memory_id, project, version: env.entity_version, canonicalHash: ch, projectionHash: ph });
+    // R22: ph is recomputed from the row AS WRITTEN, never assumed from
+    // the incoming projection (slice-4 Codex gate #3).
+    bindEntity(db, {
+      entityId: env.entity_id, localMemoryId: existing.local_memory_id, project,
+      version: env.entity_version, canonicalHash: ch,
+      projectionHash: projectionHashOfRow(db, existing.local_memory_id) ?? ph,
+    });
     mergeContributors(db, env.entity_id, env.contributors, env.entity_version);
     return 'applied-edit';
   }
@@ -186,11 +248,13 @@ export function applyUpsert(db: Database.Database, project: string, env: SyncEnt
       );
     }
     // T8b: projection-equal, canonically distinct — coexist + client-
-    // minted deterministic near-dup set.
+    // minted deterministic near-dup set. Reusing an existing row id
+    // requires proof it IS this row (collision guard).
+    assertRebindLegal(db, record.id!, project, ph);
     if (db.prepare('SELECT 1 FROM memories WHERE id = ?').get(record.id!) === undefined) {
       insertProjectedRow(db, record.id!, buildInertProjection(env, record));
     }
-    bindEntity(db, { entityId: env.entity_id, localMemoryId: record.id!, project, version: env.entity_version, canonicalHash: ch, projectionHash: ph });
+    bindEntity(db, { entityId: env.entity_id, localMemoryId: record.id!, project, version: env.entity_version, canonicalHash: ch, projectionHash: projectionHashOfRow(db, record.id!) ?? ph });
     mergeContributors(db, env.entity_id, env.contributors, env.entity_version);
     const members = [env.entity_id, match.boundTo.entity_id];
     openConflictSet(db, {
@@ -215,28 +279,33 @@ export function applyUpsert(db: Database.Database, project: string, env: SyncEnt
     const isSelf = match.id === record.id;
     // T5: offline twin — insert incoming id-preserved; the temporary
     // content duplicate is legal and the later alias event resolves it.
+    // Reusing an existing id that is NOT the matched row requires the
+    // collision guard.
+    if (!isSelf) assertRebindLegal(db, record.id!, project, ph);
     if (!isSelf && db.prepare('SELECT 1 FROM memories WHERE id = ?').get(record.id!) === undefined) {
       insertProjectedRow(db, record.id!, buildInertProjection(env, record));
     }
     // S6/R22: ph is the hash of the bytes actually stored — on a rebind
     // of a pre-existing row those may not be the incoming payload's
     // (review C8).
-    bindEntity(db, { entityId: env.entity_id, localMemoryId: record.id!, project, version: env.entity_version, canonicalHash: ch, projectionHash: canonicalHashOfRow(db, record.id!) ?? ph });
+    bindEntity(db, { entityId: env.entity_id, localMemoryId: record.id!, project, version: env.entity_version, canonicalHash: ch, projectionHash: projectionHashOfRow(db, record.id!) ?? ph });
     mergeContributors(db, env.entity_id, env.contributors, env.entity_version);
     return isSelf ? 'replay-noop' : 'twin-inserted';
   }
 
   // T1: genuinely new entity.
   if (db.prepare('SELECT 1 FROM memories WHERE id = ?').get(record.id!) !== undefined) {
-    // Replay after a lost map (or an id collision): never silently
-    // duplicate and never clobber — rebind to the existing row, with
-    // the AS-STORED projection hash (S6/R22 — review C8).
-    bindEntity(db, { entityId: env.entity_id, localMemoryId: record.id!, project, version: env.entity_version, canonicalHash: ch, projectionHash: canonicalHashOfRow(db, record.id!) ?? ph });
+    // Replay after a lost map entry: rebind is legal ONLY when this is
+    // provably the same row — same project, same as-stored bytes; a
+    // UUID collision fails the batch instead of corrupting the map
+    // (slice-4 Codex gate #2). ph is the AS-STORED hash (S6/R22).
+    assertRebindLegal(db, record.id!, project, ph);
+    bindEntity(db, { entityId: env.entity_id, localMemoryId: record.id!, project, version: env.entity_version, canonicalHash: ch, projectionHash: projectionHashOfRow(db, record.id!) ?? ph });
     mergeContributors(db, env.entity_id, env.contributors, env.entity_version);
     return 'replay-noop';
   }
   insertProjectedRow(db, record.id!, buildInertProjection(env, record));
-  bindEntity(db, { entityId: env.entity_id, localMemoryId: record.id!, project, version: env.entity_version, canonicalHash: ch, projectionHash: ph });
+  bindEntity(db, { entityId: env.entity_id, localMemoryId: record.id!, project, version: env.entity_version, canonicalHash: ch, projectionHash: projectionHashOfRow(db, record.id!) ?? ph });
   mergeContributors(db, env.entity_id, env.contributors, env.entity_version);
   return 'applied-new';
 }

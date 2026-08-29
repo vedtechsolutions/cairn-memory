@@ -5,6 +5,6 @@ export {
   deterministicConflictSetId, contributorsOf,
 } from './entity-map.js';
 export {
-  projectPayload, projectionHashOfPayload, canonicalHashOfRow,
+  projectPayload, projectionHashOfPayload, projectionHashOfRow,
   canonicalRowBytes, hashCanonical, type ProjectionFields,
 } from './projection.js';

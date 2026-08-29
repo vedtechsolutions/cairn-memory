@@ -233,6 +233,17 @@ export const IMPORT = {
   MIN_BULLETS_FOR_SPLIT: 2,
 } as const;
 
+/** Inbound sync-apply bounds (slice-4 Codex gate #1): every cap fails
+ *  the whole batch closed — malformed input never advances the cursor. */
+export const SYNC_APPLY = {
+  MAX_EVENTS_PER_BATCH: 500,
+  MAX_PAYLOAD_BYTES: 65_536,
+  MAX_CONTRIBUTORS: 64,
+  MAX_MEMBER_IDS: 32,
+  MAX_ID_LENGTH: 128,
+  MAX_ANCHOR_CHARS: 4_096,
+} as const;
+
 export const LIMITS = {
   MAX_TAGS: 5,
   MAX_TAG_CHARS: 50,
