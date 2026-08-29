@@ -135,7 +135,7 @@ Resources: `cairn://plan/{project}/active` and `cairn://briefing/{project}` — 
 
 ## Database
 
-- `~/.cairn/cairn.db` (override: `CAIRN_DB_PATH`) — SQLite WAL + FTS5 + sqlite-vec, schema v31
+- `~/.cairn/cairn.db` (override: `CAIRN_DB_PATH`) — SQLite WAL + FTS5 + sqlite-vec, schema v32
 - Embeddings: 384-dim local (all-MiniLM-L6-v2 by default), hybrid FTS+vector search with RRF; optional cross-encoder rerank (`CAIRN_RERANK=1`)
 - Everything is local. Nothing leaves your machine.
 
