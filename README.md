@@ -150,3 +150,5 @@ External contributions require signing the [CLA](CLA.md) (a bot prompts on your 
 ## License
 
 [Elastic License 2.0](LICENSE) — source-available. Use, copy, modify, and redistribute freely; you may not offer Cairn as a hosted/managed service, circumvent license-key functionality, or remove licensing notices.
+
+The [`cairn-contract`](packages/contract) types package is [MIT](packages/contract/LICENSE), so adapters and integrations can build against Cairn without restriction. External contributions require the [CLA](CLA.md).
