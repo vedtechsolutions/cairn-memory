@@ -30,6 +30,9 @@
   },
   "files": [
     "dist/src/",
+    "!dist/src/**/*.map",
+    "!dist/src/**/*.d.ts",
+    "!dist/src/benchmark/",
     "src/hooks/hook-relay.c",
     "src/hooks/hook-relay.sh",
     "CHANGELOG.md",
@@ -43,9 +46,7 @@
     "daemon": "node dist/src/daemon/cairn-daemon.js",
     "test": "node scripts/run-tests.mjs",
     "test:build": "npm run build && npm test",
-    "strip:publish": "find dist/src -name '*.map' -delete && find dist/src -name '*.d.ts' -delete && rm -rf dist/src/benchmark",
-    "prepublishOnly": "npm run clean && npm run build && npm run strip:publish",
-    "postpublish": "npm run clean && npm run build",
+    "prepublishOnly": "npm run clean && npm run build",
     "dev": "tsc -b tsconfig.build.json --watch",
     "prepack": "node scripts/verify-pack.mjs",
     "version": "node scripts/sync-plugin-versions.mjs && git add plugins src/constants/index.ts"

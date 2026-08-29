@@ -3,9 +3,14 @@
  *
  * Types and constants only, zero dependencies, additive-stability
  * guaranteed: values may be added, never changed or removed within a
- * major version, and consumers must tolerate unknown values. The
- * normative behavior behind every name here is the Phase 2 design
- * brief; this module is its wire vocabulary.
+ * major version. Unknown-value tolerance is PER VOCABULARY here, not
+ * blanket: SYNC_ERROR_CODES is an open set (unknown = error of unknown
+ * kind), while the command/event vocabularies are CLOSED replication
+ * protocol — an unknown event type in a pulled stream is a protocol
+ * failure that halts the project for replay/rebootstrap (brief §6 row
+ * T8a), never something a replica silently skips. The normative
+ * behavior behind every name here is the Phase 2 design brief; this
+ * module is its wire vocabulary.
  *
  * Deliberately absent: retention windows, policy mirrors, seat-ledger
  * shapes, server URLs — product/server internals, never contract. The
@@ -14,7 +19,7 @@
  */
 
 /** Protocol version negotiated between client and server; a consumer
- *  refusing an unknown MAJOR version must fail closed, never guess. */
+ *  receiving an unsupported version must fail closed, never guess. */
 export const SYNC_PROTOCOL_VERSION = 1;
 
 /** Version of the canonical-JSON form used for content hashing. */
@@ -114,8 +119,13 @@ export interface SyncEntityEnvelope {
   canonical_content_hash: string;
   canonicalization_version: number;
   hash_version: number;
-  created_by: string;
-  last_edited_by: string;
+  /** Immutable creator — the brief's `author`: one name across schema,
+   *  round-trip format, and wire. Server-stamped, opaque account id. */
+  author: string;
+  /** The committed append-only contributor set (server-stamped account
+   *  ids, creator included) — the wire source for every replica's
+   *  contributor projection on the plain-upsert path (§6 row T1). */
+  contributors: string[];
   origin_client: string;
   created_at: string;
   updated_at: string;
@@ -259,7 +269,9 @@ export type SyncEvent =
   | SyncConflictOpenEvent
   | SyncResolveCommitEvent;
 
-// --- Guards (open-set tolerant: use for dispatch, never to reject unknowns) ---
+// --- Guards. Dispatch helpers; the caller supplies the unknown-value policy
+// --- per vocabulary (open for error codes; protocol-failure halt for the
+// --- closed command/event vocabularies — see the module header). ---
 
 export function isSyncCommandType(v: string): v is SyncCommandType {
   return (SYNC_COMMANDS as readonly string[]).includes(v);

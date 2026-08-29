@@ -18,6 +18,15 @@ export type LearnableKind = (typeof LEARNABLE_KINDS)[number];
  *  feedback never rewrite their authority metadata. */
 export const NON_DECAYING_KINDS = ['rule'] as const satisfies readonly MemoryKind[];
 
+/** The FROZEN v1 team-sync kind allowlist (Phase 2 brief D7): the only
+ *  kinds eligible for team sharing. One definition for core journal
+ *  admission, the sync worker, and the server — the `satisfies` clause
+ *  makes "subset of MemoryKind, never a superset" a compile-time
+ *  guarantee. Expanding it is a new consent/policy event, never a
+ *  silent edit (brief §7 J3). */
+export const SHAREABLE_KINDS = ['pitfall', 'decision', 'fact', 'pattern'] as const satisfies readonly MemoryKind[];
+export type ShareableKind = (typeof SHAREABLE_KINDS)[number];
+
 export const MEMORY_SOURCES = ['user', 'learned', 'corrected', 'confirmed'] as const;
 export type MemorySource = (typeof MEMORY_SOURCES)[number];
 

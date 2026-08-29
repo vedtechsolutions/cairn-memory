@@ -1,6 +1,6 @@
 # waykeep-contract
 
-The integration contract for [Cairn](https://github.com/vedtechsolutions/waykeep) — types and constants only, zero dependencies.
+The integration contract for [Waykeep](https://github.com/vedtechsolutions/waykeep) (formerly Cairn) — types and constants only, zero dependencies.
 
 This package defines the surfaces a client adapter or external integration builds against:
 
@@ -11,6 +11,8 @@ This package defines the surfaces a client adapter or external integration build
 - **Memory paths** — the memory-path grammar.
 - **Round-trip format** — the portable export/import record format.
 - **Client adapter** — the adapter registration and lifecycle interfaces.
+- **Sync envelope** — the Phase 2 team-sync wire vocabulary: commands, canonical log events, share states, stable error codes, and the entity envelope.
+- **Sync envelope** — the Phase 2 team-sync wire vocabulary: commands, canonical log events, share states, stable error codes, and the entity envelope.
 
 ## Install
 
@@ -31,4 +33,4 @@ Everything exported is frozen under an additive-stability guarantee: values may 
 
 ## License
 
-MIT. The contract is intentionally permissive so adapters and integrations can build against Cairn without restriction; the Cairn runtime itself ([`cairn-memory`](https://www.npmjs.com/package/cairn-memory)) is licensed under the Elastic License 2.0.
+MIT. The contract is intentionally permissive so adapters and integrations can build against Waykeep without restriction; the Waykeep runtime itself ([`waykeep`](https://www.npmjs.com/package/waykeep)) is licensed under the Elastic License 2.0.
