@@ -46,6 +46,14 @@ import { SHAREABLE_KINDS } from 'waykeep-contract';
  *    auto-promotion are NOT hygiene — they are semantic compression and
  *    scope moves — so they are barred from bound rows entirely and
  *    journal their effects on unbound shareable rows.
+ *  - Anchor repair (git-rename tracking) mutates LOCALLY and journals
+ *    nothing: rename detection is local-git-driven — possibly an
+ *    uncommitted rename — so pushing it teamwide would be premature.
+ *    The corrected anchor rides the row's next semantic upsert.
+ *  - Consolidation-member tombstones deliberately carry NO cause: the
+ *    member is a genuine local retraction of an unbound row (never on
+ *    the wire), unlike supersession, whose successor identity the
+ *    worker must map.
  *  - Replicated applications (the future sync-apply) pass `suppressed`
  *    so remote ops never echo back out (D13).
  *

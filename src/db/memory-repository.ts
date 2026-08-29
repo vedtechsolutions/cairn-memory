@@ -36,6 +36,7 @@ export type {
   CreateResult,
   CleanupFilter,
 } from './memory-repository/types.js';
+import type { JournalOptions } from './memory-repository/journal.js';
 
 // --- Repository -------------------------------------------------------------
 
@@ -159,8 +160,8 @@ export class MemoryRepository {
     return reads.memoriesWithoutEmbeddings(this.db, limit);
   }
 
-  update(id: string, newContent: string): boolean {
-    return writes.update(this.db, id, newContent);
+  update(id: string, newContent: string, journal?: JournalOptions): boolean {
+    return writes.update(this.db, id, newContent, journal);
   }
 
   /** Get version history for a memory (most recent first) */
@@ -168,12 +169,12 @@ export class MemoryRepository {
     return writes.getVersionHistory(this.db, memoryId);
   }
 
-  invalidate(id: string): boolean {
-    return writes.invalidate(this.db, id);
+  invalidate(id: string, journal?: JournalOptions): boolean {
+    return writes.invalidate(this.db, id, journal);
   }
 
-  delete(id: string): boolean {
-    return writes.deleteById(this.db, id);
+  delete(id: string, journal?: JournalOptions): boolean {
+    return writes.deleteById(this.db, id, journal);
   }
 
   boostConfidence(id: string, amount: number = CONFIDENCE.BOOST_INCREMENT): void {
@@ -280,7 +281,7 @@ export class MemoryRepository {
   }
 
   /** Strict restore-by-id: no merge, no boosts, no conflict detection */
-  restore(record: PortableRecord & { id: string }, opts: { allowPrivateScopeChange?: boolean; sessionProjectId?: string | null } = {}): 'inserted' | 'updated' {
+  restore(record: PortableRecord & { id: string }, opts: { allowPrivateScopeChange?: boolean; sessionProjectId?: string | null; journal?: JournalOptions } = {}): 'inserted' | 'updated' {
     return portability.restoreRecord(this.db, record, opts);
   }
 
@@ -290,13 +291,13 @@ export class MemoryRepository {
   }
 
   /** Strict-restore a whole document in ONE immediate transaction */
-  restoreAll(records: ReadonlyArray<PortableRecord & { id: string }>, files: readonly PortableFile[], opts: { allowPrivateScopeChange?: boolean; sessionProjectId?: string | null } = {}): portability.RestoreCounts {
+  restoreAll(records: ReadonlyArray<PortableRecord & { id: string }>, files: readonly PortableFile[], opts: { allowPrivateScopeChange?: boolean; sessionProjectId?: string | null; journal?: JournalOptions } = {}): portability.RestoreCounts {
     return portability.restoreDocument(this.db, records, files, opts);
   }
 
   /** Promote a project-scoped memory to global scope */
-  promote(id: string): boolean {
-    return writes.promote(this.db, id);
+  promote(id: string, journal?: JournalOptions): boolean {
+    return writes.promote(this.db, id, journal);
   }
 
   /** Count memories by project */
@@ -343,8 +344,8 @@ export class MemoryRepository {
 
   /** Delete memories matching a cleanup filter */
   /** Single-statement delete of exactly these ids (atomic). */
-  deleteByIds(ids: readonly string[]): number {
-    return stats.deleteByIds(this.db, ids);
+  deleteByIds(ids: readonly string[], journal?: JournalOptions): number {
+    return stats.deleteByIds(this.db, ids, journal);
   }
 
   deleteByFilter(filter: CleanupFilter, limit = 100): number {

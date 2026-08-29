@@ -166,40 +166,45 @@ export function restoreRecord(
       throw new PrivateScopeChangeError(record.id, existing.project, 'ack');
     }
   }
-  db.prepare(`
-    INSERT INTO memories (id, content, kind, project, tags, confidence, source, created_at,
-                          updated_at, expires_at, fingerprint, context, anchor,
-                          recall_count, invalidated, surface_count, impact_count)
-    VALUES (@id, @content, @kind, @project, @tags, @confidence, @source, @created_at,
-            @created_at, @expires_at, @fingerprint, @context, @anchor, 0, 0, 0, 0)
-    ON CONFLICT(id) DO UPDATE SET
-      content = excluded.content, kind = excluded.kind, project = excluded.project,
-      tags = excluded.tags, confidence = excluded.confidence, source = excluded.source,
-      created_at = excluded.created_at, expires_at = excluded.expires_at,
-      fingerprint = excluded.fingerprint, context = excluded.context, anchor = excluded.anchor,
-      invalidated = 0, superseded_by = NULL, superseded_at = NULL,
-      -- The old vector described the OLD content: clear both columns so
-      -- the backfill worker re-embeds the restored text.
-      embedding = NULL, embedding_model = NULL
-  `).run({
-    id: record.id,
-    content: record.content,
-    kind: record.kind,
-    project: record.project,
-    tags: JSON.stringify(record.tags),
-    confidence: record.confidence,
-    source: record.source,
-    created_at: record.created_at,
-    expires_at: record.expires_at,
-    fingerprint: record.fingerprint === null ? null : JSON.stringify(record.fingerprint),
-    context: record.context === null ? null : JSON.stringify(record.context),
-    anchor: record.anchor,
-  });
-  // A restore is a user-invoked semantic write — including the deliberate
-  // resurrection of a retired row — so it journals an upsert at the
-  // resulting revision like any other explicit edit (journal.ts). The
-  // future replicated apply passes `suppressed` (D13).
-  journalUpsertForId(db, record.id, opts.journal);
+  db.transaction(() => {
+    db.prepare(`
+      INSERT INTO memories (id, content, kind, project, tags, confidence, source, created_at,
+                            updated_at, expires_at, fingerprint, context, anchor,
+                            recall_count, invalidated, surface_count, impact_count)
+      VALUES (@id, @content, @kind, @project, @tags, @confidence, @source, @created_at,
+              @created_at, @expires_at, @fingerprint, @context, @anchor, 0, 0, 0, 0)
+      ON CONFLICT(id) DO UPDATE SET
+        content = excluded.content, kind = excluded.kind, project = excluded.project,
+        tags = excluded.tags, confidence = excluded.confidence, source = excluded.source,
+        created_at = excluded.created_at, expires_at = excluded.expires_at,
+        fingerprint = excluded.fingerprint, context = excluded.context, anchor = excluded.anchor,
+        invalidated = 0, superseded_by = NULL, superseded_at = NULL,
+        -- The old vector described the OLD content: clear both columns so
+        -- the backfill worker re-embeds the restored text.
+        embedding = NULL, embedding_model = NULL
+    `).run({
+      id: record.id,
+      content: record.content,
+      kind: record.kind,
+      project: record.project,
+      tags: JSON.stringify(record.tags),
+      confidence: record.confidence,
+      source: record.source,
+      created_at: record.created_at,
+      expires_at: record.expires_at,
+      fingerprint: record.fingerprint === null ? null : JSON.stringify(record.fingerprint),
+      context: record.context === null ? null : JSON.stringify(record.context),
+      anchor: record.anchor,
+    });
+    // A restore is a user-invoked semantic write — including the deliberate
+    // resurrection of a retired row — so it journals an upsert at the
+    // resulting revision like any other explicit edit (journal.ts). The
+    // future replicated apply passes `suppressed` (D13). Own transaction:
+    // the facade exposes this single-record path directly, and the journal
+    // invariant (no entry commits apart from its mutation) must hold there
+    // too — under restoreDocument this nests as a savepoint.
+    journalUpsertForId(db, record.id, opts.journal);
+  })();
   return existing ? 'updated' : 'inserted';
 }
 

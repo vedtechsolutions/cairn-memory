@@ -553,26 +553,33 @@ function runSessionConsolidation(
 
     const clusters = findConsolidationCandidates(memories, CONSOLIDATION.AFFINITY_THRESHOLD);
 
-    // Autonomous semantic compression never touches team-visible rows: a
-    // cluster containing ANY sync-bound row is skipped whole (journal.ts).
-    const bound = syncBoundIds(client.db, memories.map(m => m.id));
+    // Atomic per cluster like maintenance.ts's applyClusterMerge: a crash
+    // between member retirement and the representative rewrite must not
+    // strand half a merge, and no journal write may commit outside its
+    // mutation's transaction (journal.ts invariant). The bound check runs
+    // INSIDE the write transaction — a pre-computed set is a stale
+    // snapshot a concurrent binder can defeat (review) — and the
+    // transaction is taken immediate so that check is authoritative.
+    const applyClusterMerge = client.db.transaction(
+      (repId: string, newConf: number, newTagsJson: string, memberIds: string[]) => {
+        // Autonomous semantic compression never touches team-visible
+        // rows: a cluster containing ANY sync-bound row is skipped whole.
+        if (syncBoundIds(client.db, [repId, ...memberIds]).size > 0) return false;
+        client.db.prepare('UPDATE memories SET confidence = ?, tags = ? WHERE id = ?')
+          .run(newConf, newTagsJson, repId);
+        journalUpsertForId(client.db, repId);
+        retireIdsByInvalidation(client.db, memberIds);
+        return true;
+      },
+    );
 
     for (const cluster of clusters) {
       const rep = cluster.representative;
-      if (cluster.members.some(m => bound.has(m.id))) continue;
       const newConf = mergedConfidence(cluster);
       const newTags = mergedTags(cluster);
 
-      // Update representative with merged data; the rewrite journals an
-      // upsert and retirements go through the shared tombstone+journal
-      // discipline (journal.ts consolidation semantics).
-      client.db.prepare(`
-        UPDATE memories SET confidence = ?, tags = ? WHERE id = ?
-      `).run(newConf, JSON.stringify(newTags), rep.id);
-      journalUpsertForId(client.db, rep.id);
-
       const memberIds = cluster.members.filter(m => m.id !== rep.id).map(m => m.id);
-      retireIdsByInvalidation(client.db, memberIds);
+      if (!applyClusterMerge.immediate(rep.id, newConf, JSON.stringify(newTags), memberIds)) continue;
       for (const memberId of memberIds) {
         // Create supersedes edge: source=OLD(invalidated), target=NEW(representative)
         // Convention: "target replaces source" (edge-repository.ts:9)

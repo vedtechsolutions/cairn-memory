@@ -290,10 +290,11 @@ export function updateAnchorsForRenames(
           );
           if (JSON.stringify(newFiles) !== JSON.stringify(anchor.files)) {
             anchor.files = newFiles;
+            // Silent local repair — journals NOTHING (journal.ts anchor
+            // semantics): rename detection is local-git-driven (possibly
+            // uncommitted), so pushing it teamwide would be premature; the
+            // corrected anchor rides the row's next semantic upsert.
             stmt.run(JSON.stringify(anchor), row.id);
-            // `anchor` is a portable field: the repair journals an upsert
-            // so peers converge on the renamed path (journal.ts).
-            journalUpsertForId(db, row.id);
             updated++;
           }
         }
@@ -390,8 +391,13 @@ export function runConsolidation(db: Database.Database): { merged: number; clust
 
   // One transaction per cluster merge (better-sqlite3 uses savepoints when
   // nested, so this is safe if a caller ever wraps runConsolidation itself).
+  // Returns false when the cluster touched a bound row. The bound check
+  // is INSIDE the write transaction (taken immediate at the call sites):
+  // a pre-computed set is a stale snapshot another connection can defeat
+  // between check and mutation (review: check/use race).
   const applyClusterMerge = db.transaction(
     (repId: string, newConf: number, newTagsJson: string, memberIds: string[]) => {
+      if (syncBoundIds(db, [repId, ...memberIds]).size > 0) return false;
       db.prepare('UPDATE memories SET confidence = ?, tags = ? WHERE id = ?')
         .run(newConf, newTagsJson, repId);
       // Members are retired, not flag-flipped: consolidation is semantic
@@ -401,6 +407,7 @@ export function runConsolidation(db: Database.Database): { merged: number; clust
       for (const memberId of memberIds) {
         edgeRepo.createEdge(memberId, repId, 'refines');
       }
+      return true;
     },
   );
 
@@ -444,24 +451,23 @@ export function runConsolidation(db: Database.Database): { merged: number; clust
       const clusters = findConsolidationCandidates(projectMemories, CONSOLIDATION.AFFINITY_THRESHOLD, embeddingSimilarities);
       totalClusters += clusters.length;
 
-      // Autonomous semantic ops never touch team-visible rows: a cluster
-      // containing ANY sync-bound row is skipped whole — invalidating a
-      // bound member or rewriting a bound representative is exactly the
-      // authority journal.ts bars (slice-3 review).
-      const bound = syncBoundIds(db, projectMemories.map(m => m.id));
-
       for (const cluster of clusters) {
         const rep = cluster.representative;
-        if (cluster.members.some(m => bound.has(m.id))) continue;
         const newConf = mergedConfidence(cluster);
         const newTags = mergedTags(cluster);
         const memberIds = cluster.members.filter(m => m.id !== rep.id).map(m => m.id);
 
         // Atomic per cluster: a crash between member invalidation and the
         // representative update would otherwise strand invalidated members
-        // whose merged confidence/tags were never written.
-        applyClusterMerge(rep.id, newConf, JSON.stringify(newTags), memberIds);
-        totalMerged += memberIds.length;
+        // whose merged confidence/tags were never written. Immediate: the
+        // in-transaction bound check must be authoritative, and a deferred
+        // upgrade could deadlock against a concurrent binder. A cluster
+        // touching ANY sync-bound row is skipped whole — invalidating a
+        // bound member or rewriting a bound representative is exactly the
+        // authority journal.ts bars (slice-3 review).
+        if (applyClusterMerge.immediate(rep.id, newConf, JSON.stringify(newTags), memberIds)) {
+          totalMerged += memberIds.length;
+        }
       }
     }
   }
@@ -530,14 +536,18 @@ export function runAutoPromotion(db: Database.Database): { promoted: number } {
     if (candidate.content.includes('/src/') || candidate.content.includes('/opt/')) continue;
 
     // Autonomous scope departure is barred for sync-bound rows — only the
-    // user may pull a row out of the team's view (journal.ts).
-    if (syncBoundIds(db, [candidate.id]).size > 0) continue;
-
-    // Promote through the journal-owning repository path (tombstone under
-    // the departing project). No marker edge — a self-referential edge
-    // pollutes graph-neighbor enrichment, where the promoted memory would
-    // surface itself as its own neighbor on every recall.
-    if (promoteToGlobal(db, candidate.id)) promoted++;
+    // user may pull a row out of the team's view (journal.ts). The check
+    // runs INSIDE an immediate transaction with the promote so a
+    // concurrent binder cannot slip between check and mutation.
+    const guardedPromote = db.transaction((id: string): boolean => {
+      if (syncBoundIds(db, [id]).size > 0) return false;
+      // Journal-owning repository path (tombstone under the departing
+      // project). No marker edge — a self-referential edge pollutes
+      // graph-neighbor enrichment, where the promoted memory would
+      // surface itself as its own neighbor on every recall.
+      return promoteToGlobal(db, id);
+    });
+    if (guardedPromote.immediate(candidate.id)) promoted++;
   }
 
   return { promoted };

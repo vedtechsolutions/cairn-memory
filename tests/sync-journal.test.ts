@@ -3,13 +3,20 @@ import assert from 'node:assert/strict';
 import { openDatabase } from '../src/db/connection.js';
 import { MemoryRepository } from '../src/db/memory-repository.js';
 import { moveProjectRows } from '../src/db/project-identity-migration.js';
-import { forgetProject, runConsolidation, runAutoPromotion } from '../src/db/maintenance.js';
+import { forgetProject, runConsolidation, runAutoPromotion, updateAnchorsForRenames } from '../src/db/maintenance.js';
 import { deleteByIds, deleteByFilter } from '../src/db/memory-repository/stats.js';
 import { expireTtlMemories, applyConfidenceDecay } from '../src/db/decay.js';
 import { restoreRecord } from '../src/db/memory-repository/portability.js';
 import { MemoryCommandHandlers } from '../src/memory-tool/command-handlers.js';
 import { PlanRepository } from '../src/db/plan-repository.js';
 import { encodeProjectSegment } from '../src/memory-tool/path-router.js';
+import { applyRecordUpdate } from '../src/memory-tool/record-updater.js';
+import { restoreDocument } from '../src/db/memory-repository/portability.js';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 interface JournalRow { project: string; memory_id: string; op: string; row_revision: number; cause: string | null }
 
@@ -283,15 +290,22 @@ describe('semantic-change journal', () => {
       const b = repo.create({ content: 'bound dead-tail row survives pruning', kind: 'fact', project: 'p', skipDedup: true, createdAt: old }).id;
       // invalidated-30d candidate
       const c = repo.create({ content: 'bound invalidated row survives the 30d purge', kind: 'fact', project: 'p', skipDedup: true, createdAt: old }).id;
-      db.prepare('UPDATE memories SET confidence = 0.01, last_decayed_at = ? WHERE id = ?').run(old, a);
-      db.prepare('UPDATE memories SET confidence = 0.15, recall_count = 0 WHERE id = ?').run(b);
-      db.prepare("UPDATE memories SET invalidated = 1, updated_at = ? WHERE id = ?").run(old, c);
+      // Unbound CONTROL twins prove each deletion path actually fires.
+      const a2 = repo.create({ content: 'unbound floored row is deleted by threshold', kind: 'fact', project: 'p', skipDedup: true, skipConflictDetection: true, createdAt: old }).id;
+      const b2 = repo.create({ content: 'unbound dead-tail row is pruned', kind: 'fact', project: 'p', skipDedup: true, skipConflictDetection: true, createdAt: old }).id;
+      const c2 = repo.create({ content: 'unbound invalidated row is purged', kind: 'fact', project: 'p', skipDedup: true, skipConflictDetection: true, createdAt: old }).id;
+      db.prepare('UPDATE memories SET confidence = 0.01, last_decayed_at = ? WHERE id IN (?, ?)').run(old, a, a2);
+      db.prepare('UPDATE memories SET confidence = 0.15, recall_count = 0 WHERE id IN (?, ?)').run(b, b2);
+      db.prepare("UPDATE memories SET invalidated = 1, updated_at = ? WHERE id IN (?, ?)").run(old, c, c2);
       for (const id of [a, b, c]) bindRow(db, id);
       db.prepare('DELETE FROM sync_journal').run();
 
       applyConfidenceDecay(db);
       for (const id of [a, b, c]) {
         assert.ok(db.prepare('SELECT 1 FROM memories WHERE id = ?').get(id), `bound row ${id} survives`);
+      }
+      for (const id of [a2, b2, c2]) {
+        assert.equal(db.prepare('SELECT 1 FROM memories WHERE id = ?').get(id), undefined, `unbound control ${id} was actually deleted — the path fires`);
       }
       assert.equal(journalRows(db).length, 0, 'hygiene journals nothing');
     } finally {
@@ -321,12 +335,16 @@ describe('semantic-change journal', () => {
       assert.equal(boundRow.invalidated, 0, 'bound cluster untouched');
       assert.ok(db.prepare('SELECT 1 FROM memories WHERE id = ? AND invalidated = 0').get(boundRep), 'bound-cluster representative untouched');
 
-      const memberRow = db.prepare('SELECT invalidated FROM memories WHERE id = ?').get(member) as { invalidated: number };
-      if (memberRow.invalidated === 1) {
-        assert.ok(db.prepare('SELECT 1 FROM memory_tombstones WHERE memory_id = ?').get(member), 'member retirement is tombstone-logged');
-        assert.deepEqual(journalRows(db, member).map((r) => r.op), ['tombstone']);
-        assert.deepEqual(journalRows(db, rep).map((r) => r.op), ['upsert'], 'representative rewrite journals');
-      }
+      // Representative selection between an equal-confidence pair is not
+      // deterministic — assert the CLUSTER consolidated, whichever side won.
+      const states = [rep, member].map((id) =>
+        (db.prepare('SELECT invalidated FROM memories WHERE id = ?').get(id) as { invalidated: number }).invalidated);
+      assert.deepEqual([...states].sort(), [0, 1], 'fixture: exactly one of the unbound pair was retired');
+      const loser = states[0] === 1 ? rep : member;
+      const winner = loser === rep ? member : rep;
+      assert.ok(db.prepare('SELECT 1 FROM memory_tombstones WHERE memory_id = ?').get(loser), 'member retirement is tombstone-logged');
+      assert.deepEqual(journalRows(db, loser).map((r) => r.op), ['tombstone']);
+      assert.deepEqual(journalRows(db, winner).map((r) => r.op), ['upsert'], 'representative rewrite journals');
     } finally {
       db.close();
     }
@@ -351,10 +369,9 @@ describe('semantic-change journal', () => {
       db.prepare('DELETE FROM sync_entity_map').run();
       runAutoPromotion(db);
       const freed = db.prepare('SELECT project FROM memories WHERE id = ?').get(a) as { project: string | null };
-      if (freed.project === null) {
-        assert.deepEqual(journalRows(db, a).map((r) => r.op), ['tombstone'], 'scope departure journals under the old project');
-        assert.equal(journalRows(db, a)[0].project, 'p');
-      }
+      assert.equal(freed.project, null, 'fixture: the unbound candidate promoted');
+      assert.deepEqual(journalRows(db, a).map((r) => r.op), ['tombstone'], 'scope departure journals under the old project');
+      assert.equal(journalRows(db, a)[0].project, 'p');
     } finally {
       db.close();
     }
@@ -384,7 +401,7 @@ describe('semantic-change journal', () => {
     }
   });
 
-  it('Memory Tool deletion retires with tombstone log + journal; rename journals the scope move; a record edit journals ONE entry at the final revision', () => {
+  it('Memory Tool deletion retires with tombstone log + journal; rename journals the scope move', () => {
     const db = openDatabase({ dbPath: ':memory:' });
     try {
       const repo = new MemoryRepository(db);
@@ -411,6 +428,137 @@ describe('semantic-change journal', () => {
       assert.ok(moveOps[1].row_revision > moveOps[0].row_revision, 'upsert carries the post-move revision');
     } finally {
       db.close();
+    }
+  });
+
+  it('anchor repair mutates locally and journals nothing — the fix rides the next semantic upsert', () => {
+    const db = openDatabase({ dbPath: ':memory:' });
+    try {
+      const repo = new MemoryRepository(db);
+      const id = repo.create({ content: 'pitfall anchored to a renamed file', kind: 'pitfall', project: 'p', skipDedup: true }).id;
+      db.prepare('UPDATE memories SET anchor = ? WHERE id = ?').run(JSON.stringify({ files: ['src/old-name.ts'] }), id);
+      db.prepare('DELETE FROM sync_journal').run();
+
+      const updated = updateAnchorsForRenames(db, 'p', [{ oldPath: 'src/old-name.ts', newPath: 'src/new-name.ts' }]);
+      assert.equal(updated, 1, 'fixture: the anchor was repaired');
+      assert.equal(journalRows(db).length, 0, 'local-git-driven repair never journals');
+    } finally {
+      db.close();
+    }
+  });
+
+  it('a Memory Tool record edit journals ONE entry at the transaction-final revision — both halves landed', () => {
+    const db = openDatabase({ dbPath: ':memory:' });
+    try {
+      const repo = new MemoryRepository(db);
+      const id = repo.create({ content: 'original content for a mixed edit', kind: 'fact', project: 'p', skipDedup: true }).id;
+      db.prepare('DELETE FROM sync_journal').run();
+
+      db.transaction(() => {
+        applyRecordUpdate(db, id, 'original content for a mixed edit', {
+          content: 'corrected content for a mixed edit', tags: ['edited'], raw: [],
+        });
+      })();
+
+      const live = db.prepare('SELECT revision, content, tags FROM memories WHERE id = ?').get(id) as { revision: number; content: string; tags: string };
+      assert.equal(live.content, 'corrected content for a mixed edit');
+      assert.deepEqual(JSON.parse(live.tags), ['edited'], 'the metadata half landed too');
+      const rows = journalRows(db, id);
+      assert.equal(rows.length, 1, 'ONE entry for a mixed content+metadata edit');
+      assert.equal(rows[0].op, 'upsert');
+      assert.equal(rows[0].row_revision, live.revision, 'journaled at the FINAL revision, not the intermediate one');
+    } finally {
+      db.close();
+    }
+  });
+
+  it('a journal write failure rolls back update() and restoreRecord() with their mutations', () => {
+    const db = openDatabase({ dbPath: ':memory:' });
+    try {
+      const repo = new MemoryRepository(db);
+      const id = repo.create({ content: 'row whose correction must roll back', kind: 'fact', project: 'p', skipDedup: true }).id;
+      db.exec('ALTER TABLE sync_journal RENAME TO sync_journal_broken');
+
+      assert.throws(() => repo.update(id, 'corrected content that must vanish'));
+      const after = db.prepare('SELECT content FROM memories WHERE id = ?').get(id) as { content: string };
+      assert.equal(after.content, 'row whose correction must roll back');
+
+      assert.throws(() => restoreRecord(db, {
+        id: '11111111-2222-4333-8444-555555555555', content: 'restored row that must vanish', kind: 'fact', project: 'p',
+        tags: [], confidence: 0.5, source: 'learned', created_at: new Date().toISOString(),
+        expires_at: null, fingerprint: null, context: null, anchor: null,
+      }));
+      assert.equal(db.prepare("SELECT 1 FROM memories WHERE id = '11111111-2222-4333-8444-555555555555'").get(), undefined,
+        'the single-record restore path owns a transaction');
+      db.exec('ALTER TABLE sync_journal_broken RENAME TO sync_journal');
+    } finally {
+      db.close();
+    }
+  });
+
+  it('a mid-document restore abort rolls back already-applied records AND their journal entries (savepoint path)', () => {
+    const db = openDatabase({ dbPath: ':memory:' });
+    try {
+      const good = {
+        id: '21111111-2222-4333-8444-555555555555', content: 'first record applies fine', kind: 'fact' as const, project: 'p',
+        tags: [], confidence: 0.5, source: 'learned' as const, created_at: new Date().toISOString(),
+        expires_at: null, fingerprint: null, context: null, anchor: null,
+      };
+      const bad = { ...good, id: '31111111-2222-4333-8444-555555555555', kind: 'rule' as const };
+      assert.throws(() => restoreDocument(db, [good, bad as never], []), /not portable/);
+      assert.equal((db.prepare('SELECT COUNT(*) n FROM memories').get() as { n: number }).n, 0, 'all-or-nothing held');
+      assert.equal(journalRows(db).length, 0, 'the aborted document left no journal entries');
+    } finally {
+      db.close();
+    }
+  });
+
+  it('D13 suppression is honored at every public facade route', () => {
+    const db = openDatabase({ dbPath: ':memory:' });
+    try {
+      const repo = new MemoryRepository(db);
+      const sup = { suppressed: true } as const;
+      const a = repo.create({ content: 'facade row a for suppression', kind: 'fact', project: 'p', skipDedup: true, journal: sup }).id;
+      const b = repo.create({ content: 'facade row b for suppression', kind: 'fact', project: 'p', skipDedup: true, journal: sup }).id;
+      const c = repo.create({ content: 'facade row c for suppression', kind: 'fact', project: 'p', skipDedup: true, journal: sup }).id;
+      const d = repo.create({ content: 'facade row d for suppression', kind: 'fact', project: 'p', skipDedup: true, journal: sup }).id;
+
+      repo.update(a, 'facade row a corrected silently', sup);
+      repo.invalidate(a, sup);
+      repo.delete(b, sup);
+      repo.promote(c, sup);
+      repo.deleteByIds([d], sup);
+      repo.restore({
+        id: '41111111-2222-4333-8444-555555555555', content: 'replicated restore must not echo', kind: 'fact', project: 'p',
+        tags: [], confidence: 0.5, source: 'learned', created_at: new Date().toISOString(),
+        expires_at: null, fingerprint: null, context: null, anchor: null,
+      }, { journal: sup });
+
+      assert.equal(journalRows(db).length, 0, 'no facade route may echo a replicated apply');
+    } finally {
+      db.close();
+    }
+  });
+
+  it('concurrent opens of a pre-cause v32 database all heal without SQLITE_BUSY failures', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'waykeep-heal-race-'));
+    const dbPath = join(dir, 'aged.db');
+    try {
+      const db = openDatabase({ dbPath });
+      db.exec('ALTER TABLE sync_journal DROP COLUMN cause');
+      db.close();
+
+      const run = promisify(execFile);
+      const script = `import { openDatabase } from '${new URL('../src/db/connection.js', import.meta.url).href}'; const db = openDatabase({ dbPath: process.argv[1] }); db.prepare('SELECT 1').get(); db.close();`;
+      await Promise.all(Array.from({ length: 6 }, () =>
+        run(process.execPath, ['--input-type=module', '-e', script, dbPath], { timeout: 30_000 })));
+
+      const check = openDatabase({ dbPath });
+      const cols = check.prepare('PRAGMA table_info(sync_journal)').all() as Array<{ name: string }>;
+      assert.ok(cols.some((c) => c.name === 'cause'), 'the heal landed');
+      check.close();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 

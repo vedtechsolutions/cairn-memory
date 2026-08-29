@@ -30,6 +30,12 @@ const V32 = 32;
  * recreate, and the backfill only touches NULL rows.
  */
 export function migrateToV32(db: Database.Database): void {
+  // IMMEDIATE: a deferred transaction here deadlocks under concurrent
+  // opens — two connections both read-probe, then both try to upgrade to
+  // write for the heal and SQLITE_BUSY fires without consulting the busy
+  // handler (review probe: 7/72 concurrent opens failed). Taking the
+  // write lock up front serializes healers through busy_timeout, and the
+  // in-transaction probes make the loser's pass a cheap no-op.
   db.transaction(() => {
     const columns = db.prepare('PRAGMA table_info(memories)').all() as Array<{ name: string }>;
     const has = (name: string): boolean => columns.some((c) => c.name === name);
@@ -90,5 +96,5 @@ export function migrateToV32(db: Database.Database): void {
     }
 
     db.prepare('UPDATE schema_version SET version = ?').run(V32);
-  })();
+  }).immediate();
 }
