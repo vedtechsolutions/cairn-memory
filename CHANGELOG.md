@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [5.4.0] - 2026-08-29
+
 ### Added
 
 - Added `cairn import --from codex-memories|claude-mem|memory-md`: one-way, idempotent migration of existing memories through the standard scrubbing/dedup pipeline, with dry-run preview and a reported exclusion list.

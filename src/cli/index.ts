@@ -18,6 +18,7 @@ Usage:
   cairn build-relay Compile the fast C hook relay (optional; needs a C compiler)
   cairn locate      Print install locations (JSON; "locate hook-dir" prints that path bare)
   cairn doctor      Run install health checks
+  cairn --version   Print the installed version
   cairn --help      Show this help
 `);
 }
@@ -172,6 +173,12 @@ switch (command) {
   case 'serve': {
     // The server module runs its main() on import.
     await import('../mcp/server.js');
+    break;
+  }
+  case '--version':
+  case '-v': {
+    const { VERSION: v } = await import('../constants/index.js');
+    console.log(v);
     break;
   }
   case '--help':

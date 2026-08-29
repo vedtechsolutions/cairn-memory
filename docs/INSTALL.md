@@ -14,6 +14,9 @@ No C compiler needed — hooks run through a bundled shell relay, and
 
 ## 2. Wire your agent(s)
 
+Both plugins require **cairn-memory >= 5.4.0** from step 1 — earlier
+versions predate the commands the plugins call.
+
 ### Claude Code — plugin (recommended)
 
 ```text

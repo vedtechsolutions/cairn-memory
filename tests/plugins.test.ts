@@ -44,6 +44,10 @@ describe('thin-plugin packaging', () => {
     // The handshake advertised 5.1.0 on a 5.3.1 install — a comment was
     // the only guard (validation finding).
     assert.equal(VERSION, pkg.version, 'src/constants VERSION drifted from package.json — run scripts/sync-plugin-versions.mjs');
+    // And the flag a new user actually types (launch validation: it was
+    // an unknown command).
+    const v = spawnSync('node', [CLI_JS, '--version'], { encoding: 'utf-8' });
+    assert.equal(v.stdout.trim(), pkg.version);
   });
 
   it('marketplace sources resolve to plugin manifests whose names match', () => {

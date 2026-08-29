@@ -27,7 +27,7 @@ cairn init                    # wires MCP + hooks + StatusLine for your agents
 cairn doctor                  # health check
 ```
 
-Then, instead of `cairn init`, you can wire your agent through its plugin marketplace — this repository is one (the npm package from the first step is still required; the plugins are thin):
+Then, instead of `cairn init`, you can wire your agent through its plugin marketplace — this repository is one (the npm package from the first step is still required — **cairn-memory >= 5.4.0** — the plugins are thin):
 
 ```text
 # Claude Code
