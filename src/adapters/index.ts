@@ -4,7 +4,7 @@
  * agent's installer or daemon worker means registering its lifecycle
  * here; the daemon and CLI iterate this list, never name a client.
  */
-import type { ClientAdapterLifecycle } from '@cairn/contract';
+import type { ClientAdapterLifecycle } from 'cairn-contract';
 import { claudeLifecycle } from './claude.js';
 import { codexLifecycle } from './codex.js';
 

@@ -10,4 +10,4 @@ export {
   CLIENT_UNKNOWN,
   CLIENT_ENV_VAR,
   CLIENT_HEADER,
-} from '@cairn/contract';
+} from 'cairn-contract';

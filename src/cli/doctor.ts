@@ -14,7 +14,7 @@ import { dirname, join, resolve } from 'node:path';
 import { SCHEMA_VERSION } from '../db/schema.js';
 import { resolveDbPath } from '../db/db-path.js';
 import { CAIRN_HOOK_DIR_MARKER } from '../constants/index.js';
-import { SYNC_ROUTES, ASYNC_ROUTES, CONTRACT_REVISION } from '@cairn/contract';
+import { SYNC_ROUTES, ASYNC_ROUTES, CONTRACT_REVISION } from 'cairn-contract';
 import { getEmbeddingModelConfig } from '../utils/embeddings.js';
 import { verifyModelPackage, ArtifactVerificationError } from '../utils/artifact-verification.js';
 import { probeHookSocket, socketPath, pidPath } from '../mcp/socket-ownership.js';

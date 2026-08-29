@@ -1,6 +1,6 @@
 /**
  * Standard I/O helpers for agent hooks, plus the event types — the TYPES
- * are the contract's (see @cairn/contract hook-events), re-exported under
+ * are the contract's (see cairn-contract hook-events), re-exported under
  * the codebase's established `*Input` names so import sites stay stable;
  * the stdio FUNCTIONS bind to process stdin/stdout and stay internal.
  */
@@ -26,7 +26,7 @@ export type {
   PostCompactEvent as PostCompactInput,
   SessionEndEvent as SessionEndInput,
   FileChangedEvent as FileChangedInput,
-} from '@cairn/contract';
+} from 'cairn-contract';
 
 /** Read and parse JSON from stdin (synchronous — hooks are short-lived).
  *  Falls back to fd 0 if /dev/stdin device is unavailable (ENXIO).

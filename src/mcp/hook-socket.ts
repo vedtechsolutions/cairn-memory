@@ -12,7 +12,7 @@ import type { Server as McpInnerServer } from '@modelcontextprotocol/sdk/server/
 import { acquireSocketClaim, releaseSocketClaim, ensureCairnDirSecure, isOwnerOnly, socketPath, pidPath } from './socket-ownership.js';
 import { FS_PERMS } from '../constants/index.js';
 import { CLIENT_HEADER } from '../constants/clients.js';
-import { CONTRACT_REVISION } from '@cairn/contract';
+import { CONTRACT_REVISION } from 'cairn-contract';
 import type { HookDbClient, CachedHookContext } from '../hooks/shared/db-client.js';
 import { normalizeHookInput } from '../hooks/shared/client-adapter.js';
 import { SessionCache } from '../hooks/shared/session-cache.js';

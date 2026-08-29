@@ -1,5 +1,5 @@
 /**
- * @cairn/contract — the integration contract for Cairn.
+ * cairn-contract — the integration contract for Cairn.
  *
  * Types and constants only, zero dependencies. Everything here is frozen
  * under an additive-stability guarantee: values may be added, never

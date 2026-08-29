@@ -15,7 +15,7 @@
  * src/adapters/ — separate on purpose, so this hot-path module never
  * loads installer or worker code.
  */
-import type { ClientAdapter, AdapterCapabilities, RawHookPayload } from '@cairn/contract';
+import type { ClientAdapter, AdapterCapabilities, RawHookPayload } from 'cairn-contract';
 import { CLIENT_CLAUDE, CLIENT_CODEX, CLIENT_UNKNOWN } from '../../constants/clients.js';
 import { parseTranscript, emptySnapshot, type TranscriptSnapshot } from './transcript-parser.js';
 

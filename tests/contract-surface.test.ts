@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 import {
   SYNC_ROUTES, ASYNC_ROUTES, STANDALONE_HOOKS,
   CLIENT_HEADER, CLIENT_ENV_VAR,
-} from '@cairn/contract';
+} from 'cairn-contract';
 import { SERVED_HOOK_ROUTES } from '../src/mcp/hook-socket.js';
 import { cairnHooks } from '../src/cli/init.js';
 import { codexHooks, LEGACY_POST_TOOL_ROUTE } from '../src/cli/codex-init.js';

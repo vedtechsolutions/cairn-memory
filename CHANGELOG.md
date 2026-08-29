@@ -32,7 +32,7 @@
 - Added a warning when the config file is present but invalid or wrong-shaped (a broken privacy setting no longer fails open silently).
 - Added `from_private` acknowledgment requirement to restore-mode `cairn_ingest` when a record would change a private memory's project scope.
 
-- Added `@cairn/contract`: the integration contract (client identity, hook events, route classification, memory-path grammar, portable round-trip format, client-adapter interfaces) as a zero-dependency types package, bundled into the npm tarball.
+- Added `cairn-contract`: the integration contract (client identity, hook events, route classification, memory-path grammar, portable round-trip format, client-adapter interfaces) as a zero-dependency types package, bundled into the npm tarball.
 - Added a client-neutral `/post-tool` hook route; `/codex-post-tool` remains served as a deprecated alias so existing trusted wiring keeps working.
 - Added `cairn init --migrate-routes` to modernize deprecated hook routes explicitly (one re-trust in Codex; unrelated hook trust is preserved).
 - Added a doctor check that detects a running daemon left over from a previous install (missing routes or contract-revision drift) and says to restart it.

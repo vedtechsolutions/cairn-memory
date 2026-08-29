@@ -7,7 +7,7 @@
  * invalid JSON, or wrong-shaped fields all yield the empty config — the
  * behavior with no config present must be exactly the pre-config
  * behavior. The schema is INTERNAL in v1 (documented in the README, not
- * part of @cairn/contract): only additive changes, unknown fields
+ * part of cairn-contract): only additive changes, unknown fields
  * ignored.
  *
  * Read path is hot (guard functions consult it per memory-set filter),

@@ -6,7 +6,7 @@
  * are untrusted or disabled).
  */
 import { existsSync } from 'node:fs';
-import type { ClientAdapterLifecycle } from '@cairn/contract';
+import type { ClientAdapterLifecycle } from 'cairn-contract';
 import { CLIENT_CODEX } from '../constants/clients.js';
 import { codexDir, codexHooks } from '../cli/codex-init.js';
 import { codexWorkers } from './workers.js';

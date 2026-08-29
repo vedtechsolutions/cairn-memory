@@ -2,7 +2,7 @@
  * Contract error table (W4 v3.1 §9) — the ONE mapping from every contract
  * case to its thrown message. Modules throw `new Error(ERR.case(...))`;
  * no contract-visible message text lives anywhere else, with ONE carve-out:
- * the invalid-path message lives in @cairn/contract's memory-paths module
+ * the invalid-path message lives in cairn-contract's memory-paths module
  * (the path grammar and its rejection message are a single contract
  * surface and moved together). Messages carry no `Error: ` prefix — the
  * SDK runner supplies it.

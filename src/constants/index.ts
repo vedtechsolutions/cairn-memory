@@ -3,7 +3,7 @@
 // ============================================================================
 
 // --- Memory vocabulary (contract) -------------------------------------------
-// The enumerations live in @cairn/contract (they are stored in rows, cross
+// The enumerations live in cairn-contract (they are stored in rows, cross
 // the import/sync boundary, and are frozen additively). Re-exported here so
 // the codebase's import sites stay stable.
 
@@ -13,11 +13,11 @@ export {
   PLAN_STATUSES, STEP_STATUSES,
   type MemoryKind, type LearnableKind, type MemorySource,
   type PlanStatus, type StepStatus,
-} from '@cairn/contract';
+} from 'cairn-contract';
 import {
   SOURCE_AUTHORITY_ORDER as _AUTHORITY_ORDER,
   type MemorySource, type ContextMode,
-} from '@cairn/contract';
+} from 'cairn-contract';
 
 /** Numeric authority ranking DERIVED from the contract's ordering (higher
  *  wins on dedup merge) — the ordering is the contract; the numbers are an
@@ -397,7 +397,7 @@ export const RELEVANCE = {
 
 // --- Context Pressure Modes -------------------------------------------------
 
-export { CONTEXT_MODES, type ContextMode } from '@cairn/contract';
+export { CONTEXT_MODES, type ContextMode } from 'cairn-contract';
 
 export const CONTEXT_THRESHOLDS = {
   /** Above this % free → normal mode */
@@ -883,7 +883,7 @@ export const SCORING_PROFILES = {
 
 // --- Intent Classification --------------------------------------------------
 
-export { INTENTS, type UserIntent } from '@cairn/contract';
+export { INTENTS, type UserIntent } from 'cairn-contract';
 
 // --- Error Classification ---------------------------------------------------
 
