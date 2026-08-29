@@ -35,7 +35,9 @@ if [ -n "$CACHE" ] && [ -f "$CACHE" ]; then
   CACHED="$(cat "$CACHE" 2>/dev/null || true)"
   case "$CACHED" in
     "$BIN|"*)
-      HOOK_DIR="${CACHED#*|}"
+      # Exact-prefix strip, not first-pipe split — a bin path containing
+      # '|' must not shear the recorded dir (review).
+      HOOK_DIR="${CACHED#"$BIN|"}"
       [ -n "$HOOK_DIR" ] && [ -f "$HOOK_DIR/hook-relay.sh" ] || HOOK_DIR=""
       ;;
   esac

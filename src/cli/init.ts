@@ -76,6 +76,22 @@ function isCairnEntry(entry: HookMatcher): boolean {
   return entry.hooks.some(h => CAIRN_HOOK_MARKERS.some(marker => h.command.includes(marker)));
 }
 
+/** Remove Cairn HANDLERS from entries, at handler granularity: a MIXED
+ *  entry (a Cairn handler beside the user's own) keeps its foreign
+ *  handlers — entry-level removal deleted them (review). Entries left
+ *  empty drop; returns null when nothing remains for the event. */
+function sweepCairnHandlers(entries: HookMatcher[]): { kept: HookMatcher[] | null; swept: boolean } {
+  let swept = false;
+  const kept: HookMatcher[] = [];
+  for (const entry of entries) {
+    if (!isCairnEntry(entry)) { kept.push(entry); continue; }
+    swept = true;
+    const foreign = entry.hooks.filter(h => !CAIRN_HOOK_MARKERS.some(marker => h.command.includes(marker)));
+    if (foreign.length > 0) kept.push({ ...entry, hooks: foreign });
+  }
+  return { kept: kept.length > 0 ? kept : null, swept };
+}
+
 interface MergePlan { changed: string[]; skipped: string[]; result: Settings }
 
 /**
@@ -106,9 +122,9 @@ function mergeSettings(existing: Settings, relayCmd: string, statuslineOnly = fa
     const hooks: HookMap = { ...(existing.hooks ?? {}) };
     let sweptEvents = 0;
     for (const [event, entries] of Object.entries(hooks)) {
-      const foreign = entries.filter(entry => !isCairnEntry(entry));
-      if (foreign.length < entries.length) {
-        if (foreign.length > 0) hooks[event] = foreign;
+      const { kept, swept } = sweepCairnHandlers(entries);
+      if (swept) {
+        if (kept) hooks[event] = kept;
         else delete hooks[event];
         sweptEvents++;
       }
@@ -145,9 +161,9 @@ function mergeSettings(existing: Settings, relayCmd: string, statuslineOnly = fa
   // them (review). Foreign entries under those events are untouched.
   for (const [event, entries] of Object.entries(hooks)) {
     if (Object.hasOwn(desired, event)) continue;
-    const foreign = entries.filter(entry => !isCairnEntry(entry));
-    if (foreign.length < entries.length) {
-      if (foreign.length > 0) hooks[event] = foreign;
+    const { kept, swept } = sweepCairnHandlers(entries);
+    if (swept) {
+      if (kept) hooks[event] = kept;
       else delete hooks[event];
       changed.push(`hooks.${event} (stale Cairn entries removed)`);
     }

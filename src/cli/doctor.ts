@@ -8,7 +8,7 @@
  * `cairn doctor` can gate CI and setup scripts. Diagnostic only — it never
  * creates or migrates the database.
  */
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync , realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 import { SCHEMA_VERSION } from '../db/schema.js';
@@ -219,7 +219,10 @@ export function checkCodexParity(): CheckResult {
   if (wiredDir !== undefined && !existsSync(wiredDir)) {
     return { status: 'warn', detail: `Codex hooks point at a moved or removed install (${wiredDir}) — re-run \`cairn init\` (one re-trust)` };
   }
-  if (wiredDir !== undefined && resolve(wiredDir) !== resolve(HOOK_DIR)) {
+  // realpath BOTH sides: the same install reached through a symlink must
+  // not read as different (review) — that prompted needless re-trust.
+  const canonical = (d: string): string => { try { return realpathSync(d); } catch { return resolve(d); } };
+  if (wiredDir !== undefined && canonical(wiredDir) !== canonical(HOOK_DIR)) {
     return { status: 'warn', detail: `Codex hooks run a DIFFERENT install (${wiredDir}) than this one (${HOOK_DIR}) — re-run \`cairn init\` from the install you want (one re-trust)` };
   }
   const config = existsSync(codexConfigPath()) ? readFileSync(codexConfigPath(), 'utf-8') : '';

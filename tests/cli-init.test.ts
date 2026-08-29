@@ -204,3 +204,43 @@ describe('statusline-only migration sweep (review N4)', () => {
     assert.ok(after.statusLine?.command?.includes('statusline'), 'StatusLine kept');
   });
 });
+
+describe('sweeps are handler-granular (codex round-3)', () => {
+  it('a MIXED entry keeps the user handler when the Cairn handler is swept', () => {
+    const settingsPath = tempSettingsPath();
+    // One matcher entry carrying BOTH a stale Cairn handler and the
+    // user's own — entry-level removal deleted the user's (review).
+    writeFileSync(settingsPath, JSON.stringify({
+      hooks: {
+        FileChanged: [{ matcher: '', hooks: [
+          { type: 'command', command: '/old/dist/src/hooks/hook-relay file-changed' },
+          { type: 'command', command: 'users-own-watcher' },
+        ] }],
+      },
+    }));
+    const r = init(settingsPath);
+    assert.equal(r.status, 0, r.stderr);
+    const written = JSON.parse(readFileSync(settingsPath, 'utf8')) as Settings;
+    const cmds = JSON.stringify(written.hooks?.FileChanged ?? []);
+    assert.ok(cmds.includes('users-own-watcher'), 'the foreign handler in the mixed entry survives');
+    assert.ok(!cmds.includes('dist/src/hooks'), 'the Cairn handler is gone');
+  });
+
+  it('--statusline-only sweep is also handler-granular on mixed entries', () => {
+    const settingsPath = tempSettingsPath();
+    writeFileSync(settingsPath, JSON.stringify({
+      hooks: {
+        SessionStart: [{ matcher: '', hooks: [
+          { type: 'command', command: '/old/dist/src/hooks/hook-relay session-start' },
+          { type: 'command', command: 'users-own-hook' },
+        ] }],
+      },
+    }));
+    const r = init(settingsPath, ['--statusline-only']);
+    assert.equal(r.status, 0, r.stderr);
+    const written = JSON.parse(readFileSync(settingsPath, 'utf8')) as Settings;
+    const cmds = JSON.stringify(written.hooks?.SessionStart ?? []);
+    assert.ok(cmds.includes('users-own-hook'), 'the foreign handler in the mixed entry survives the migration sweep');
+    assert.ok(!cmds.includes('dist/src/hooks'), 'the Cairn handler is gone');
+  });
+});

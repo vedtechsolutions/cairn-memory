@@ -11,7 +11,10 @@ if [ -z "$BIN" ]; then
   # The hook launcher's cache records the bin it resolved (identity-keyed).
   CACHE_DIR="${CLAUDE_PLUGIN_DATA:-${HOME:+$HOME/.cairn}}"
   if [ -n "$CACHE_DIR" ] && [ -f "$CACHE_DIR/plugin-hook-dir" ]; then
-    CACHED_BIN="$(cut -d'|' -f1 "$CACHE_DIR/plugin-hook-dir" 2>/dev/null || true)"
+    CACHED="$(cat "$CACHE_DIR/plugin-hook-dir" 2>/dev/null || true)"
+    # The dir is the LAST |segment; strip it to keep the full bin path
+    # even when the bin path itself contains '|' (review).
+    CACHED_BIN="${CACHED%|*}"
     [ -n "$CACHED_BIN" ] && [ -x "$CACHED_BIN" ] && BIN="$CACHED_BIN"
   fi
 fi

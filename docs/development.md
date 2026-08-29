@@ -41,7 +41,7 @@
 │  ┌────────────────────┐  ┌─────────────────────────────┐ │
 │  │ Embedded Hook      │  │ MCP Protocol Server         │ │
 │  │ Socket (v5)        │  │ (stdio transport)           │ │
-│  │ ~/.cairn/hook-     │  │ 16 tools, 2 resources       │ │
+│  │ ~/.cairn/hook-     │  │ 17 tools, 2 resources       │ │
 │  │   daemon.sock      │  │                             │ │
 │  │ 12 hook routes     │  │                             │ │
 │  │ + /statusline      │  │                             │ │
@@ -231,7 +231,7 @@ Cairn keeps stored facts and decisions trustworthy without deleting anything:
 | `normal` | >50% | Full injection: 5 pitfalls, facts, reminders |
 | `compact` | 25-50% | Reduced: 3 pitfalls, skip facts |
 | `minimal` | 10-25% | Minimal injection: 1 pitfall |
-| `critical` | <10% | Silent — preserves remaining context |
+| `critical` | <10% | Near-silent: hard 600-token briefing cap, no prompt/pitfall injection |
 
 
 ## Database details
@@ -240,12 +240,11 @@ Cairn keeps stored facts and decisions trustworthy without deleting anything:
 
 - Location: `~/.cairn/cairn.db`
 - Engine: SQLite 3 with WAL mode + FTS5 + sqlite-vec (vector similarity)
-- Schema version: 30
+- Schema version: 31
 - Configurable via `CAIRN_DB_PATH` env var
 - Embeddings: 384-dim via `@huggingface/transformers` (all-MiniLM-L6-v2, q8) — selected from the model registry (`src/constants/embedding-models.ts`) via `CAIRN_EMBEDDING_MODEL` (default `minilm-l6`; challengers `nomic-v1.5` / `nomic-v1.5-256` / `embeddinggemma-300m`). Schema v26 tags every stored vector with its model: vector reads filter on the active model, and after a model switch the backfill worker re-embeds mismatched rows while FTS+RRF carry retrieval
 - Reranking (opt-in): `CAIRN_RERANK=1` enables a cross-encoder stage on `cairn_recall` (RRF top-20 → rerank → top-k; MCP server only); model via `CAIRN_RERANK_MODEL` (default `jina-turbo-v1`, registry in `src/constants/reranker-models.ts`)
 
-- Reranking (opt-in): `CAIRN_RERANK=1` enables a cross-encoder stage on `cairn_recall` (RRF top-20 → rerank → top-k; MCP server only); model via `CAIRN_RERANK_MODEL` (default `jina-turbo-v1`, registry in `src/constants/reranker-models.ts`)
 
 ## Report rollup controls
 
