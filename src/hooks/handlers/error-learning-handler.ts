@@ -195,7 +195,7 @@ function handleErrorLearningBusiness(input: PostToolUseFailureInput, client: Cac
             }
           }
           // Irrelevant pitfall — weaken as before
-          client.memoryRepo.weakenConfidence(id);
+          client.memoryRepo.weakenConfidence(id, { autonomous: true });
         }
         surfacedProcessed = { count: allToWeaken.length, files: cleanupFiles };
       }

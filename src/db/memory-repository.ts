@@ -205,8 +205,8 @@ export class MemoryRepository {
   }
 
   /** Explicit negative feedback: decrease trust, auto-invalidate if below threshold */
-  weakenConfidence(id: string): { weakened: boolean; invalidated: boolean } {
-    return feedback.weakenConfidence(this.db, id);
+  weakenConfidence(id: string, opts?: { autonomous?: boolean }): { weakened: boolean; invalidated: boolean } {
+    return feedback.weakenConfidence(this.db, id, opts);
   }
 
   /** Find top pitfalls for briefing. When queryFp is provided, uses context-aware ranking. */

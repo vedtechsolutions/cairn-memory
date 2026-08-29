@@ -2,7 +2,7 @@ import type Database from 'better-sqlite3';
 import { HEALTH, type MemoryKind } from '../../constants/index.js';
 import type { CleanupFilter, Memory, MemoryRow } from './types.js';
 import { rowToMemory } from './reads.js';
-import { journalTombstonesForIds } from './journal.js';
+import { journalTombstonesForIds, type JournalOptions } from './journal.js';
 
 /** Aggregate stats for cairn_stats summary */
 export function getStats(db: Database.Database): {
@@ -184,7 +184,7 @@ export function deleteByFilter(db: Database.Database, filter: CleanupFilter, lim
  *  per-row autocommit loop that an interruption leaves half-applied.
  *  Explicit bulk deletion is a retraction (journal.ts): the tombstone log
  *  records every deleted row and admissible rows journal tombstone ops. */
-export function deleteByIds(db: Database.Database, ids: readonly string[]): number {
+export function deleteByIds(db: Database.Database, ids: readonly string[], opts?: JournalOptions): number {
   if (ids.length === 0) return 0;
   const placeholders = ids.map(() => '?').join(',');
   return db.transaction(() => {
@@ -193,7 +193,7 @@ export function deleteByIds(db: Database.Database, ids: readonly string[]): numb
       SELECT id, 'delete', project, kind, content, datetime('now')
       FROM memories WHERE id IN (${placeholders})
     `).run(...ids);
-    journalTombstonesForIds(db, ids);
+    journalTombstonesForIds(db, ids, opts);
     const result = db.prepare(`DELETE FROM memories WHERE id IN (${placeholders})`).run(...ids);
     return result.changes;
   })();

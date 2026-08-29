@@ -55,6 +55,13 @@ export function migrateToV32(db: Database.Database): void {
     // the repository insert sites now.
     db.exec('DROP TRIGGER IF EXISTS memories_updated_at_ai');
 
+    // Pre-release v32 addition: journal `cause` (supersession successor
+    // linkage and similar markers). Idempotent column probe.
+    const journalCols = db.prepare('PRAGMA table_info(sync_journal)').all() as Array<{ name: string }>;
+    if (journalCols.length > 0 && !journalCols.some((c) => c.name === 'cause')) {
+      db.exec('ALTER TABLE sync_journal ADD COLUMN cause TEXT DEFAULT NULL');
+    }
+
     // Pre-release v32 shape heal: the tombstone log briefly shipped with a
     // composite (memory_id, action, deleted_at) PK whose second-resolution
     // key silently suppressed a delete/restore/delete cycle's second entry

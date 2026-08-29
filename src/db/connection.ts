@@ -172,7 +172,9 @@ function ensureSchema(db: Database.Database): void {
     const hasRevertedTrigger = db.prepare(
       "SELECT 1 FROM sqlite_master WHERE type = 'trigger' AND name = 'memories_updated_at_ai'",
     ).get() !== undefined;
-    if (oldTombstoneShape || hasRevertedTrigger) {
+    const journalCols = db.prepare('PRAGMA table_info(sync_journal)').all() as Array<{ name: string }>;
+    const journalMissingCause = journalCols.length > 0 && !journalCols.some((c) => c.name === 'cause');
+    if (oldTombstoneShape || hasRevertedTrigger || journalMissingCause) {
       migrateToV32(db);
     }
   }

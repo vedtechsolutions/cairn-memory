@@ -7,6 +7,7 @@
  */
 import type Database from 'better-sqlite3';
 import { update as versionedContentUpdate } from '../db/memory-repository/writes.js';
+import { journalUpsertForId } from '../db/memory-repository/journal.js';
 import type { ParsedBlock } from './block-parser.js';
 import { ERR } from './errors.js';
 
@@ -16,10 +17,19 @@ export function applyRecordUpdate(
   currentContent: string,
   block: ParsedBlock,
 ): void {
-  if (block.content !== currentContent && !versionedContentUpdate(db, id, block.content)) {
+  // The inner content update's journal write is suppressed: a mixed
+  // content+metadata edit is ONE semantic mutation and journals once,
+  // below, at the transaction's final revision (journal.ts VFS
+  // semantics) — never at the intermediate revision.
+  const contentChanged = block.content !== currentContent;
+  if (contentChanged && !versionedContentUpdate(db, id, block.content, { suppressed: true })) {
     throw new Error(ERR.updateFailed(id));
   }
-  if (block.why === undefined && block.how === undefined && block.tags === undefined) return;
+  const metaChanged = block.why !== undefined || block.how !== undefined || block.tags !== undefined;
+  if (!metaChanged) {
+    if (contentChanged) journalUpsertForId(db, id);
+    return;
+  }
   const row = db.prepare('SELECT context, tags FROM memories WHERE id = ?').get(id) as { context: string | null; tags: string };
   const ctx = row.context ? JSON.parse(row.context) as { why?: string; how_to_apply?: string } : {};
   if (block.why !== undefined) { if (block.why === null) delete ctx.why; else ctx.why = block.why; }
@@ -27,4 +37,5 @@ export function applyRecordUpdate(
   const context = (ctx.why || ctx.how_to_apply) ? JSON.stringify(ctx) : null;
   const tags = block.tags !== undefined ? JSON.stringify(block.tags) : row.tags;
   db.prepare('UPDATE memories SET context = ?, tags = ? WHERE id = ?').run(context, tags, id);
+  journalUpsertForId(db, id);
 }

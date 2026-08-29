@@ -19,6 +19,7 @@ import { getGitWorkingState, getGitHash } from '../utils/project-scanner.js';
 import { basename } from 'node:path';
 import { extractWhyContext } from '../utils/intent-classifier.js';
 import { isSystemContent } from '../utils/validation.js';
+import { journalUpsertForId, retireIdsByInvalidation, syncBoundIds } from '../db/memory-repository/journal.js';
 import { computeRecallPrecision } from '../utils/prediction.js';
 import { findConsolidationCandidates, mergedConfidence, mergedTags } from '../utils/consolidation.js';
 
@@ -552,30 +553,34 @@ function runSessionConsolidation(
 
     const clusters = findConsolidationCandidates(memories, CONSOLIDATION.AFFINITY_THRESHOLD);
 
+    // Autonomous semantic compression never touches team-visible rows: a
+    // cluster containing ANY sync-bound row is skipped whole (journal.ts).
+    const bound = syncBoundIds(client.db, memories.map(m => m.id));
+
     for (const cluster of clusters) {
       const rep = cluster.representative;
+      if (cluster.members.some(m => bound.has(m.id))) continue;
       const newConf = mergedConfidence(cluster);
       const newTags = mergedTags(cluster);
 
-      // Update representative with merged data
+      // Update representative with merged data; the rewrite journals an
+      // upsert and retirements go through the shared tombstone+journal
+      // discipline (journal.ts consolidation semantics).
       client.db.prepare(`
         UPDATE memories SET confidence = ?, tags = ? WHERE id = ?
       `).run(newConf, JSON.stringify(newTags), rep.id);
+      journalUpsertForId(client.db, rep.id);
 
-      // Invalidate non-representative members
-      for (const m of cluster.members) {
-        if (m.id === rep.id) continue;
-        client.db.prepare(`
-          UPDATE memories SET invalidated = 1 WHERE id = ?
-        `).run(m.id);
-
+      const memberIds = cluster.members.filter(m => m.id !== rep.id).map(m => m.id);
+      retireIdsByInvalidation(client.db, memberIds);
+      for (const memberId of memberIds) {
         // Create supersedes edge: source=OLD(invalidated), target=NEW(representative)
         // Convention: "target replaces source" (edge-repository.ts:9)
         try {
           client.db.prepare(`
             INSERT OR IGNORE INTO memory_edges (source_id, target_id, relation, weight, created_at)
             VALUES (?, ?, 'supersedes', 1.0, datetime('now'))
-          `).run(m.id, rep.id);
+          `).run(memberId, rep.id);
         } catch { /* edge creation is best-effort */ }
       }
     }

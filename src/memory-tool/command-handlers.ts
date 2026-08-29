@@ -23,6 +23,9 @@ import {
   routeMemoryPath, vfsOwnedKinds, type RoutedPath,
 } from './path-router.js';
 import { applyRecordUpdate } from './record-updater.js';
+import {
+  journalTombstonesForIds, journalUpsertsForIds, retireIdsByInvalidation,
+} from '../db/memory-repository/journal.js';
 import { RenderCache } from './render-cache.js';
 import { renderDirectoryListing, renderFileView, renderPlanLines } from './view-renderer.js';
 
@@ -166,11 +169,12 @@ export class MemoryCommandHandlers {
         usedPrefixes.add(block.token.idPrefix);
         applyRecordUpdate(this.db, match.record.id, match.record.content, block);
       }
-      for (const [prefix, r] of resolved) {
-        if (!usedPrefixes.has(prefix)) {
-          this.db.prepare('UPDATE memories SET invalidated = 1 WHERE id = ?').run(r.record.id);
-        }
-      }
+      const dropped = [...resolved]
+        .filter(([prefix]) => !usedPrefixes.has(prefix))
+        .map(([, r]) => r.record.id);
+      // Explicit user removals: tombstone log + journal (journal.ts VFS
+      // semantics), inside this command's transaction.
+      retireIdsByInvalidation(this.db, dropped);
     });
     this.runPlanned(() => run.immediate(), route, path);
     this.cache.invalidate(path);
@@ -218,11 +222,9 @@ export class MemoryCommandHandlers {
       // RAW rows: corrupt-but-active records are deleted too, not skipped.
       const rows = activeRows(this.db, route.project, CATEGORY_KINDS[route.category]);
       if (rows.length === 0) throw new Error(ERR.nonexistent(path));
-      const stmt = this.db.prepare('UPDATE memories SET invalidated = 1 WHERE id = ?');
-      for (const row of rows) {
-        stmt.run(row.id);
-        invalidated++;
-      }
+      // Explicit user deletion: tombstone log + journal (journal.ts VFS
+      // semantics), not a bare flag flip.
+      invalidated = retireIdsByInvalidation(this.db, rows.map((r) => r.id));
     });
     run.immediate();
     this.cache.invalidate(path);
@@ -244,10 +246,11 @@ export class MemoryCommandHandlers {
       const scopeClause = project === null ? 'project IS NULL' : 'project = ?';
       const placeholders = kinds.map(() => '?').join(',');
       const args = project === null ? [...kinds] : [...kinds, project];
-      records = this.db.prepare(
-        `UPDATE memories SET invalidated = 1
+      const ids = (this.db.prepare(
+        `SELECT id FROM memories
          WHERE kind IN (${placeholders}) AND ${scopeClause} AND invalidated = 0 AND superseded_by IS NULL`
-      ).run(...args).changes;
+      ).all(...args) as Array<{ id: string }>).map((r) => r.id);
+      records = retireIdsByInvalidation(this.db, ids);
       files = freeFormDeleteUnder(this.db, dir);
       if (records + files === 0) throw new Error(ERR.nonexistent(dir));
     });
@@ -288,8 +291,15 @@ export class MemoryCommandHandlers {
       if (activeRows(this.db, newRoute.project, kinds).length > 0) {
         throw new Error(ERR.destinationExists(newPath));
       }
+      // A materialized rename is a USER scope move, not the administrative
+      // rescope X9 exempts: it journals like promote — tombstone under the
+      // departing scope (pre-move revision), upsert under the arriving one
+      // (post-move revision). Admissibility filters the global side out.
+      const ids = source.map((row) => row.id);
+      journalTombstonesForIds(this.db, ids);
       const stmt = this.db.prepare('UPDATE memories SET project = ? WHERE id = ?');
       for (const row of source) stmt.run(newRoute.project, row.id);
+      journalUpsertsForIds(this.db, ids);
     });
     run.immediate();
     this.cache.invalidate(oldPath);

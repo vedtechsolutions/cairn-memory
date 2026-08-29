@@ -493,6 +493,7 @@ CREATE TABLE IF NOT EXISTS sync_journal (
   memory_id TEXT NOT NULL,
   op TEXT NOT NULL CHECK (op IN ('upsert','tombstone')),
   row_revision INTEGER NOT NULL,
+  cause TEXT DEFAULT NULL,
   created_at TEXT NOT NULL,
   classification TEXT DEFAULT NULL CHECK (classification IN ('enqueued','permanently-ineligible','deferred-pending-eligibility') OR classification IS NULL),
   classified_at TEXT DEFAULT NULL

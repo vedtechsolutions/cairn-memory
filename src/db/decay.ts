@@ -51,7 +51,7 @@ export function expireTtlMemories(db: Database.Database, nowMs: number = Date.no
     DELETE FROM memories
     WHERE expires_at IS NOT NULL AND expires_at < ?
       AND kind NOT IN (${NON_DECAYING_PLACEHOLDERS})
-      AND id NOT IN (SELECT local_memory_id FROM sync_entity_map)
+      AND id NOT IN (SELECT local_memory_id FROM sync_entity_map WHERE state = 'bound')
   `).run(new Date(nowMs).toISOString(), ...NON_DECAYING_KINDS);
   return result.changes;
 }
@@ -117,7 +117,7 @@ export function applyConfidenceDecay(db: Database.Database, nowMs: number = Date
       AND kind != 'task_state'
       AND kind != 'correction'
       AND kind NOT IN (${NON_DECAYING_PLACEHOLDERS})
-      AND id NOT IN (SELECT local_memory_id FROM sync_entity_map)
+      AND id NOT IN (SELECT local_memory_id FROM sync_entity_map WHERE state = 'bound')
   `).run(CONFIDENCE.DELETE_THRESHOLD, ...NON_DECAYING_KINDS);
 
   // Prune the accumulated dead tail. Decay floors confidence AT the delete
@@ -135,7 +135,7 @@ export function applyConfidenceDecay(db: Database.Database, nowMs: number = Date
       AND created_at < ?
       AND kind NOT IN ('task_state', 'correction', 'user_profile', 'decision')
       AND kind NOT IN (${NON_DECAYING_PLACEHOLDERS})
-      AND id NOT IN (SELECT local_memory_id FROM sync_entity_map)
+      AND id NOT IN (SELECT local_memory_id FROM sync_entity_map WHERE state = 'bound')
     LIMIT ?
   `).all(CONFIDENCE.DELETE_THRESHOLD, pruneCutoff, ...NON_DECAYING_KINDS, LIMITS.CLEANUP_MAX_DELETE) as Array<{ id: string }>;
 
@@ -148,7 +148,10 @@ export function applyConfidenceDecay(db: Database.Database, nowMs: number = Date
     // before removal. (Not `DELETE ... LIMIT`: this SQLite build lacks it.)
     const ids = deadRows.map(r => r.id);
     const placeholders = ids.map(() => '?').join(',');
-    pruned = db.prepare(`DELETE FROM memories WHERE id IN (${placeholders})`).run(...ids).changes;
+    pruned = db.prepare(
+      `DELETE FROM memories WHERE id IN (${placeholders})
+         AND id NOT IN (SELECT local_memory_id FROM sync_entity_map WHERE state = 'bound')`
+    ).run(...ids).changes;
     // Forensic trail — decay runs unattended and this delete is irreversible.
     console.error(`[cairn] decay: pruned ${pruned} dead memory row(s) (floored, never recalled, ${DECAY.PRUNE_DEAD_AGE_DAYS}d+ old)`);
   }
@@ -160,7 +163,7 @@ export function applyConfidenceDecay(db: Database.Database, nowMs: number = Date
     WHERE invalidated = 1
       AND created_at < ?
       AND kind NOT IN (${NON_DECAYING_PLACEHOLDERS})
-      AND id NOT IN (SELECT local_memory_id FROM sync_entity_map)
+      AND id NOT IN (SELECT local_memory_id FROM sync_entity_map WHERE state = 'bound')
   `).run(thirtyDaysAgo, ...NON_DECAYING_KINDS);
 
   return {

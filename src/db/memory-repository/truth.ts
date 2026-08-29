@@ -15,7 +15,7 @@ import type { Memory, MemoryRow } from './types.js';
 import { rowToMemory } from './reads.js';
 import { buildFtsQuery, now } from '../../utils/index.js';
 import { SOURCE_AUTHORITY, TRUTH, type MemorySource } from '../../constants/index.js';
-import { journalMutation, currentRevision } from './journal.js';
+import { journalMutation, JOURNAL_CAUSE_SUPERSEDED_PREFIX, type JournalOptions } from './journal.js';
 
 // --- Claim classification + staleness ---------------------------------------
 
@@ -295,7 +295,7 @@ export interface ConflictApplication {
  *  same-scope candidates for a conflict and apply the (non-destructive) effect:
  *  retire the superseded loser, or record a `contradicts` edge + return the pair
  *  for surfacing. Bounded by TRUTH.CONFLICT_CANDIDATE_LIMIT. */
-export function applyConflictDetection(db: Database.Database, incoming: Memory): ConflictApplication {
+export function applyConflictDetection(db: Database.Database, incoming: Memory, journal?: JournalOptions): ConflictApplication {
   const empty: ConflictApplication = { supersededId: null, contradictionWith: null, signal: null };
   if (!TRUTH.CLAIM_KINDS.includes(incoming.kind)) return empty;
 
@@ -326,16 +326,24 @@ export function applyConflictDetection(db: Database.Database, incoming: Memory):
 
     if (conflict.type === 'supersession' && conflict.loserId) {
       const loser = conflict.loserId === existing.id ? existing : incoming;
+      const successorId = conflict.winnerId ?? incoming.id;
       db.transaction(() => {
+        // Supersession is a retirement WITH a successor. The portable
+        // payload cannot carry it as an upsert (no supersession fields —
+        // unchanged bytes, a wire no-op), so it journals a TOMBSTONE at
+        // the loser's last shareable revision, marked with the successor
+        // so the worker never confuses it with an ordinary deletion
+        // (journal.ts retraction semantics). Revision is read BEFORE the
+        // update: the trigger bumps the surviving row afterwards.
+        const preRevision = (db.prepare('SELECT revision FROM memories WHERE id = ?')
+          .get(conflict.loserId) as { revision: number } | undefined)?.revision ?? 1;
         db.prepare('UPDATE memories SET superseded_by = ?, superseded_at = ? WHERE id = ?')
-          .run(conflict.winnerId ?? incoming.id, now(), conflict.loserId);
-        // Supersession is a semantic RETIREMENT WITH A SUCCESSOR: it
-        // journals as an upsert of the retired row's new state, never as
-        // an ordinary tombstone (journal.ts retraction semantics).
+          .run(successorId, now(), conflict.loserId);
         journalMutation(db, {
           memoryId: conflict.loserId!, project: loser.project, kind: loser.kind,
-          op: 'upsert', revision: currentRevision(db, conflict.loserId!),
-        });
+          op: 'tombstone', revision: preRevision,
+          cause: `${JOURNAL_CAUSE_SUPERSEDED_PREFIX}${successorId}`,
+        }, journal);
       })();
       return { supersededId: conflict.loserId, contradictionWith: null, signal: conflict.signal };
     }

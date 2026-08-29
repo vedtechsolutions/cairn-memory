@@ -14,17 +14,17 @@ import { cosineSimilarity } from '../../utils/similarity.js';
 import type { Memory, MemoryRow, CreateMemoryInput, CreateResult, StoreMemoryInput } from './types.js';
 import { rowToMemory, bufferToFloat32, hasEmbedding, findById } from './reads.js';
 import { applyConflictDetection, contentsOppose } from './truth.js';
-import { journalMutation, currentRevision } from './journal.js';
+import { journalMutation, currentRevision, type JournalOptions } from './journal.js';
 
 const RULE_GENERIC_WRITE_ERROR = 'rule memories require the governance repository';
 
 /** Run non-destructive conflict detection on a freshly-inserted claim-bearing
  *  memory. Best-effort — a detection failure must never fail the write. */
-function detectConflicts(db: Database.Database, id: string): Pick<CreateResult, 'supersededId' | 'contradictionWith' | 'conflictSignal'> {
+function detectConflicts(db: Database.Database, id: string, journal?: JournalOptions): Pick<CreateResult, 'supersededId' | 'contradictionWith' | 'conflictSignal'> {
   try {
     const inserted = findById(db, id);
     if (!inserted) return {};
-    const r = applyConflictDetection(db, inserted);
+    const r = applyConflictDetection(db, inserted, journal);
     return { supersededId: r.supersededId, contradictionWith: r.contradictionWith, conflictSignal: r.signal };
   } catch {
     return {};
@@ -104,7 +104,7 @@ export function create(db: Database.Database, input: CreateMemoryInput): CreateR
   if (input.skipConflictDetection) {
     return { id, deduplicated: false };
   }
-  return { id, deduplicated: false, ...detectConflicts(db, id) };
+  return { id, deduplicated: false, ...detectConflicts(db, id, input.journal) };
 }
 
 /** Smart-merge gateway shared by storeDecision/storePitfall.
@@ -186,7 +186,7 @@ export function storeMemory(db: Database.Database, input: StoreMemoryInput): Cre
     journalMutation(db, { memoryId: id, project, kind, op: 'upsert', revision: 1 }, input.journal);
   })();
 
-  return { id, deduplicated: false, ...detectConflicts(db, id) };
+  return { id, deduplicated: false, ...detectConflicts(db, id, input.journal) };
 }
 
 function defaultConfidence(kind: LearnableKind): number {
@@ -293,7 +293,7 @@ export function findSimilar(db: Database.Database, content: string, project: str
   return null;
 }
 
-export function update(db: Database.Database, id: string, newContent: string): boolean {
+export function update(db: Database.Database, id: string, newContent: string, journal?: JournalOptions): boolean {
   // Corrections re-enter through the same gateway as create()/storeMemory():
   // scrub so a secret pasted into a fix never lands in content, memory_versions,
   // or the re-derived embedding.
@@ -311,7 +311,7 @@ export function update(db: Database.Database, id: string, newContent: string): b
       WHERE id = ? AND invalidated = 0 AND kind != 'rule'
     `).run(content, CONFIDENCE.CORRECTION, id);
     if (result.changes > 0 && existing) {
-      journalMutation(db, { memoryId: id, project: existing.project, kind: existing.kind, op: 'upsert', revision: currentRevision(db, id) });
+      journalMutation(db, { memoryId: id, project: existing.project, kind: existing.kind, op: 'upsert', revision: currentRevision(db, id) }, journal);
     }
     return result.changes > 0;
   })();
@@ -345,7 +345,7 @@ export function getVersionHistory(db: Database.Database, memoryId: string): Arra
  *  writes the tombstone log in the same transaction — sync propagation
  *  later, forget-audit today. A refused mutation (rule kind, missing id)
  *  logs nothing. */
-function retractWithTombstone(db: Database.Database, id: string, action: 'delete' | 'invalidate'): boolean {
+function retractWithTombstone(db: Database.Database, id: string, action: 'delete' | 'invalidate', journal?: JournalOptions): boolean {
   return db.transaction(() => {
     const row = db.prepare("SELECT project, kind, content, revision FROM memories WHERE id = ? AND kind != 'rule'").get(id) as
       | { project: string | null; kind: string; content: string; revision: number } | undefined;
@@ -354,7 +354,7 @@ function retractWithTombstone(db: Database.Database, id: string, action: 'delete
       INSERT INTO memory_tombstones (memory_id, action, project, kind, content, deleted_at)
       VALUES (?, ?, ?, ?, ?, datetime('now'))
     `).run(id, action, row.project, row.kind, row.content);
-    journalMutation(db, { memoryId: id, project: row.project, kind: row.kind, op: 'tombstone', revision: row.revision });
+    journalMutation(db, { memoryId: id, project: row.project, kind: row.kind, op: 'tombstone', revision: row.revision }, journal);
     const stmt = action === 'delete'
       ? "DELETE FROM memories WHERE id = ? AND kind != 'rule'"
       : "UPDATE memories SET invalidated = 1 WHERE id = ? AND kind != 'rule'";
@@ -362,24 +362,24 @@ function retractWithTombstone(db: Database.Database, id: string, action: 'delete
   })();
 }
 
-export function invalidate(db: Database.Database, id: string): boolean {
-  return retractWithTombstone(db, id, 'invalidate');
+export function invalidate(db: Database.Database, id: string, journal?: JournalOptions): boolean {
+  return retractWithTombstone(db, id, 'invalidate', journal);
 }
 
-export function deleteById(db: Database.Database, id: string): boolean {
-  return retractWithTombstone(db, id, 'delete');
+export function deleteById(db: Database.Database, id: string, journal?: JournalOptions): boolean {
+  return retractWithTombstone(db, id, 'delete', journal);
 }
 
 /** Promote a project-scoped memory to global scope. Journals a tombstone
  *  under the OLD project: the row departed the only scope team sync can
  *  see (journal.ts retraction semantics). */
-export function promote(db: Database.Database, id: string): boolean {
+export function promote(db: Database.Database, id: string, journal?: JournalOptions): boolean {
   return db.transaction(() => {
     const row = db.prepare(
       "SELECT project, kind, revision FROM memories WHERE id = ? AND invalidated = 0 AND project IS NOT NULL AND kind != 'rule'",
     ).get(id) as { project: string; kind: string; revision: number } | undefined;
     if (!row) return false;
-    journalMutation(db, { memoryId: id, project: row.project, kind: row.kind, op: 'tombstone', revision: row.revision });
+    journalMutation(db, { memoryId: id, project: row.project, kind: row.kind, op: 'tombstone', revision: row.revision }, journal);
     const result = db.prepare(
       "UPDATE memories SET project = NULL WHERE id = ? AND invalidated = 0 AND project IS NOT NULL AND kind != 'rule'"
     ).run(id);

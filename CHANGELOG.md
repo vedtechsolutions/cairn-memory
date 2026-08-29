@@ -8,6 +8,7 @@
 - Added schema v32 (team-sync foundations): `author`, `updated_at` (trigger-maintained), and tri-state `share_state` on memories; a tombstone log written whenever a memory is deleted or invalidated (forget audit today, retraction propagation later); and the neutral sync replica tables (entity map, alias log, conflict sets, contributor projection, state store, semantic journal). `migrate-project` now carries all project-keyed sync state through renames.
 
 - Added the semantic-change journal: every semantic memory mutation in a shareable scope (create, merge, correction, retraction, supersession, promote, explicit bulk deletion) records an intent entry in the same transaction — local audit today, the sync worker's feed later. Administrative rescopes never journal; autonomous maintenance (TTL/decay/pruning) journals nothing and can no longer delete sync-bound rows.
+- Extended the journal to every remaining semantic surface (dual-review fold): Memory Tool deletions, edits, and renames; explicit trust changes (`cairn_strengthen`/`cairn_weaken`, terminal weaken now retracts properly); portable restores; consolidation; auto-promotion; and anchor repair. Supersession now journals a caused tombstone (`superseded-by:<id>`) instead of a wire-inexpressible upsert. Autonomous consolidation, auto-promotion, and terminal weakening are barred from sync-bound rows; opted-out shadow rows prune normally again.
 
 ### Fixed
 

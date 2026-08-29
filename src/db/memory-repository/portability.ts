@@ -19,6 +19,7 @@
 import type Database from 'better-sqlite3';
 import { isPrivateProject } from '../../config/cairn-config.js';
 import { writeFreeForm } from '../../memory-tool/free-form-store.js';
+import { journalUpsertForId, type JournalOptions } from './journal.js';
 import {
   assertPortableFilePath, validateRecordPayload,
   type PortableFile, type PortableRecord,
@@ -141,7 +142,7 @@ export class PrivateScopeChangeError extends Error {
 export function restoreRecord(
   db: Database.Database,
   record: PortableRecord & { id: string },
-  opts: { allowPrivateScopeChange?: boolean; sessionProjectId?: string | null } = {},
+  opts: { allowPrivateScopeChange?: boolean; sessionProjectId?: string | null; journal?: JournalOptions } = {},
 ): 'inserted' | 'updated' {
   if ((record as { kind: string }).kind === 'rule') {
     throw new Error('rule memories are not portable');
@@ -194,6 +195,11 @@ export function restoreRecord(
     context: record.context === null ? null : JSON.stringify(record.context),
     anchor: record.anchor,
   });
+  // A restore is a user-invoked semantic write — including the deliberate
+  // resurrection of a retired row — so it journals an upsert at the
+  // resulting revision like any other explicit edit (journal.ts). The
+  // future replicated apply passes `suppressed` (D13).
+  journalUpsertForId(db, record.id, opts.journal);
   return existing ? 'updated' : 'inserted';
 }
 
@@ -217,7 +223,7 @@ export function restoreDocument(
   db: Database.Database,
   records: ReadonlyArray<PortableRecord & { id: string }>,
   files: readonly PortableFile[],
-  opts: { allowPrivateScopeChange?: boolean; sessionProjectId?: string | null } = {},
+  opts: { allowPrivateScopeChange?: boolean; sessionProjectId?: string | null; journal?: JournalOptions } = {},
 ): RestoreCounts {
   let restored = 0;
   let overwritten = 0;

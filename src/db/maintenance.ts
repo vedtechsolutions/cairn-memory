@@ -18,7 +18,10 @@ import { GovernanceRepository } from '../governance/repository.js';
 // importers (tests, handlers) keep their `from './maintenance.js'` paths.
 export { applyConfidenceDecay, expireTtlMemories } from './decay.js';
 import { applyConfidenceDecay, expireTtlMemories } from './decay.js';
-import { journalTombstonesForIds } from './memory-repository/journal.js';
+import {
+  journalTombstonesForIds, journalUpsertForId, retireIdsByInvalidation, syncBoundIds,
+} from './memory-repository/journal.js';
+import { promote as promoteToGlobal } from './memory-repository/writes.js';
 
 /** Clean up old compaction snapshots (time-based retention) */
 export function cleanupSnapshots(db: Database.Database, _currentSessionId?: string): number {
@@ -76,7 +79,7 @@ export function cleanupArchivedPlans(db: Database.Database): number {
 
 /** Delete ordinary memories for a project. Governance policy has its own
  * explicit audited project-cleanup lifecycle. */
-export function forgetProject(db: Database.Database, project: string): number {
+export function forgetProject(db: Database.Database, project: string, opts?: import('./memory-repository/journal.js').JournalOptions): number {
   // Explicit bulk retraction (journal.ts): log + journal, then delete.
   return db.transaction(() => {
     db.prepare(`
@@ -85,7 +88,7 @@ export function forgetProject(db: Database.Database, project: string): number {
       FROM memories WHERE project = ? AND kind != 'rule'
     `).run(project);
     const ids = (db.prepare("SELECT id FROM memories WHERE project = ? AND kind != 'rule'").all(project) as Array<{ id: string }>).map(r => r.id);
-    journalTombstonesForIds(db, ids);
+    journalTombstonesForIds(db, ids, opts);
     const result = db.prepare("DELETE FROM memories WHERE project = ? AND kind != 'rule'").run(project);
     return result.changes;
   })();
@@ -288,6 +291,9 @@ export function updateAnchorsForRenames(
           if (JSON.stringify(newFiles) !== JSON.stringify(anchor.files)) {
             anchor.files = newFiles;
             stmt.run(JSON.stringify(anchor), row.id);
+            // `anchor` is a portable field: the repair journals an upsert
+            // so peers converge on the renamed path (journal.ts).
+            journalUpsertForId(db, row.id);
             updated++;
           }
         }
@@ -388,8 +394,11 @@ export function runConsolidation(db: Database.Database): { merged: number; clust
     (repId: string, newConf: number, newTagsJson: string, memberIds: string[]) => {
       db.prepare('UPDATE memories SET confidence = ?, tags = ? WHERE id = ?')
         .run(newConf, newTagsJson, repId);
+      // Members are retired, not flag-flipped: consolidation is semantic
+      // compression, so retirements tombstone-log + journal (journal.ts).
+      retireIdsByInvalidation(db, memberIds);
+      journalUpsertForId(db, repId);
       for (const memberId of memberIds) {
-        db.prepare('UPDATE memories SET invalidated = 1 WHERE id = ?').run(memberId);
         edgeRepo.createEdge(memberId, repId, 'refines');
       }
     },
@@ -435,8 +444,15 @@ export function runConsolidation(db: Database.Database): { merged: number; clust
       const clusters = findConsolidationCandidates(projectMemories, CONSOLIDATION.AFFINITY_THRESHOLD, embeddingSimilarities);
       totalClusters += clusters.length;
 
+      // Autonomous semantic ops never touch team-visible rows: a cluster
+      // containing ANY sync-bound row is skipped whole — invalidating a
+      // bound member or rewriting a bound representative is exactly the
+      // authority journal.ts bars (slice-3 review).
+      const bound = syncBoundIds(db, projectMemories.map(m => m.id));
+
       for (const cluster of clusters) {
         const rep = cluster.representative;
+        if (cluster.members.some(m => bound.has(m.id))) continue;
         const newConf = mergedConfidence(cluster);
         const newTags = mergedTags(cluster);
         const memberIds = cluster.members.filter(m => m.id !== rep.id).map(m => m.id);
@@ -513,11 +529,15 @@ export function runAutoPromotion(db: Database.Database): { promoted: number } {
     // Content doesn't reference project-specific paths (simple heuristic)
     if (candidate.content.includes('/src/') || candidate.content.includes('/opt/')) continue;
 
-    // Promote: set project to null (global scope). No marker edge — a
-    // self-referential edge pollutes graph-neighbor enrichment, where the
-    // promoted memory would surface itself as its own neighbor on every recall.
-    db.prepare('UPDATE memories SET project = NULL WHERE id = ?').run(candidate.id);
-    promoted++;
+    // Autonomous scope departure is barred for sync-bound rows — only the
+    // user may pull a row out of the team's view (journal.ts).
+    if (syncBoundIds(db, [candidate.id]).size > 0) continue;
+
+    // Promote through the journal-owning repository path (tombstone under
+    // the departing project). No marker edge — a self-referential edge
+    // pollutes graph-neighbor enrichment, where the promoted memory would
+    // surface itself as its own neighbor on every recall.
+    if (promoteToGlobal(db, candidate.id)) promoted++;
   }
 
   return { promoted };

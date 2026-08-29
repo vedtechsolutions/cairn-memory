@@ -166,6 +166,10 @@ describe('v32 team-sync schema', () => {
       assert.throws(() => repo.delete(id), /injected/);
       db.exec('DROP TRIGGER abort_delete');
       assert.equal((db.prepare('SELECT COUNT(*) n FROM memory_tombstones').get() as { n: number }).n, 0);
+      assert.equal(
+        (db.prepare("SELECT COUNT(*) n FROM sync_journal WHERE op = 'tombstone'").get() as { n: number }).n, 0,
+        'the late DELETE failure rolls the journal entry back with the tombstone log',
+      );
       assert.equal(repo.delete(id), true);
     } finally {
       db.close();
