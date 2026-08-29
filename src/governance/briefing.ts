@@ -14,6 +14,12 @@ import { sanitize } from '../utils/validation.js';
 
 export interface GovernanceBriefingSection {
   rules: string[];
+  /** Whether THIS SESSION's client is in the advisory layer's scope
+   *  (claude-code only today). The renderer branches on this, never on
+   *  the unsupported_client CODE: a claude-code session reading a
+   *  foreign-stamped row also carries that code, and inferring identity
+   *  from it would silently swallow its real degradations (review). */
+  clientInScope: boolean;
   capabilityReasons: CapabilityDegradationReason[];
   lastVerdict: {
     result: ShadowResult;
@@ -135,6 +141,7 @@ export function loadGovernanceBriefing(db: Database.Database, options: {
     });
     return {
       rules: rules.slice(0, 3).map(rule => redactedRule(rule.content).slice(0, 120)),
+      clientInScope: options.clientName === 'claude-code',
       capabilityReasons: capability.reasons.slice(0, 8),
       lastVerdict: lastVerdict(db, options.project),
     };

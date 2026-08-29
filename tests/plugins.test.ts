@@ -116,7 +116,11 @@ describe('thin-plugin packaging', () => {
         // node-less shape was reviewer-verified on a clean box).
         encoding: 'utf-8', env: { PATH: '/usr/bin:/bin', HOME: sim },
       });
-      assert.equal(r.stdout, 'serving v22.12.0', `newest version, via its own node (stderr: ${r.stderr})`);
+      // status/signal/error in the message: a sandboxed reviewer run got
+      // empty output with nothing to diagnose (a nested-exec policy had
+      // suppressed the symlinked node) — name everything spawn knows.
+      assert.equal(r.stdout, 'serving v22.12.0',
+        `newest version via its own node (status=${r.status} signal=${r.signal} error=${String(r.error)} stderr=${r.stderr})`);
     } finally {
       rmSync(sim, { recursive: true, force: true });
     }
