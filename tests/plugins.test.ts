@@ -104,6 +104,11 @@ describe('thin-plugin packaging', () => {
         chmodSync(join(bin, 'cairn'), 0o755);
         symlinkSync(process.execPath, join(bin, 'node'));
       }
+      // A NEWER node WITHOUT cairn: selecting the newest directory and
+      // only then checking hid the valid v22 install (both reviewers) —
+      // the scan must take the newest version that actually HAS cairn.
+      mkdirSync(join(sim, '.nvm', 'versions', 'node', 'v23.5.0', 'bin'), { recursive: true });
+      symlinkSync(process.execPath, join(sim, '.nvm', 'versions', 'node', 'v23.5.0', 'bin', 'node'));
       const r = spawnSync(join(REPO_ROOT, 'plugins/claude/cairn/bin/cairn-mcp.sh'), [], {
         // cairn is off this PATH; the version-ordering half is fully
         // proven here, and the PATH-prepend keeps the fixture's own

@@ -19,23 +19,30 @@ if [ -z "$BIN" ]; then
   fi
 fi
 if [ -z "$BIN" ]; then
-  # Common install locations, first executable wins.
+  # USER-MANAGED installs beat system copies — a stale /usr/local copy
+  # displacing the volta/npm-managed one is the split-brain class this
+  # launcher exists to avoid (review).
   for candidate in \
-    /usr/local/bin/cairn /opt/homebrew/bin/cairn \
+    "${HOME:-/nonexistent}/.volta/bin/cairn" \
     "${HOME:-/nonexistent}/.local/bin/cairn" \
-    "${HOME:-/nonexistent}/.volta/bin/cairn"; do
+    /opt/homebrew/bin/cairn /usr/local/bin/cairn; do
     if [ -x "$candidate" ]; then BIN="$candidate"; break; fi
   done
 fi
 if [ -z "$BIN" ] && [ -d "${HOME:-/nonexistent}/.nvm/versions/node" ]; then
-  # NEWEST nvm version — glob order is LEXICOGRAPHIC, where v9 sorts
-  # after v22 and an abandoned tree would silently win (review,
-  # executed: SERVING FROM v9.11.2). sort -V when available; the plain
-  # sort fallback is the old imperfect behavior, never worse.
-  if sort -V < /dev/null > /dev/null 2>&1; then NVSORT="sort -V"; else NVSORT="sort"; fi
-  NEWEST="$(ls "${HOME}/.nvm/versions/node" 2>/dev/null | $NVSORT | tail -1)"
-  [ -n "$NEWEST" ] && [ -x "${HOME}/.nvm/versions/node/$NEWEST/bin/cairn" ] \
-    && BIN="${HOME}/.nvm/versions/node/$NEWEST/bin/cairn"
+  # Newest→oldest, FIRST version that actually HAS cairn: glob order is
+  # LEXICOGRAPHIC (v9 sorted after v22 — an abandoned tree served an
+  # outdated install; review, executed), and checking only the newest
+  # DIRECTORY hid a valid older install behind a fresh node without
+  # cairn (both reviewers). sort -rV when available; the plain reverse
+  # sort fallback still finds A cairn, at worst an older one.
+  if sort -rV < /dev/null > /dev/null 2>&1; then NVSORT="sort -rV"; else NVSORT="sort -r"; fi
+  for version in $(ls "${HOME}/.nvm/versions/node" 2>/dev/null | $NVSORT); do
+    if [ -x "${HOME}/.nvm/versions/node/$version/bin/cairn" ]; then
+      BIN="${HOME}/.nvm/versions/node/$version/bin/cairn"
+      break
+    fi
+  done
 fi
 [ -n "$BIN" ] || fail "cairn-memory not found on PATH or in common install locations"
 # Carry the bin's OWN directory on PATH: the npm bin is '#!/usr/bin/env
