@@ -188,6 +188,7 @@ export function checkCodexParity(): CheckResult {
     return { status: 'warn', detail: 'Codex CLI detected but Cairn hooks are not installed — run `cairn init`' };
   }
   let file: CodexHooksFile;
+  let total: number;
   try {
     const parsed = JSON.parse(readFileSync(hooksPath, 'utf-8')) as unknown;
     // A wrong-shape file is a config problem, not a doctor crash: the cast
@@ -198,10 +199,12 @@ export function checkCodexParity(): CheckResult {
       throw new Error('not a hooks file');
     }
     file = parsed as CodexHooksFile;
+    // Counting walks the full nested shape — a group without a hooks
+    // array surfaced a raw TypeError instead of this warn (review).
+    total = codexHookCount(file);
   } catch {
     return { status: 'warn', detail: `${hooksPath} is not a valid hooks file (bad JSON or shape) — re-run \`cairn init\`` };
   }
-  const total = codexHookCount(file);
   const wired = JSON.stringify(file).includes(CAIRN_HOOK_DIR_MARKER);
   if (!wired || total === 0) {
     return { status: 'warn', detail: 'Codex hooks.json exists but carries no Cairn hooks — run `cairn init`' };

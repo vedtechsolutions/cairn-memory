@@ -527,3 +527,13 @@ describe('doctor stale-install detection (step-6 review)', () => {
     assert.ok(!/moved or removed/.test(r.detail), r.detail);
   });
 });
+
+describe('doctor malformed-shape resilience (claude round-2 low)', () => {
+  it('a group without a hooks array warns instead of throwing', () => {
+    mkdirSync(codexDir(), { recursive: true });
+    writeFileSync(codexHooksPath(), JSON.stringify({ hooks: { SessionStart: [{}] } }));
+    const r = checkCodexParity();
+    assert.equal(r.status, 'warn');
+    assert.match(r.detail, /not a valid hooks file/);
+  });
+});
