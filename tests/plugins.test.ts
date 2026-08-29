@@ -88,20 +88,30 @@ describe('thin-plugin packaging', () => {
     assert.deepEqual(codexPlugin.mcpServers.cairn.args, ['serve']);
   });
 
-  it('MCP launcher writes NOTHING to stdout before exec and resolves off-PATH', () => {
-    // stdout purity is the whole reason a login shell was rejected —
-    // and the launcher must find the install when `cairn` is NOT on
-    // the launching app's PATH (the GUI case), here via an nvm layout.
+  it('MCP launcher resolves off-PATH, picks the NEWEST nvm version, carries node', () => {
+    // Three reviewer-executed failure shapes in one: stdout must stay
+    // protocol-pure; glob order is LEXICOGRAPHIC so v9 beat v22 (the
+    // OLDEST won); and the npm bin is '#!/usr/bin/env node' so a
+    // node-less GUI PATH died exit 127 after finding cairn — the bin's
+    // own dir must ride PATH into the exec.
     const sim = mkdtempSync(join(tmpdir(), 'cairn-mcp-sim-'));
     try {
-      const nvmBin = join(sim, '.nvm', 'versions', 'node', 'v24.0.0', 'bin');
-      mkdirSync(nvmBin, { recursive: true });
-      writeFileSync(join(nvmBin, 'cairn'), '#!/bin/sh\n[ "$1" = serve ] && exec printf serving\nexit 1\n');
-      chmodSync(join(nvmBin, 'cairn'), 0o755);
+      for (const version of ['v9.11.2', 'v22.12.0']) {
+        const bin = join(sim, '.nvm', 'versions', 'node', version, 'bin');
+        mkdirSync(bin, { recursive: true });
+        writeFileSync(join(bin, 'cairn'),
+          `#!/usr/bin/env node\nif (process.argv[2] === 'serve') process.stdout.write('serving ${version}');\n`);
+        chmodSync(join(bin, 'cairn'), 0o755);
+        symlinkSync(process.execPath, join(bin, 'node'));
+      }
       const r = spawnSync(join(REPO_ROOT, 'plugins/claude/cairn/bin/cairn-mcp.sh'), [], {
+        // cairn is off this PATH; the version-ordering half is fully
+        // proven here, and the PATH-prepend keeps the fixture's own
+        // node first even where the OS has a system node (the fully
+        // node-less shape was reviewer-verified on a clean box).
         encoding: 'utf-8', env: { PATH: '/usr/bin:/bin', HOME: sim },
       });
-      assert.equal(r.stdout, 'serving', 'resolved through the common-locations fallback, stdout protocol-pure');
+      assert.equal(r.stdout, 'serving v22.12.0', `newest version, via its own node (stderr: ${r.stderr})`);
     } finally {
       rmSync(sim, { recursive: true, force: true });
     }
