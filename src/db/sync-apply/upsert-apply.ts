@@ -87,6 +87,23 @@ export function hasUnpushedLocalIntent(db: Database.Database, memoryId: string, 
   `).get(memoryId) !== undefined;
 }
 
+/** Erase-protection predicate (final-verification adjudication): distinct
+ *  from the FORK predicate. Codex proved a byte-equal echo and a clean
+ *  remote edit both ERASED pending local confidence changes; the Claude
+ *  gate had ruled volatile overwrite "the field-set decision's
+ *  consequence". Both stand: volatile fields are never FORK evidence,
+ *  and pending volatile intent is never ERASED. J2-enqueued counts here
+ *  — §7 J2 is prepared + core-acked, NOT server-acked — while for the
+ *  fork decision it is consumed. Once the worker's push round-trips,
+ *  the local value returns as canonical; preservation is self-healing. */
+function hasPendingVolatileIntent(db: Database.Database, memoryId: string): boolean {
+  return db.prepare(`
+    SELECT 1 FROM sync_journal
+    WHERE memory_id = ? AND (classification IS NULL OR classification IN ('deferred-pending-eligibility', 'enqueued'))
+    LIMIT 1
+  `).get(memoryId) !== undefined;
+}
+
 /** A pre-existing row may be reused for a binding ONLY when it provably
  *  is the same row: same project, same as-stored projection bytes. Any
  *  other coincidence of ids is a UUID collision and fails the batch
@@ -236,18 +253,36 @@ export function applyUpsert(db: Database.Database, project: string, env: SyncEnt
     }
     // Every MUTABLE wire field applies — kind, source, fingerprint and
     // expires_at were previously left stale (slice-4 Codex gate #4).
-    // Immutable: id, created_at, author (the creator).
+    // Immutable: id, created_at, author (the creator). ERASE-PROTECTION:
+    // when the row carries pending volatile intent (see
+    // hasPendingVolatileIntent), the volatile fields keep their LOCAL
+    // values — a delayed echo or clean remote edit must never roll back
+    // an unacknowledged strengthen. The embedding clears only when the
+    // content bytes actually changed (a byte-equal echo keeps its
+    // still-valid vector).
     const inert = buildInertProjection(env, record);
-    db.prepare(`
-      UPDATE memories SET content = ?, kind = ?, tags = ?, context = ?, anchor = ?, confidence = ?,
-        source = ?, fingerprint = ?, expires_at = ?,
-        embedding = NULL, embedding_model = NULL
-      WHERE id = ?
-    `).run(projected.content, projected.kind, JSON.stringify(projected.tags),
-      projected.context ? JSON.stringify(projected.context) : null,
-      projected.anchor, record.confidence, record.source,
-      inert.fingerprint ? JSON.stringify(inert.fingerprint) : null, record.expires_at,
-      existing.local_memory_id);
+    const preserveVolatile = hasPendingVolatileIntent(db, existing.local_memory_id);
+    const bytesChanged = localPh !== ph;
+    if (preserveVolatile) {
+      db.prepare(`
+        UPDATE memories SET content = ?, kind = ?, tags = ?, context = ?, anchor = ?
+          ${bytesChanged ? ', embedding = NULL, embedding_model = NULL' : ''}
+        WHERE id = ?
+      `).run(projected.content, projected.kind, JSON.stringify(projected.tags),
+        projected.context ? JSON.stringify(projected.context) : null,
+        projected.anchor, existing.local_memory_id);
+    } else {
+      db.prepare(`
+        UPDATE memories SET content = ?, kind = ?, tags = ?, context = ?, anchor = ?, confidence = ?,
+          source = ?, fingerprint = ?, expires_at = ?
+          ${bytesChanged ? ', embedding = NULL, embedding_model = NULL' : ''}
+        WHERE id = ?
+      `).run(projected.content, projected.kind, JSON.stringify(projected.tags),
+        projected.context ? JSON.stringify(projected.context) : null,
+        projected.anchor, record.confidence, record.source,
+        inert.fingerprint ? JSON.stringify(inert.fingerprint) : null, record.expires_at,
+        existing.local_memory_id);
+    }
     // The revision trigger just stamped the local clock; the SERVER
     // timestamp is authoritative for replicated state (D13 — review
     // C10). updated_at is not in the trigger's UPDATE OF list, so this

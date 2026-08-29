@@ -689,6 +689,36 @@ describe('sync apply — §6 M1 transitions', () => {
     assert.equal(getByEntityId(db, 'E3'), undefined, 'its binding is closed');
   });
 
+  it('erase-protection: a delayed byte-equal echo never rolls back a later pending strengthen, and keeps the still-valid vector', () => {
+    const id = randomUUID();
+    applyEventBatch(db, PROJECT, [upsertEvent(1, envelope(record({ id, content: 'edited then strengthened' }), { entityId: 'E1', version: 1 }))]);
+    repo.strengthenConfidence(id);
+    const strengthened = (db.prepare('SELECT confidence FROM memories WHERE id = ?').get(id) as { confidence: number }).confidence;
+    assert.ok(strengthened > 0.6, 'fixture: the strengthen raised confidence above the payload value');
+    db.prepare("UPDATE memories SET embedding = ?, embedding_model = 'test-model' WHERE id = ?").run(Buffer.from([9, 9]), id);
+
+    // The content edit's echo arrives byte-equal, carrying the OLD confidence.
+    const echo = applyEventBatch(db, PROJECT, [upsertEvent(2, envelope(record({ id, content: 'edited then strengthened' }), { entityId: 'E1', version: 2 }))]);
+    assert.deepEqual(echo.outcomes.map((o) => o.outcome), ['applied-edit']);
+    const row = db.prepare('SELECT confidence, embedding FROM memories WHERE id = ?').get(id) as { confidence: number; embedding: Buffer | null };
+    assert.equal(row.confidence, strengthened, 'the pending strengthen survives the echo');
+    assert.ok(row.embedding, 'byte-equal content keeps its still-valid vector');
+  });
+
+  it('erase-protection: an ENQUEUED strengthen is not server-acked — a clean remote edit applies content but preserves local volatile fields', () => {
+    const id = randomUUID();
+    applyEventBatch(db, PROJECT, [upsertEvent(1, envelope(record({ id }), { entityId: 'E1', version: 1 }))]);
+    repo.strengthenConfidence(id);
+    const strengthened = (db.prepare('SELECT confidence FROM memories WHERE id = ?').get(id) as { confidence: number }).confidence;
+    db.prepare("UPDATE sync_journal SET classification = 'enqueued' WHERE memory_id = ?").run(id);
+
+    const result = applyEventBatch(db, PROJECT, [upsertEvent(2, envelope(record({ id, content: 'independent remote edit content' }), { entityId: 'E1', version: 2 }))]);
+    assert.deepEqual(result.outcomes.map((o) => o.outcome), ['applied-edit'], 'enqueued is still consumed for the FORK decision');
+    const row = db.prepare('SELECT content, confidence FROM memories WHERE id = ?').get(id) as { content: string; confidence: number };
+    assert.equal(row.content, 'independent remote edit content', 'the semantic edit applies');
+    assert.equal(row.confidence, strengthened, 'the unacknowledged strengthen is never erased');
+  });
+
   it('inbound predicate: project mismatch, unknown kinds, rule kind, and unknown event types are refused whole-batch', () => {
     const wrongProject = record({ id: randomUUID(), project: 'other-proj' });
     assert.throws(() => applyEventBatch(db, PROJECT, [upsertEvent(1, envelope(wrongProject, { entityId: 'E1', version: 1 }))]), ApplyValidationError);
