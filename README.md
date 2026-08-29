@@ -145,7 +145,7 @@ Resources: `cairn://plan/{project}/active` and `cairn://briefing/{project}` — 
 npm run build && npm test
 ```
 
-Contributor guide, architecture, benchmarks (LongMemEval), SNR probes, and test-environment reference: [`docs/development.md`](docs/development.md). Multi-agent daemon setup: [`docs/daemon.md`](docs/daemon.md). Memory-tool backend for the Anthropic SDK: [`docs/memory-tool-adapter.md`](docs/memory-tool-adapter.md). Governance gate inspector: [`docs/governance-inspector.md`](docs/governance-inspector.md).
+External contributions require signing the [CLA](CLA.md) (a bot prompts on your first PR) and DCO sign-off — see [`CONTRIBUTING.md`](CONTRIBUTING.md). Contributor guide, architecture, benchmarks (LongMemEval), SNR probes, and test-environment reference: [`docs/development.md`](docs/development.md). Multi-agent daemon setup: [`docs/daemon.md`](docs/daemon.md). Memory-tool backend for the Anthropic SDK: [`docs/memory-tool-adapter.md`](docs/memory-tool-adapter.md). Governance gate inspector: [`docs/governance-inspector.md`](docs/governance-inspector.md).
 
 ## License
 

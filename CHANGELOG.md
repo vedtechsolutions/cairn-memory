@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added a Contributor License Agreement ([`CLA.md`](CLA.md)) with a CLA-signature gate on pull requests (contributors keep their copyright and grant VEDTECH Solutions relicensing rights); `CONTRIBUTING.md` and the PR template now document the CLA + DCO flow.
+
 ## [5.4.0] - 2026-08-29
 
 ### Added

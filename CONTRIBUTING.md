@@ -36,13 +36,19 @@ npm run build && npm test           # build + test in one step
 3. Ensure the build and full suite pass.
 4. Open a PR describing the problem and the approach.
 
+## Contributor License Agreement (CLA)
+
+Before your first pull request can merge, you must sign the [Cairn Individual CLA](CLA.md). A bot comments on your first PR — reply with the sentence it asks for and the check turns green; the signature covers all your future contributions too.
+
+In short: **you keep the copyright** in your contribution, and you grant VEDTECH Solutions a broad, irrevocable license — including the right to relicense the project under any terms. This is what keeps the project freely relicensable and commercially viable without tracking down every past contributor. Contributing on behalf of a company? Contact **info@vedtechsolutions.com** for a corporate CLA first.
+
 ## Developer Certificate of Origin
 
-We use the [DCO](https://developercertificate.org/). Sign off each commit with `git commit -s` to certify you wrote the patch or otherwise have the right to submit it under the project license.
+We also use the [DCO](https://developercertificate.org/). Sign off each commit with `git commit -s` to certify you wrote the patch or otherwise have the right to submit it. The CLA covers what rights you grant; the DCO certifies, per commit, that the code is yours to grant them for.
 
-## License of contributions
+## Project licenses
 
-Cairn is licensed under the **Elastic License 2.0** (ELv2). By contributing, you agree that your contributions are licensed under ELv2. Do not submit code you do not have the right to license this way.
+The `cairn-memory` runtime is licensed under the **Elastic License 2.0**; the `cairn-contract` package under **MIT**. Your contributions are distributed under the license of the package they land in (and under other terms VEDTECH may choose, per the CLA). Do not submit code you do not have the right to contribute.
 
 ## Questions
 
