@@ -600,6 +600,67 @@ describe('sync apply — §6 M1 transitions', () => {
     assert.deepEqual(r2.outcomes.map((o) => o.outcome), ['forked'], 'deferred work is still unpushed');
   });
 
+  it('Z1: a resolved set is one-shot — the same resolution replays as a no-op, a different one is refused, and the canonical must be a member or new', () => {
+    const idF = randomUUID();
+    const idE = randomUUID();
+    applyEventBatch(db, PROJECT, [
+      upsertEvent(1, envelope(record({ id: idF, content: 'one shot near dup' }), { entityId: 'F', version: 1 })),
+      upsertEvent(2, envelope(record({ id: idE, content: '[WAYKEEP] one shot near dup' }), { entityId: 'E', version: 1 })),
+    ]);
+    const setId = deterministicConflictSetId(['E', 'F'], 'near-duplicate');
+    const resolve: SyncEvent = {
+      type: 'resolve-commit', seq: 3, conflict_set_id: setId,
+      canonical: envelope(record({ id: idE, content: 'one shot near dup' }), { entityId: 'E', version: 2 }),
+      tombstoned_entity_ids: ['F'], contributors: ['acct-alice'],
+    };
+    applyEventBatch(db, PROJECT, [resolve]);
+
+    const replay = applyEventBatch(db, PROJECT, [resolve]);
+    assert.deepEqual(replay.outcomes.map((o) => o.outcome), ['replay-noop'], 'the same committed resolution replays');
+
+    // A DIFFERENT later resolution must not reverse the winner. E is
+    // already tombstoned as F... craft a second resolve at a new seq.
+    const reversal: SyncEvent = {
+      type: 'resolve-commit', seq: 5, conflict_set_id: setId,
+      canonical: envelope(record({ id: idE, content: 'reversed winner content' }), { entityId: 'E', version: 3 }),
+      tombstoned_entity_ids: [], contributors: ['acct-bob'],
+    };
+    assert.throws(() => applyEventBatch(db, PROJECT, [reversal]), /already-resolved/);
+
+    // An already-bound NON-member canonical is refused (member-or-new).
+    const idX = randomUUID();
+    applyEventBatch(db, PROJECT, [
+      upsertEvent(6, envelope(record({ id: idX, content: 'unrelated bound row alpha' }), { entityId: 'X', version: 1 })),
+      upsertEvent(7, envelope(record({ id: randomUUID(), content: 'pair row one for set two' }), { entityId: 'G1', version: 1 })),
+      upsertEvent(8, envelope(record({ id: randomUUID(), content: '[WAYKEEP] pair row one for set two' }), { entityId: 'G2', version: 1 })),
+    ]);
+    const setId2 = deterministicConflictSetId(['G1', 'G2'], 'near-duplicate');
+    assert.throws(() => applyEventBatch(db, PROJECT, [{
+      type: 'resolve-commit', seq: 9, conflict_set_id: setId2,
+      canonical: envelope(record({ id: idX, content: 'hijack through the canonical slot' }), { entityId: 'X', version: 2 }),
+      tombstoned_entity_ids: ['G1', 'G2'], contributors: ['acct-evil'],
+    }]), /already-bound non-member/);
+    assert.ok(db.prepare('SELECT 1 FROM memories WHERE id = ? AND content = ?').get(idX, 'unrelated bound row alpha'), 'the unrelated entity was not edited');
+  });
+
+  it('Z1: a conflict-open colliding with a DIFFERENT existing set is refused; a byte-identical re-open is a replay', () => {
+    const idA = randomUUID();
+    const idB = randomUUID();
+    applyEventBatch(db, PROJECT, [
+      upsertEvent(1, envelope(record({ id: idA, content: 'set collision row a' }), { entityId: 'A1', version: 1 })),
+      upsertEvent(2, envelope(record({ id: idB, content: 'set collision row b' }), { entityId: 'A2', version: 1 })),
+    ]);
+    const open: SyncEvent = { type: 'conflict-open', seq: 3, conflict_set_id: 'cs-fixed', member_entity_ids: ['A1', 'A2'], reason: 'near-duplicate', opened_by: 'srv' };
+    applyEventBatch(db, PROJECT, [open]);
+
+    const reopen = applyEventBatch(db, PROJECT, [{ ...open, seq: 4 } as SyncEvent]);
+    assert.deepEqual(reopen.outcomes.map((o) => o.outcome), ['replay-noop'], 'identical re-open is replay');
+
+    assert.throws(() => applyEventBatch(db, PROJECT, [{
+      type: 'conflict-open', seq: 5, conflict_set_id: 'cs-fixed', member_entity_ids: ['A1', 'A2'], reason: 'divergence', opened_by: 'srv',
+    }]), /collides with a different existing set/);
+  });
+
   it('inbound predicate: project mismatch, unknown kinds, rule kind, and unknown event types are refused whole-batch', () => {
     const wrongProject = record({ id: randomUUID(), project: 'other-proj' });
     assert.throws(() => applyEventBatch(db, PROJECT, [upsertEvent(1, envelope(wrongProject, { entityId: 'E1', version: 1 }))]), ApplyValidationError);

@@ -163,6 +163,18 @@ function applyConflictOpen(db: Database.Database, project: string, ev: SyncConfl
       throw new ApplyValidationError(`conflict-open ${ev.conflict_set_id}: member entity ${memberId} belongs to project '${member.project}'`);
     }
   }
+  // An existing set under this id must BE this set — a colliding foreign
+  // id was previously consumed by ON CONFLICT DO NOTHING (slice-4c
+  // Codex gate). A byte-identical re-open is a replay.
+  const existingSet = db.prepare('SELECT project, member_entity_ids, reason FROM sync_conflict_sets WHERE conflict_set_id = ?')
+    .get(ev.conflict_set_id) as { project: string; member_entity_ids: string; reason: string } | undefined;
+  if (existingSet) {
+    const sameMembers = existingSet.member_entity_ids === JSON.stringify([...ev.member_entity_ids].sort());
+    if (existingSet.project !== project || !sameMembers || existingSet.reason !== ev.reason) {
+      throw new ApplyValidationError(`conflict-open ${ev.conflict_set_id}: id collides with a different existing set`);
+    }
+    return 'replay-noop';
+  }
   openConflictSet(db, {
     conflictSetId: ev.conflict_set_id, project,
     memberEntityIds: ev.member_entity_ids, reason: ev.reason,
@@ -176,15 +188,29 @@ function applyResolveCommit(db: Database.Database, project: string, ev: SyncReso
   // The named set must exist in the CALLER'S project, and the resolve's
   // tombstones must be members of exactly that set (slice-4b Codex gate
   // #1 — a project-A resolve previously mutated a project-B set).
-  const set = db.prepare('SELECT project, member_entity_ids, status FROM sync_conflict_sets WHERE conflict_set_id = ?')
-    .get(ev.conflict_set_id) as { project: string; member_entity_ids: string; status: string } | undefined;
+  const set = db.prepare('SELECT project, member_entity_ids, status, resolved_seq FROM sync_conflict_sets WHERE conflict_set_id = ?')
+    .get(ev.conflict_set_id) as { project: string; member_entity_ids: string; status: string; resolved_seq: number | null } | undefined;
   if (!set) throw new ApplyValidationError(`resolve-commit names unknown conflict set ${ev.conflict_set_id}`);
   if (set.project !== project) {
     throw new ApplyValidationError(`resolve-commit targets conflict set of project '${set.project}', not the caller's binding`);
   }
+  // Resolution is a one-shot CAS (D2): the SAME committed resolution
+  // replays as a no-op; a DIFFERENT one must never reverse the first
+  // winner (slice-4c Codex gate — a seq-5 second resolve previously
+  // flipped the outcome).
+  if (set.status === 'resolved') {
+    if (set.resolved_seq === ev.seq) return 'replay-noop';
+    throw new ApplyValidationError(`resolve-commit for already-resolved set ${ev.conflict_set_id} at a different seq — stale resolution refused`);
+  }
   const members = new Set(JSON.parse(set.member_entity_ids) as string[]);
   for (const t of ev.tombstoned_entity_ids) {
     if (!members.has(t)) throw new ApplyValidationError(`resolve-commit tombstones ${t}, which is not a member of set ${ev.conflict_set_id}`);
+  }
+  // Canonical scope: a member, or a genuinely NEW merged entity — never
+  // an already-bound non-member, which would let a resolve edit an
+  // unrelated bound entity through the canonical slot.
+  if (!members.has(ev.canonical.entity_id) && getByEntityId(db, ev.canonical.entity_id) !== undefined) {
+    throw new ApplyValidationError(`resolve-commit canonical ${ev.canonical.entity_id} is an already-bound non-member of set ${ev.conflict_set_id}`);
   }
   // D1 (frozen): within composed applications, TOMBSTONES BEFORE
   // UPSERTS. The reverse order let the canonical's exact-match see a
