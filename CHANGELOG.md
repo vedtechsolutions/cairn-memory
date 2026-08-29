@@ -9,6 +9,7 @@
 
 ### Fixed
 
+- Fixed automatic injection precision (from a live cross-agent evaluation): pitfalls marked RESOLVED and superseded memories are excluded from every automatic context surface; conversational/tasking prompts ("ask/review/evaluate…") can no longer be captured as decisions; proactive warnings are capped at one bounded warning (96 tokens) per correlated turn.
 - Fixed `npm publish` leaving a hollowed `dist/` behind (`strip:publish` removed benchmark output that incremental builds never re-emitted, failing three test files until a clean rebuild): a `postpublish` script now restores the full build.
 
 ## [5.5.0] - 2026-08-29
