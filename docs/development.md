@@ -7,13 +7,13 @@
 ┌──────────────────────────────────────────────────────────┐
 │ Claude Code Session                                      │
 │                                                          │
-│  14 Hooks + StatusLine (passive, automatic):             │
+│  13 Hook handlers + StatusLine (passive, automatic):     │
 │    SessionStart, UserPromptSubmit, PreToolUse,           │
 │    PostToolUse, PostToolUseFailure, PreCompact,          │
 │    PostCompact, SubagentStart, Stop, SubagentStop,       │
-│    StopFailure, FileChanged, SessionEnd                  │
+│    StopFailure, SessionEnd                               │
 │                                                          │
-│  16 MCP Tools (explicit, on-demand):                     │
+│  17 MCP Tools (explicit, on-demand):                     │
 │    cairn_learn / cairn_recall / cairn_correct             │
 │    cairn_forget / cairn_strengthen / cairn_weaken         │
 │    cairn_plan / cairn_remind / cairn_expand               │
@@ -212,3 +212,45 @@ Test-environment overrides (all set automatically by `tests/hermetic-env.cjs`):
 | `CAIRN_TAILER` | `0` disables the daemon's Codex rollout tailer (capture fallback) |
 | `CAIRN_CODEX_SESSIONS_DIR` | Overrides `~/.codex/sessions` for the rollout tailer (tests) |
 
+
+
+## Reference (moved from the README front page)
+
+## Truth Maintenance
+
+Cairn keeps stored facts and decisions trustworthy without deleting anything:
+
+- **Supersession** — when a new fact/decision gives a newer semver value for the same subject ("node 18.1" → "20.3"), the older claim is retired (excluded from recall, kept queryable). This is the only path that hides a memory, so it's limited to unambiguous version advances — a lower-authority observation never silently retires a higher-authority claim, and a bare-number difference (error codes, ports, counts) is treated as a contradiction to flag, not a supersession.
+- **Standing contradiction** — genuinely opposing memories (negation/antonym flip on the same subject, scope-guarded) get a `contradicts` edge; both keep surfacing and the briefing lists them under "Conflicting memories — verify & resolve." Nothing is auto-resolved.
+- **Truth-decay** — facts/decisions with time-sensitive claims render a "(verify — Nd old)" marker past a claim-type half-life (version 90d / metric 120d / date 180d / volatile 60d). Read-time, non-destructive; durable facts never decay.
+
+## Context-Adaptive Modes
+
+| Mode | Context Free | Behavior |
+|------|-------------|----------|
+| `normal` | >50% | Full injection: 5 pitfalls, facts, reminders |
+| `compact` | 25-50% | Reduced: 3 pitfalls, skip facts |
+| `minimal` | 10-25% | Minimal injection: 1 pitfall |
+| `critical` | <10% | Silent — preserves remaining context |
+
+
+## Database details
+
+## Database
+
+- Location: `~/.cairn/cairn.db`
+- Engine: SQLite 3 with WAL mode + FTS5 + sqlite-vec (vector similarity)
+- Schema version: 30
+- Configurable via `CAIRN_DB_PATH` env var
+- Embeddings: 384-dim via `@huggingface/transformers` (all-MiniLM-L6-v2, q8) — selected from the model registry (`src/constants/embedding-models.ts`) via `CAIRN_EMBEDDING_MODEL` (default `minilm-l6`; challengers `nomic-v1.5` / `nomic-v1.5-256` / `embeddinggemma-300m`). Schema v26 tags every stored vector with its model: vector reads filter on the active model, and after a model switch the backfill worker re-embeds mismatched rows while FTS+RRF carry retrieval
+- Reranking (opt-in): `CAIRN_RERANK=1` enables a cross-encoder stage on `cairn_recall` (RRF top-20 → rerank → top-k; MCP server only); model via `CAIRN_RERANK_MODEL` (default `jina-turbo-v1`, registry in `src/constants/reranker-models.ts`)
+
+- Reranking (opt-in): `CAIRN_RERANK=1` enables a cross-encoder stage on `cairn_recall` (RRF top-20 → rerank → top-k; MCP server only); model via `CAIRN_RERANK_MODEL` (default `jina-turbo-v1`, registry in `src/constants/reranker-models.ts`)
+
+## Report rollup controls
+
+Recording is on by default; disable with `{"report":{"rollup":false}}` in `~/.cairn/config.json` or `CAIRN_ROLLUP=0` — both are true zero-writes.
+
+## Private-project session identity
+
+Session identity derives from the server's working directory (git remote when available, path hash otherwise). For non-git projects, launch your agent from the project root — a subdirectory or symlinked path derives a different identity and the private project's content will (safely) not be returned. `cairn_recall` also accepts `scope: "project"` (requires `project`) to return only that project's own memories, excluding globals.

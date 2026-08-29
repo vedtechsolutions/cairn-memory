@@ -131,7 +131,11 @@ switch (command) {
     // is the one thing that always knows where it lives.
     const { fileURLToPath: toPath } = await import('node:url');
     const { dirname: dirOf, join: joinPath } = await import('node:path');
-    const packageRoot = joinPath(dirOf(toPath(import.meta.url)), '..', '..', '..');
+    const { realpathSync } = await import('node:fs');
+    // realpath the module location: under --preserve-symlinks-main,
+    // import.meta.url keeps the symlinked path and the derived root
+    // points nowhere (review).
+    const packageRoot = joinPath(dirOf(realpathSync(toPath(import.meta.url))), '..', '..', '..');
     const locations = {
       packageRoot,
       hookDir: joinPath(packageRoot, 'dist', 'src', 'hooks'),

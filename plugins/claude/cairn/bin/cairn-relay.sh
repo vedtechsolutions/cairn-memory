@@ -21,15 +21,23 @@ fail() {
 }
 CACHE_DIR="${CLAUDE_PLUGIN_DATA:-${HOME:-/tmp}/.cairn}"
 CACHE="$CACHE_DIR/plugin-hook-dir"
+BIN="$(command -v cairn || true)"
+[ -n "$BIN" ] || fail "cairn-memory is not installed or not on PATH"
 HOOK_DIR=""
 if [ -f "$CACHE" ]; then
-  HOOK_DIR="$(cat "$CACHE" 2>/dev/null || true)"
-  # Revalidate: a moved/removed install must re-resolve, not no-op.
-  [ -n "$HOOK_DIR" ] && [ -f "$HOOK_DIR/hook-relay.sh" ] || HOOK_DIR=""
+  # Cache line: "<bin-path>|<hook-dir>". IDENTITY-validated, not just
+  # existence-validated: after an nvm/Volta switch the old tree usually
+  # still EXISTS, so an existence check would run outdated hooks
+  # forever (review). The recorded bin must equal the current one.
+  CACHED="$(cat "$CACHE" 2>/dev/null || true)"
+  case "$CACHED" in
+    "$BIN|"*)
+      HOOK_DIR="${CACHED#*|}"
+      [ -n "$HOOK_DIR" ] && [ -f "$HOOK_DIR/hook-relay.sh" ] || HOOK_DIR=""
+      ;;
+  esac
 fi
 if [ -z "$HOOK_DIR" ]; then
-  BIN="$(command -v cairn || true)"
-  [ -n "$BIN" ] || fail "cairn-memory is not installed or not on PATH"
   TARGET="$BIN"
   HOPS=0
   while [ -L "$TARGET" ] && [ "$HOPS" -lt 40 ]; do
@@ -49,7 +57,7 @@ if [ -z "$HOOK_DIR" ]; then
     [ -n "$HOOK_DIR" ] && [ -f "$HOOK_DIR/hook-relay.sh" ] || fail "could not locate the cairn-memory install"
   fi
   mkdir -p "$CACHE_DIR" 2>/dev/null || true
-  printf '%s\n' "$HOOK_DIR" > "$CACHE" 2>/dev/null || true
+  printf '%s|%s\n' "$BIN" "$HOOK_DIR" > "$CACHE" 2>/dev/null || true
 fi
 if [ "${1:-}" = "--node" ]; then
   shift

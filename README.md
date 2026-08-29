@@ -27,7 +27,7 @@ cairn init                    # wires MCP + hooks + StatusLine for your agents
 cairn doctor                  # health check
 ```
 
-Or install through your agent's plugin marketplace — this repository is one:
+Then, instead of `cairn init`, you can wire your agent through its plugin marketplace — this repository is one (the npm package from the first step is still required; the plugins are thin):
 
 ```text
 # Claude Code
@@ -49,7 +49,7 @@ Full guide — plugins, hook trust, multi-agent daemon, from-source: [`docs/INST
 - **Automatic learning** — tool failures become pitfalls, user corrections become rules, decision language becomes recorded decisions (with the `[dec: …]` sigil for zero-cost capture), successes build patterns. No manual bookkeeping.
 - **Plans that survive** — plan-mode plans persist to the store automatically; steps, decisions, and progress notes carry across sessions and compactions.
 - **Cross-agent provenance** — every memory records which agent learned it (`origin_client`), so shared memory never becomes anonymous memory.
-- **17 MCP tools + 2 resources** for explicit control: recall, learn, correct, plan, remind, export/ingest, promote, stats, cleanup.
+- **17 MCP tools + 2 resources** for explicit control: recall, learn, correct, plan, remind, export/ingest, promote, stats, cleanup. Truth maintenance (supersession, contradiction flags, decay), context-adaptive modes, and tuning knobs: [`docs/development.md`](docs/development.md).
 
 ## Memory types
 
@@ -98,7 +98,7 @@ cairn report --days=90
 
 Gross savings separates **measured** (your agent's own reported compaction savings) from **estimated** (verified pitfall saves × a fixed proxy, clearly labeled). Injected briefings and warnings count as cost. Net = gross − cost, even when negative.
 
-## Hooks (wired by `cairn init` or the Claude plugin)
+## Hook handlers (wired by `cairn init` or the Claude plugin)
 
 | Hook | Event | Purpose |
 |------|-------|---------|

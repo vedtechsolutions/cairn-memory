@@ -56,10 +56,12 @@ cairn init      # wires the MCP server AND the hook set into ~/.codex
 
 Then open `codex` and run `/hooks` to review and trust the Cairn
 entries — Codex holds new hooks until you approve them. The approval
-survives in-place package updates (the hook commands don't change);
-re-review triggers only when the resolved install path itself changes —
-e.g. switching Node versions under nvm, or moving the install — and
-`cairn doctor` tells you when that has happened.
+survives in-place package updates (the hook commands don't change).
+Re-review triggers when the wired commands change: a moved install or
+an nvm Node-version switch (new absolute paths), switching relay forms
+with `cairn build-relay`, or a release that changes hook routes.
+`cairn doctor` warns when your hooks point at a missing install OR at
+a different install than the one running doctor.
 
 Marketplace alternative for the MCP tools:
 
@@ -82,6 +84,13 @@ cairn doctor
 
 One health check for everything: Node, SQLite, relay, hooks, database,
 socket. It diagnoses; it never mutates.
+
+Note for GUI-launched agents: the plugins' MCP entry runs the bare
+`cairn` command, which must be on the launching app's PATH. If a
+GUI-launched agent cannot find it, start the agent from a terminal
+once, or add your npm global bin directory to the desktop
+environment's PATH. (The command is deliberately not wrapped in a
+login shell — profile output would corrupt the MCP protocol stream.)
 
 ## Migrating existing memories
 

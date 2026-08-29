@@ -72,15 +72,18 @@ describe('thin-plugin packaging', () => {
     }
   });
 
-  it('MCP wiring runs `cairn serve` through a login shell (GUI-safe PATH)', () => {
-    // A bare `cairn` depends on the LAUNCHING process's PATH — a
-    // GUI-started agent never sourced nvm/volta init (review). The
-    // login shell resolves it; the command stays machine-independent.
+  it('MCP wiring is the BARE `cairn serve` — never a login shell', () => {
+    // Round 2 reversed round 1 with better evidence: a login shell's
+    // profile output lands on stdout AHEAD of the MCP handshake
+    // (protocol requires protocol-only stdout), while sh reads .profile
+    // — not the .bashrc/.zshrc where nvm PATH init lives — so the shell
+    // bought corruption risk without reliable PATH help. Bare command +
+    // a documented GUI-launch caveat is the deliberate choice.
     const claudeMcp = readJson('plugins/claude/cairn/.mcp.json') as unknown as { mcpServers: Record<string, { command: string; args: string[] }> };
     const codexPlugin = readJson('plugins/codex/cairn/.codex-plugin/plugin.json') as unknown as { mcpServers: Record<string, { command: string; args: string[] }> };
     for (const server of [claudeMcp.mcpServers.cairn, codexPlugin.mcpServers.cairn]) {
-      assert.equal(server.command, 'sh');
-      assert.deepEqual(server.args, ['-lc', 'exec cairn serve']);
+      assert.equal(server.command, 'cairn');
+      assert.deepEqual(server.args, ['serve']);
     }
   });
 
@@ -130,8 +133,18 @@ describe('thin-plugin packaging', () => {
       chmodSync(CLI_JS, 0o755); // npm sets this on real installs
       const r = runLauncher(['--cairn-probe'], join(sim, 'bin'), join(sim, 'data'));
       assert.equal(r.stdout.trim(), 'cairn-relay', 'the launcher must reach the real relay through the bin symlink chain');
-      // Resolution is CACHED for subsequent hook fires.
-      assert.match(readFileSync(join(sim, 'data', 'plugin-hook-dir'), 'utf-8'), /dist\/src\/hooks/);
+      // Resolution is CACHED, keyed to the resolving bin ("bin|dir").
+      const cached = readFileSync(join(sim, 'data', 'plugin-hook-dir'), 'utf-8').trim();
+      assert.match(cached, /^\/.+\|\/.+dist\/src\/hooks$/);
+      // Cache REUSE: second run still answers.
+      assert.equal(runLauncher(['--cairn-probe'], join(sim, 'bin'), join(sim, 'data')).stdout.trim(), 'cairn-relay');
+      // IDENTITY invalidation: a cache recorded by a DIFFERENT bin (an
+      // old package-manager tree that still exists) must not be reused
+      // — existence alone ran outdated hooks forever (review).
+      writeFileSync(join(sim, 'data', 'plugin-hook-dir'), `/somewhere/else/bin/cairn|${cached.split('|')[1]}\n`);
+      assert.equal(runLauncher(['--cairn-probe'], join(sim, 'bin'), join(sim, 'data')).stdout.trim(), 'cairn-relay', 're-resolves past the foreign-bin cache');
+      assert.match(readFileSync(join(sim, 'data', 'plugin-hook-dir'), 'utf-8'), /^\//, 'cache rewritten');
+      assert.ok(readFileSync(join(sim, 'data', 'plugin-hook-dir'), 'utf-8').startsWith(join(sim, 'bin', 'cairn')), 'rewritten under the CURRENT bin');
     } finally {
       chmodSync(CLI_JS, priorMode); // don't leave the build artifact's mode mutated (review)
       rmSync(sim, { recursive: true, force: true });

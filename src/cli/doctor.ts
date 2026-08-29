@@ -10,7 +10,7 @@
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { SCHEMA_VERSION } from '../db/schema.js';
 import { resolveDbPath } from '../db/db-path.js';
 import { CAIRN_HOOK_DIR_MARKER } from '../constants/index.js';
@@ -207,14 +207,20 @@ export function checkCodexParity(): CheckResult {
     return { status: 'warn', detail: 'Codex hooks.json exists but carries no Cairn hooks — run `cairn init`' };
   }
   // Stale-install detection: hook commands pin the ABSOLUTE install path
-  // of whichever install wrote them; a moved install (nvm node-version
-  // switch, reinstall elsewhere) leaves them pointing at nothing and
-  // every hook dies silently. INSTALL.md tells users doctor catches this.
-  const staleDir = cairnCommandSet(file)
-    .map((c) => /(\/[^ ]+\/dist\/src\/hooks)\//.exec(c)?.[1])
-    .find((d): d is string => d !== undefined && !existsSync(d));
-  if (staleDir !== undefined) {
-    return { status: 'warn', detail: `Codex hooks point at a moved or removed install (${staleDir}) — re-run \`cairn init\` (one re-trust)` };
+  // of whichever install wrote them. Two failure shapes (review): the
+  // wired dir no longer exists (moved/removed install — hooks die
+  // silently), or it exists but is NOT the install running doctor (an
+  // old nvm tree left behind — hooks silently run outdated code while
+  // everything looks healthy). Anchored on hook-relay so a foreign
+  // command that merely contains dist/src/hooks/ cannot false-positive.
+  const wiredDir = cairnCommandSet(file)
+    .map((c) => /(\/[^ ]+\/dist\/src\/hooks)\/hook-relay/.exec(c)?.[1])
+    .find((d): d is string => d !== undefined);
+  if (wiredDir !== undefined && !existsSync(wiredDir)) {
+    return { status: 'warn', detail: `Codex hooks point at a moved or removed install (${wiredDir}) — re-run \`cairn init\` (one re-trust)` };
+  }
+  if (wiredDir !== undefined && resolve(wiredDir) !== resolve(HOOK_DIR)) {
+    return { status: 'warn', detail: `Codex hooks run a DIFFERENT install (${wiredDir}) than this one (${HOOK_DIR}) — re-run \`cairn init\` from the install you want (one re-trust)` };
   }
   const config = existsSync(codexConfigPath()) ? readFileSync(codexConfigPath(), 'utf-8') : '';
   const mcp = hasCairnMcpServer(config) ? 'MCP registered' : 'MCP NOT registered (run `cairn init`)';
