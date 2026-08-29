@@ -533,6 +533,11 @@ describe('semantic-change journal', () => {
         tags: [], confidence: 0.5, source: 'learned', created_at: new Date().toISOString(),
         expires_at: null, fingerprint: null, context: null, anchor: null,
       }, { journal: sup });
+      repo.restoreAll([{
+        id: '51111111-2222-4333-8444-555555555555', content: 'replicated bulk restore must not echo', kind: 'pitfall', project: 'p',
+        tags: [], confidence: 0.5, source: 'learned', created_at: new Date().toISOString(),
+        expires_at: null, fingerprint: null, context: null, anchor: null,
+      }], [], { journal: sup });
 
       assert.equal(journalRows(db).length, 0, 'no facade route may echo a replicated apply');
     } finally {
