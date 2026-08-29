@@ -62,7 +62,12 @@ describe('pitfall-handler skip gate', () => {
   });
 
   it('second identical call is a cache hit and returns much faster', () => {
-    const input = editInput('sess-2', '/tmp/hello.ts');
+    // Production always has a turn boundary (the prompt hook's synthetic
+    // key, or the client's turn_id). Without one, the warning budget's
+    // uncorrelated fail-open path re-keys per call — which correctly
+    // defeats the cache in that degraded mode but is not what this test
+    // measures. Pin the turn like a real flow.
+    const input = { ...editInput('sess-2', '/tmp/hello.ts'), turn_id: 'turn-cache-1' } as ReturnType<typeof editInput>;
 
     // First call — full path
     const t0 = Date.now();
