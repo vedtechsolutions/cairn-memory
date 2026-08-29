@@ -14,3 +14,4 @@ export * from './routes.js';
 export * from './memory-paths.js';
 export * from './round-trip.js';
 export * from './client-adapter.js';
+export * from './sync-envelope.js';

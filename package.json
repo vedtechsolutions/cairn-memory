@@ -45,6 +45,7 @@
     "test:build": "npm run build && npm test",
     "strip:publish": "find dist/src -name '*.map' -delete && find dist/src -name '*.d.ts' -delete && rm -rf dist/src/benchmark",
     "prepublishOnly": "npm run clean && npm run build && npm run strip:publish",
+    "postpublish": "npm run clean && npm run build",
     "dev": "tsc -b tsconfig.build.json --watch",
     "prepack": "node scripts/verify-pack.mjs",
     "version": "node scripts/sync-plugin-versions.mjs && git add plugins src/constants/index.ts"

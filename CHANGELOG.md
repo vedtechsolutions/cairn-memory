@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added the sync-envelope module to `waykeep-contract`: the Phase 2 replication wire vocabulary — client commands, canonical server log events, conflict reasons, share states, stable error codes, the op-status results, and the entity envelope with reserved encryption fields. Types and constants only; additive.
+
+### Fixed
+
+- Fixed `npm publish` leaving a hollowed `dist/` behind (`strip:publish` removed benchmark output that incremental builds never re-emitted, failing three test files until a clean rebuild): a `postpublish` script now restores the full build.
+
 ## [5.5.0] - 2026-08-29
 
 ### Changed
