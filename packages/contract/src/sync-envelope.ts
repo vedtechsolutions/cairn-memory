@@ -20,8 +20,11 @@ export const SYNC_PROTOCOL_VERSION = 1;
 /** Version of the canonical-JSON form used for content hashing. */
 export const CANONICALIZATION_VERSION = 1;
 
-/** Algorithm behind every canonical_content_hash in this protocol. */
+/** Algorithm AND version behind every canonical_content_hash: the name
+ *  identifies the function, the version pins the exact hashing rules so
+ *  an envelope stays interpretable across a future hash revision. */
 export const CONTENT_HASH_ALGORITHM = 'sha256';
+export const CONTENT_HASH_VERSION = 1;
 
 /** Version of the local projection function P (scrub + neutralize +
  *  canonicalize). All entity-vs-local-row equality lives in P's output
@@ -46,11 +49,13 @@ export const CONFLICT_REASONS = ['near-duplicate', 'divergence'] as const;
 export type ConflictReason = (typeof CONFLICT_REASONS)[number];
 
 /** Explicit per-row sharing states. The third state is the ABSENCE of a
- *  value (NULL): "no explicit user choice", policy-evaluated by the
- *  sync worker — never a stored default. `share_state` is local
- *  control: excluded from canonical bytes/hash, never replicated. */
+ *  value: "no explicit user choice", policy-evaluated by the sync
+ *  worker — never a stored default. `EffectiveShareState` is the full
+ *  tri-state a consumer works with; `share_state` is local control:
+ *  excluded from canonical bytes/hash, never replicated. */
 export const SHARE_STATES = ['local', 'team'] as const;
 export type ShareState = (typeof SHARE_STATES)[number];
+export type EffectiveShareState = ShareState | null;
 
 /**
  * Stable error codes a sync client must handle. An OPEN set for
@@ -78,10 +83,20 @@ export const SYNC_ERROR_CODES = [
 ] as const;
 export type SyncErrorCode = (typeof SYNC_ERROR_CODES)[number];
 
-/** Results of the read-only, payload-free op-status query (outcome
- *  resolution for in-flight/unknown work; never a mutation). */
+/** Results of the read-only op-status query. */
 export const OP_STATUS_RESULTS = ['committed', 'rejected', 'not-seen'] as const;
 export type OpStatusResult = (typeof OP_STATUS_RESULTS)[number];
+
+/** The op-status QUERY — authenticated, read-only, one op_id, no
+ *  payload. Deliberately outside SyncCommand and SyncEvent: it is not
+ *  a mutation and appears in no log. */
+export interface OpStatusQuery {
+  op_id: string;
+}
+export interface OpStatusResponse {
+  op_id: string;
+  result: OpStatusResult;
+}
 
 /**
  * The entity envelope carried by upsert events and snapshots. The
@@ -98,10 +113,10 @@ export interface SyncEntityEnvelope {
   payload: string;
   canonical_content_hash: string;
   canonicalization_version: number;
+  hash_version: number;
   created_by: string;
   last_edited_by: string;
   origin_client: string;
-  origin_device?: string;
   created_at: string;
   updated_at: string;
   tombstoned: boolean;
@@ -117,17 +132,33 @@ interface SyncCommandBase {
   protocol_version: number;
 }
 
-export interface SyncUpsertCommand extends SyncCommandBase {
+interface SyncUpsertFields extends SyncCommandBase {
   type: 'upsert';
   entity_id: string;
-  /** Absent = create. Restoration is an upsert carrying an explicit
-   *  tombstone-version precondition. */
-  base_version?: number;
-  /** Precondition for restoration-after-tombstone. */
-  tombstone_version?: number;
   payload: string;
   canonical_content_hash: string;
+  canonicalization_version: number;
+  hash_version: number;
 }
+
+/** The three legal upsert shapes are MUTUALLY EXCLUSIVE:
+ *  create (no preconditions), edit (base_version), restoration
+ *  (tombstone_version — an upsert with an explicit tombstone-version
+ *  precondition, per D1). A command carrying both preconditions is not
+ *  representable. */
+export interface SyncCreateUpsert extends SyncUpsertFields {
+  base_version?: never;
+  tombstone_version?: never;
+}
+export interface SyncEditUpsert extends SyncUpsertFields {
+  base_version: number;
+  tombstone_version?: never;
+}
+export interface SyncRestoreUpsert extends SyncUpsertFields {
+  base_version?: never;
+  tombstone_version: number;
+}
+export type SyncUpsertCommand = SyncCreateUpsert | SyncEditUpsert | SyncRestoreUpsert;
 
 export interface SyncTombstoneCommand extends SyncCommandBase {
   type: 'tombstone';
@@ -141,17 +172,30 @@ export interface SyncConflictOpenCommand extends SyncCommandBase {
   reason: ConflictReason;
 }
 
+/** One member of a resolve CAS: the pairing encodes structurally that
+ *  every named member carries its expected version — the CAS inputs
+ *  are exactly the named open set. */
+export interface ResolveMember {
+  entity_id: string;
+  expected_version: number;
+}
+
 /** All-or-nothing CAS over one open conflict set; capped size; may
- *  tombstone only members of the named set. First valid concurrent
- *  resolution wins; a stale one is rejected with the committed set. */
+ *  tombstone only members of the named set; contributor updates name
+ *  the members whose contributor records merge into the canonical.
+ *  First valid concurrent resolution wins; a stale one is rejected
+ *  with the committed set. */
 export interface SyncResolveCommand extends SyncCommandBase {
   type: 'resolve';
   conflict_set_id: string;
-  expected_versions: Record<string, number>;
+  members: ResolveMember[];
   canonical_entity_id: string;
   canonical_payload: string;
   canonical_content_hash: string;
+  canonicalization_version: number;
+  hash_version: number;
   tombstone_entity_ids: string[];
+  merge_contributors_from: string[];
 }
 
 export type SyncCommand =
@@ -202,6 +246,10 @@ export interface SyncResolveCommitEvent extends SyncEventBase {
   conflict_set_id: string;
   canonical: SyncEntityEnvelope;
   tombstoned_entity_ids: string[];
+  /** The committed contributor set of the canonical after the merge —
+   *  the authoritative result every replica's contributor projection
+   *  applies (opaque server-account ids). */
+  contributors: string[];
 }
 
 export type SyncEvent =
