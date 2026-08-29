@@ -62,22 +62,26 @@ export function insertProjectedRow(db: Database.Database, id: string, p: InertPr
 }
 
 /** "Unpushed local intent" — the dirty half of the clean/diverged
- *  partition (slice-4 gates, both reviewers). Projection equality alone
- *  is NOT intent equality: local retractions set flags outside the
- *  projection, and an explicit confidence change journals without
- *  changing projected bytes. Dirty ⟺ projection differs, OR the row is
- *  locally retracted, OR a journal entry for the row postdates the last
- *  map write (>= : a same-second tie counts as intent — over-forking is
- *  safe, silent overwrite is not). Autonomous churn journals nothing,
- *  so it never false-forks. */
-export function hasUnpushedLocalIntent(db: Database.Database, memoryId: string, entry: { projection_hash: string; updated_at?: string }): boolean {
+ *  partition (slice-4 gates, both reviewers; N1 fold). Projection
+ *  equality alone is NOT intent equality: local retractions set flags
+ *  outside the projection, and an explicit confidence change journals
+ *  without changing projected bytes. Dirty ⟺ projection differs, OR the
+ *  row is locally retracted, OR an UNCONSUMED journal entry exists for
+ *  the row — §7 J1-pending (classification NULL) or J4-deferred: both
+ *  are precisely "not yet pushed". A classified J2/J3 entry has a
+ *  durable outcome and is no longer intent — the earlier timestamp
+ *  fence could not express "already pushed" and false-forked every
+ *  successful round-trip (review N1). Autonomous churn journals
+ *  nothing, so it never false-forks. */
+export function hasUnpushedLocalIntent(db: Database.Database, memoryId: string, entry: { projection_hash: string }): boolean {
   const localHash = projectionHashOfRow(db, memoryId);
   if (localHash !== entry.projection_hash) return true;
   if (isLocallyRetracted(db, memoryId)) return true;
-  const since = (entry as { updated_at?: string }).updated_at;
-  if (!since) return false;
-  return db.prepare('SELECT 1 FROM sync_journal WHERE memory_id = ? AND created_at >= ? LIMIT 1')
-    .get(memoryId, since) !== undefined;
+  return db.prepare(`
+    SELECT 1 FROM sync_journal
+    WHERE memory_id = ? AND (classification IS NULL OR classification = 'deferred-pending-eligibility')
+    LIMIT 1
+  `).get(memoryId) !== undefined;
 }
 
 /** A pre-existing row may be reused for a binding ONLY when it provably
@@ -198,7 +202,17 @@ export function applyUpsert(db: Database.Database, project: string, env: SyncEnt
       return 'applied-edit';
     }
     // Bound: T2 (clean) or T3 (diverged — any unpushed local intent).
-    if (hasUnpushedLocalIntent(db, existing.local_memory_id, existing)) {
+    // Convergent-echo rule (N1's second half): when the INCOMING
+    // projected bytes equal the local row's current bytes, the event is
+    // the row's own push echoing back (or an independently identical
+    // edit) — applying it changes nothing user-visible, so it advances
+    // the binding cleanly even while the push's journal entry is still
+    // unconsumed. A pending RETRACTION still forks first: byte equality
+    // cannot outrank an explicit local retraction.
+    const localPh = projectionHashOfRow(db, existing.local_memory_id);
+    if (!isLocallyRetracted(db, existing.local_memory_id) && localPh === ph) {
+      // fall through to the clean T2 update below
+    } else if (hasUnpushedLocalIntent(db, existing.local_memory_id, existing)) {
       // T3 fork (M1-minimal): the incoming edit materializes as a NEW
       // row and takes the binding; the locally-edited row — including a
       // locally-RETRACTED one, which the projection hash cannot see

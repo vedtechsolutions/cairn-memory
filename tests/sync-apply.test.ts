@@ -562,6 +562,44 @@ describe('sync apply — §6 M1 transitions', () => {
     assert.equal(readGeneration(db), genBefore, 'a genuinely write-free replay still bumps nothing');
   });
 
+  it('N1: a push round-trip applies cleanly — the row\'s own edit echoing back never forks it', () => {
+    const id = randomUUID();
+    applyEventBatch(db, PROJECT, [upsertEvent(1, envelope(record({ id }), { entityId: 'E1', version: 1 }))]);
+    // The user edits the row locally (journals J1-pending intent)...
+    repo.update(id, 'the locally edited lesson content');
+    // ...the worker pushes it; the server echoes it back at v2 with the
+    // SAME bytes. Even with the journal entry still unconsumed, byte
+    // equality proves the echo (convergent-echo rule).
+    const echo = record({ id, content: 'the locally edited lesson content' });
+    const result = applyEventBatch(db, PROJECT, [upsertEvent(2, envelope(echo, { entityId: 'E1', version: 2 }))]);
+
+    assert.deepEqual(result.outcomes.map((o) => o.outcome), ['applied-edit']);
+    assert.equal(rowCount(), 1, 'no false fork of the row\'s own edit');
+    assert.equal(getByEntityId(db, 'E1')!.canonical_version, 2);
+    const row = db.prepare('SELECT share_state FROM memories WHERE id = ?').get(id) as { share_state: string | null };
+    assert.equal(row.share_state, null, 'the original was not opted out');
+  });
+
+  it('N1: a CLASSIFIED journal entry is no longer intent — a consumed strengthen does not fork a remote edit', () => {
+    const id = randomUUID();
+    applyEventBatch(db, PROJECT, [upsertEvent(1, envelope(record({ id }), { entityId: 'E1', version: 1 }))]);
+    repo.strengthenConfidence(id);
+    // The worker classified the entry (§7 J2) — it has a durable outcome.
+    db.prepare("UPDATE sync_journal SET classification = 'enqueued' WHERE memory_id = ?").run(id);
+
+    const result = applyEventBatch(db, PROJECT, [upsertEvent(2, envelope(record({ id, content: 'a genuinely new remote edit' }), { entityId: 'E1', version: 2 }))]);
+    assert.deepEqual(result.outcomes.map((o) => o.outcome), ['applied-edit'], 'consumed intent never forks');
+    assert.equal(rowCount(), 1);
+
+    // Control: a DEFERRED (J4) entry still counts as unpushed intent.
+    const id2 = randomUUID();
+    applyEventBatch(db, PROJECT, [upsertEvent(3, envelope(record({ id: id2, content: 'deferred intent row' }), { entityId: 'E2', version: 1 }))]);
+    repo.strengthenConfidence(id2);
+    db.prepare("UPDATE sync_journal SET classification = 'deferred-pending-eligibility' WHERE memory_id = ?").run(id2);
+    const r2 = applyEventBatch(db, PROJECT, [upsertEvent(4, envelope(record({ id: id2, content: 'remote edit onto deferred intent' }), { entityId: 'E2', version: 2 }))]);
+    assert.deepEqual(r2.outcomes.map((o) => o.outcome), ['forked'], 'deferred work is still unpushed');
+  });
+
   it('inbound predicate: project mismatch, unknown kinds, rule kind, and unknown event types are refused whole-batch', () => {
     const wrongProject = record({ id: randomUUID(), project: 'other-proj' });
     assert.throws(() => applyEventBatch(db, PROJECT, [upsertEvent(1, envelope(wrongProject, { entityId: 'E1', version: 1 }))]), ApplyValidationError);
