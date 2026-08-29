@@ -95,8 +95,8 @@ bare `cairn` command, which must be on the launching app's PATH — if a
 GUI-launched Codex cannot find it, start it from a terminal once or
 add your npm global bin directory to the desktop environment's PATH.
 The CLAUDE plugin needs none of that: its launcher resolves the
-install off-PATH (cache, then volta/~/.local/homebrew//usr/local,
-then the newest nvm version that has cairn). Neither uses a login
+install off-PATH (cache, then volta → ~/.local → homebrew →
+/usr/local, then the newest nvm version that has cairn). Neither uses a login
 shell — profile output would corrupt the MCP protocol stream.
 
 ## Migrating existing memories
