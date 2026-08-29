@@ -425,8 +425,11 @@ export type SessionStartMatcher = (typeof SESSION_START_MATCHERS)[number];
 
 // --- Version ----------------------------------------------------------------
 
-/** Single source of truth for Cairn version — keep in sync with package.json */
-export const VERSION = '5.1.0';
+/** Kept in lockstep with package.json by scripts/sync-plugin-versions.mjs
+ *  (npm `version` lifecycle) and pinned by a test — a "keep in sync"
+ *  comment alone let the MCP handshake advertise 5.1.0 on a 5.3.1
+ *  install (step-6 validation finding). */
+export const VERSION = '5.3.1';
 
 // --- DB Config --------------------------------------------------------------
 

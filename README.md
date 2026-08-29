@@ -110,7 +110,7 @@ Gross savings separates **measured** (your agent's own reported compaction savin
 | error-learning | PostToolUseFailure | Auto-create pitfalls from failures |
 | precompact / postcompact | PreCompact / PostCompact | Snapshot + reliable compaction detection |
 | subagent-context / subagent-stop | SubagentStart / SubagentStop | Context in, outcomes out |
-| stop / stop-failure | Stop / StopFailure | Decision mining; learn from API errors |
+| governance-gate + stop / stop-failure | Stop / StopFailure | Advisory gate + decision mining; learn from API errors |
 | session-end | SessionEnd | Record outcome, protect in-progress steps |
 | statusline | StatusLine | Context pressure → dynamic briefing budgets |
 

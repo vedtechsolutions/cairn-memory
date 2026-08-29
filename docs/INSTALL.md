@@ -90,12 +90,14 @@ cairn doctor
 One health check for everything: Node, SQLite, relay, hooks, database,
 socket. It diagnoses; it never mutates.
 
-Note for GUI-launched agents: the plugins' MCP entry runs the bare
-`cairn` command, which must be on the launching app's PATH. If a
-GUI-launched agent cannot find it, start the agent from a terminal
-once, or add your npm global bin directory to the desktop
-environment's PATH. (The command is deliberately not wrapped in a
-login shell — profile output would corrupt the MCP protocol stream.)
+Note for GUI-launched agents: the CODEX plugin's MCP entry runs the
+bare `cairn` command, which must be on the launching app's PATH — if a
+GUI-launched Codex cannot find it, start it from a terminal once or
+add your npm global bin directory to the desktop environment's PATH.
+The CLAUDE plugin needs none of that: its launcher resolves the
+install off-PATH (cache, then volta/~/.local/homebrew//usr/local,
+then the newest nvm version that has cairn). Neither uses a login
+shell — profile output would corrupt the MCP protocol stream.
 
 ## Migrating existing memories
 

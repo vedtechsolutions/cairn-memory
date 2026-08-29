@@ -16,6 +16,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { cairnHooks } from '../src/cli/init.js';
+import { VERSION } from '../src/constants/index.js';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const PLUGIN_RELAY = '${CLAUDE_PLUGIN_ROOT}/bin/cairn-relay.sh';
@@ -36,10 +37,13 @@ describe('thin-plugin packaging', () => {
       'plugins/claude/cairn/hooks/hooks.json must be regenerated when cairnHooks() changes');
   });
 
-  it('plugin versions ride package.json (lockstep)', () => {
+  it('plugin versions AND the MCP serverInfo constant ride package.json (lockstep)', () => {
     const pkg = readJson('package.json');
     assert.equal(readJson('plugins/claude/cairn/.claude-plugin/plugin.json').version, pkg.version);
     assert.equal(readJson('plugins/codex/cairn/.codex-plugin/plugin.json').version, pkg.version);
+    // The handshake advertised 5.1.0 on a 5.3.1 install — a comment was
+    // the only guard (validation finding).
+    assert.equal(VERSION, pkg.version, 'src/constants VERSION drifted from package.json — run scripts/sync-plugin-versions.mjs');
   });
 
   it('marketplace sources resolve to plugin manifests whose names match', () => {
@@ -138,9 +142,18 @@ describe('thin-plugin packaging', () => {
       symlinkSync(REPO_ROOT, join(sim, 'lib', 'node_modules', 'cairn-memory'));
       symlinkSync('../lib/node_modules/cairn-memory/dist/src/cli/index.js', join(sim, 'bin', 'cairn'));
       chmodSync(CLI_JS, 0o755);
+      // Pre-plant a /tmp cache pointing at a decoy (the validator's
+      // stronger form): it must be neither USED nor MODIFIED.
+      mkdirSync(join(sim, 'decoy'), { recursive: true });
+      writeFileSync(join(sim, 'decoy', 'hook-relay.sh'), '#!/bin/sh\necho DECOY-USED\n');
+      chmodSync(join(sim, 'decoy', 'hook-relay.sh'), 0o755);
+      mkdirSync('/tmp/.cairn', { recursive: true });
+      const planted = `${join(sim, 'bin', 'cairn')}|${join(sim, 'decoy')}\n`;
+      writeFileSync('/tmp/.cairn/plugin-hook-dir', planted);
       const env: Record<string, string> = { PATH: `${join(sim, 'bin')}:/usr/bin:/bin` };
       const r = spawnSync(LAUNCHER, ['--cairn-probe'], { encoding: 'utf-8', env });
-      assert.equal(r.stdout.trim(), 'cairn-relay', 'still works — just uncached');
+      assert.equal(r.stdout.trim(), 'cairn-relay', 'still works — just uncached, and never the decoy');
+      assert.equal(readFileSync('/tmp/.cairn/plugin-hook-dir', 'utf-8'), planted, 'the planted cache is untouched');
     } finally {
       chmodSync(CLI_JS, priorMode);
       rmSync(sim, { recursive: true, force: true });
