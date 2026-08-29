@@ -71,9 +71,13 @@ function cairnStatusLine(): Record<string, unknown> {
   return { type: 'command', command: `node ${join(HOOK_DIR, 'statusline.js')}` };
 }
 
-/** True when any command in the entry references a Cairn hook. */
+/** True when any command in the entry references a Cairn hook. A
+ *  malformed entry (no hooks array — user-authored settings are
+ *  arbitrary JSON) is NOT ours: treating it as foreign preserves it,
+ *  where `.some` on undefined aborted the whole init (review). */
 function isCairnEntry(entry: HookMatcher): boolean {
-  return entry.hooks.some(h => CAIRN_HOOK_MARKERS.some(marker => h.command.includes(marker)));
+  return Array.isArray(entry.hooks)
+    && entry.hooks.some(h => CAIRN_HOOK_MARKERS.some(marker => typeof h?.command === 'string' && h.command.includes(marker)));
 }
 
 /** Remove Cairn HANDLERS from entries, at handler granularity: a MIXED
@@ -86,7 +90,7 @@ function sweepCairnHandlers(entries: HookMatcher[]): { kept: HookMatcher[] | nul
   for (const entry of entries) {
     if (!isCairnEntry(entry)) { kept.push(entry); continue; }
     swept = true;
-    const foreign = entry.hooks.filter(h => !CAIRN_HOOK_MARKERS.some(marker => h.command.includes(marker)));
+    const foreign = entry.hooks.filter(h => !CAIRN_HOOK_MARKERS.some(marker => typeof h?.command === 'string' && h.command.includes(marker)));
     if (foreign.length > 0) kept.push({ ...entry, hooks: foreign });
   }
   return { kept: kept.length > 0 ? kept : null, swept };

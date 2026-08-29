@@ -244,3 +244,23 @@ describe('sweeps are handler-granular (codex round-3)', () => {
     assert.ok(!cmds.includes('dist/src/hooks'), 'the Cairn handler is gone');
   });
 });
+
+describe('sweep resilience to malformed entries (codex round-4)', () => {
+  it('an entry without a hooks array is preserved as foreign, never a crash', () => {
+    const settingsPath = tempSettingsPath();
+    writeFileSync(settingsPath, JSON.stringify({
+      hooks: {
+        SessionStart: [
+          { matcher: '' }, // user-authored malformed entry — settings are arbitrary JSON
+          { matcher: '', hooks: [{ type: 'command', command: '/old/dist/src/hooks/hook-relay session-start' }] },
+        ],
+      },
+    }));
+    const r = init(settingsPath, ['--statusline-only']);
+    assert.equal(r.status, 0, `must not abort on a malformed entry: ${r.stderr}`);
+    const written = JSON.parse(readFileSync(settingsPath, 'utf8')) as Settings;
+    const entries = written.hooks?.SessionStart ?? [];
+    assert.equal(entries.length, 1, 'the Cairn entry is swept');
+    assert.equal((entries[0] as { hooks?: unknown }).hooks, undefined, 'the malformed entry survives untouched');
+  });
+});
