@@ -67,7 +67,11 @@ function stripFences(markdown: string): { text: string; unclosedDropped: number 
   const kept: string[] = [];
   let fence: { char: string; len: number } | null = null;
   let droppedInCurrent = 0;
-  for (const line of markdown.split('\n')) {
+  const lines = markdown.split('\n');
+  // A trailing newline yields a synthetic empty final element — counting
+  // it over-reports an unclosed fence's dropped lines by one (review).
+  if (lines[lines.length - 1] === '') lines.pop();
+  for (const line of lines) {
     if (fence) {
       if (new RegExp(`^ {0,3}${fence.char}{${fence.len},}[ \\t]*$`).test(line)) fence = null;
       else droppedInCurrent++;

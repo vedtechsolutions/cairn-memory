@@ -26,6 +26,7 @@ import { transformCodexMemories } from '../src/importers/codex-memories.js';
 import { transformMemoryMd, stripFrontmatter, isAutoMemoryType, sectionsFromFreeformMarkdown } from '../src/importers/memory-md.js';
 import { transformClaudeMem } from '../src/importers/claude-mem.js';
 import { projectId } from '../src/utils/project-id.js';
+import { buildFtsQuery } from '../src/utils/fts.js';
 import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { dirname } from 'node:path';
@@ -801,5 +802,14 @@ describe('exact dedup independent of FTS', () => {
     assert.equal(rerun.ingested, 0);
     const n = (db.prepare('SELECT COUNT(*) n FROM memories WHERE content LIKE ?').all('%café%') as Array<{ n: number }>)[0].n;
     assert.equal(n, 1, 'no duplicate row for non-ASCII content');
+
+    // Stopword-only content builds NO FTS query at all — self-validated
+    // here so the fixture cannot silently stop covering that path.
+    const stopwords = 'this was not what they would have had but there could only be more of that over there';
+    assert.equal(buildFtsQuery(stopwords), null, 'fixture must be stopword-only');
+    learnSections(repo, [{ kind: 'fact', content: stopwords, tags: [] }], null);
+    const rerun2 = learnSections(repo, [{ kind: 'fact', content: stopwords, tags: [] }], null);
+    assert.equal(rerun2.exactDuplicates, 1, 'stopword-only content reads as exact on re-import');
+    assert.equal(rerun2.ingested, 0, 'no duplicate row for stopword-only content');
   });
 });
