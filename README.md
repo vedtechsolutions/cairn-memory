@@ -7,7 +7,7 @@ Local-first shared memory for AI coding agents. One persistent memory across ses
 [![node](https://img.shields.io/node/v/waykeep.svg)](https://nodejs.org)
 [![CI](https://github.com/vedtechsolutions/waykeep/actions/workflows/ci.yml/badge.svg)](https://github.com/vedtechsolutions/waykeep/actions/workflows/ci.yml)
 
-> **Formerly Cairn.** Published on npm as [`waykeep`](https://www.npmjs.com/package/waykeep) — installs the `waykeep` CLI (the `cairn` bin still works). Existing installs keep everything: your data stays in `~/.cairn` and MCP tool names keep their `cairn_` prefix. Upgrading is `npm install -g waykeep && waykeep init` — init re-points hook wiring at the new install location (Codex asks to trust its hook entries once; that's the path move, not new behavior). The old [`cairn-memory`](https://www.npmjs.com/package/cairn-memory) package is deprecated but keeps working until you switch.
+> **Formerly Cairn.** Published on npm as [`waykeep`](https://www.npmjs.com/package/waykeep) — installs the `waykeep` CLI (the `cairn` bin still works). Existing installs keep everything: your data stays in `~/.cairn` and MCP tool names keep their `cairn_` prefix. Upgrading is `npm uninstall -g cairn-memory && npm install -g waykeep && waykeep init` — the uninstall first, because npm refuses to hand the `cairn` bin from one package name to another; init then re-points hook wiring at the new install location (Codex asks to trust its hook entries once; that's the path move, not new behavior). The old [`cairn-memory`](https://www.npmjs.com/package/cairn-memory) package is deprecated but keeps working until you switch.
 
 ## Why
 

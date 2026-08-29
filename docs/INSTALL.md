@@ -9,6 +9,13 @@ with the package; pick the wiring that matches your agent(s).
 npm install -g waykeep
 ```
 
+Coming from `cairn-memory`? Uninstall it first — npm refuses to hand
+the `cairn` bin from one package name to another (`EEXIST` otherwise):
+
+```bash
+npm uninstall -g cairn-memory && npm install -g waykeep && waykeep init
+```
+
 No C compiler needed — hooks run through a bundled shell relay, and
 `waykeep build-relay` can compile the faster C relay later if you want it.
 

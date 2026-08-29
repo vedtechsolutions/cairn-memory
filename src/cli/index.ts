@@ -211,7 +211,7 @@ switch (command) {
     break;
   }
   default: {
-    console.error(`cairn: unknown command "${command}"\n`);
+    console.error(`waykeep: unknown command "${command}"\n`);
     printHelp();
     process.exit(1);
   }

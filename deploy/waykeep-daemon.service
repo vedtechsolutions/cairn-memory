@@ -17,7 +17,7 @@ Description=Cairn hook daemon (shared agent memory socket)
 Type=simple
 # Placeholders — set these to match your install: the node binary, the Cairn
 # install dir, and a dedicated non-root user whose $HOME holds ~/.cairn.
-ExecStart=/usr/bin/node /opt/cairn/dist/src/daemon/waykeep-daemon.js
+ExecStart=/usr/bin/node /opt/cairn/dist/src/daemon/cairn-daemon.js
 WorkingDirectory=/opt/cairn
 User=cairn
 Environment=HOME=/home/cairn

@@ -11,7 +11,7 @@
   },
   "mcpServers": {
     "cairn": {
-      "command": "waykeep",
+      "command": "cairn",
       "args": [
         "serve"
       ],

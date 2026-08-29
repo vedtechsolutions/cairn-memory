@@ -107,7 +107,7 @@ export function routeIntent(ctx: PromptCtx): void {
             .filter(r => !isGoalMemoryStale(r.memory))
             .filter(r => !previouslyInjected.has(r.memory.id))[0];
           if (goalHit) {
-            budgetPush(`[CAIRN goal] Similar prior goal: ${goalHit.memory.content}`);
+            budgetPush(`[WAYKEEP goal] Similar prior goal: ${goalHit.memory.content}`);
             newlyInjected.push(goalHit.memory.id);
           }
         } catch { /* best-effort — goal match is additive */ }

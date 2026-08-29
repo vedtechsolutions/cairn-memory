@@ -18,8 +18,8 @@ if (synced !== source) {
 }
 
 for (const path of [
-  'plugins/claude/cairn/.claude-plugin/plugin.json',
-  'plugins/codex/cairn/.codex-plugin/plugin.json',
+  'plugins/claude/waykeep/.claude-plugin/plugin.json',
+  'plugins/codex/waykeep/.codex-plugin/plugin.json',
 ]) {
   const manifest = JSON.parse(readFileSync(path, 'utf-8'));
   manifest.version = version;

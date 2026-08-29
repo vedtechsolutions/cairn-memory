@@ -188,7 +188,7 @@ describe('handleErrorLearning', () => {
     assert.equal(last.action, 'escalation');
     assert.equal(last.sessionCount, ESCALATION.THRESHOLD);
     assert.ok(last.output);
-    assert.ok(last.output.includes('[CAIRN ESCALATION]'));
+    assert.ok(last.output.includes('[WAYKEEP ESCALATION]'));
     assert.ok(last.output.includes(`${ESCALATION.THRESHOLD} times`));
     assert.ok(last.output.includes(ESCALATION_ALTERNATIVES['typescript']));
 

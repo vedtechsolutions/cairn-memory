@@ -374,7 +374,7 @@ function buildEscalationMessage(
   const firstLine = errorText.split('\n')[0]?.trim().slice(0, 100) ?? 'unknown error';
   const alternative = getAlternative(toolName, tags);
   return [
-    `[CAIRN ESCALATION] This error has occurred ${count} times this session: "${firstLine}"`,
+    `[WAYKEEP ESCALATION] This error has occurred ${count} times this session: "${firstLine}"`,
     `  Try instead: ${alternative}`,
   ].join('\n');
 }

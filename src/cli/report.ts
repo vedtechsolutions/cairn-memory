@@ -37,7 +37,7 @@ export async function runReport(days: number = ROLLUP.REPORT_DAYS): Promise<numb
     // doctor` heals it on open. Degrade honestly instead of erroring.
     const columns = db.prepare('PRAGMA table_info(telemetry_rollup)').all() as Array<{ name: string }>;
     if (!columns.some((c) => c.name === 'events')) {
-      console.log('cairn report — rollup schema needs a one-time upgrade; run any session (or `waykeep doctor`) first, then re-run.');
+      console.log('waykeep report — rollup schema needs a one-time upgrade; run any session (or `waykeep doctor`) first, then re-run.');
       return 0;
     }
     const report = computeRollupReport(db, days);

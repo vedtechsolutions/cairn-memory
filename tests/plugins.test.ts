@@ -92,7 +92,7 @@ describe('thin-plugin packaging', () => {
     // without a shell. Codex: bare command (plugin-root-relative spawn
     // is unproven there; caveat documented, step-7 validation item).
     assert.equal(claudeMcp.mcpServers.cairn.command, '${CLAUDE_PLUGIN_ROOT}/bin/waykeep-mcp.sh');
-    assert.equal(codexPlugin.mcpServers.cairn.command, 'waykeep');
+    assert.equal(codexPlugin.mcpServers.cairn.command, 'cairn');
     assert.deepEqual(codexPlugin.mcpServers.cairn.args, ['serve']);
   });
 
