@@ -54,7 +54,7 @@ describe('cairn init CLI', () => {
     const events = Object.keys(s.hooks ?? {});
     for (const e of ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse',
       'PostToolUseFailure', 'PreCompact', 'PostCompact', 'SessionEnd', 'SubagentStart',
-      'Stop', 'SubagentStop', 'StopFailure', 'FileChanged']) {
+      'Stop', 'SubagentStop', 'StopFailure']) {
       assert.ok(events.includes(e), `hook event ${e} present`);
     }
     // Stop: governance-gate (sync) precedes stop (async).

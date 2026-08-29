@@ -54,7 +54,12 @@ export function cairnHooks(relayCmd: string): HookMap {
     Stop: one('', relay('governance-gate'), relayAsync('stop')),
     SubagentStop: one('', relayAsync('subagent-stop')),
     StopFailure: one('rate_limit|max_output_tokens|server_error', relayAsync('stop-failure')),
-    FileChanged: one('', relayAsync('file-changed')),
+    // FileChanged is deliberately NOT wired: its matcher is a literal
+    // filename watch list ('' watches NO files — unlike every other
+    // event), so this entry never fired; its async additionalContext is
+    // undeliverable anyway, and governance already degrades gracefully
+    // (missing_file_changed). The daemon route stays for a future
+    // targeted watch list. (Plugin validation finding, 2026-08-29.)
   };
 }
 

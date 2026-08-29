@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "cairn": {
+      "command": "cairn",
+      "args": ["serve"],
+      "env": { "CAIRN_LOG_LEVEL": "info" }
+    }
+  }
+}

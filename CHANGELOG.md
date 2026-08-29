@@ -5,6 +5,8 @@
 ### Added
 
 - Added `cairn import --from codex-memories|claude-mem|memory-md`: one-way, idempotent migration of existing memories through the standard scrubbing/dedup pipeline, with dry-run preview and a reported exclusion list.
+- Added marketplace plugins: the repository now serves as a plugin marketplace for both Claude Code (`/plugin marketplace add vedtechsolutions/cairn-memory`) and Codex CLI (`codex plugin marketplace add vedtechsolutions/cairn-memory`). Thin plugins — the `cairn-memory` npm package remains the one runtime; the Claude plugin wires hooks + MCP, the Codex plugin wires MCP (hooks stay with `cairn init` so their one-time trust approval survives updates).
+- Added `docs/INSTALL.md` — one install guide covering npm, both plugins, hook trust, and migration imports.
 
 ### Changed
 
