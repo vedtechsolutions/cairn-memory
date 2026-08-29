@@ -6,6 +6,7 @@ import type { ContextFingerprint } from '../../../utils/fingerprint.js';
 import { passesCrossProjectGuard, passesSameProjectRelevance, deriveProjectIdentityTokens, meaningfulTokenCount } from '../../../utils/cross-project-guard.js';
 import { NARROW_OVERLAP_MIN_MEANINGFUL_TOKENS, narrowPolicyExclusions, broadRelevanceFp } from './query-fingerprint.js';
 import { truncate } from './render-helpers.js';
+import { isMemoryEligibleForInjection } from '../../../utils/memory-injection.js';
 
 /** Compute effectiveness score (0–1) for a memory.
  *  High surface count with low impact = noise. High impact/surface ratio = valuable.
@@ -107,6 +108,7 @@ export function recoverDroppedPitfalls(
   // floor the main briefing uses, so recovery can't re-admit pitfalls
   // main intentionally dropped for being below quality thresholds.
   const dropped = droppedRaw
+    .filter(isMemoryEligibleForInjection)
     .filter(m => passesCrossProjectGuard(m, project, effectiveFp))
     .filter(m => passesSameProjectRelevance(m, relevanceFp, null, identityTokens))
     .filter(m => computeEffectiveness(m) >= BRIEFING_ALLOCATION.LOW_EFFECTIVENESS_THRESHOLD)

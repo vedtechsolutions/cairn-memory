@@ -8,6 +8,7 @@ import { neutralizeMemoryText } from '../../../utils/validation.js';
 import type { ContextFingerprint } from '../../../utils/fingerprint.js';
 import { passesCrossProjectGuard, passesSameProjectRelevance, deriveProjectIdentityTokens, meaningfulTokenCount } from '../../../utils/cross-project-guard.js';
 import type { BriefingContext } from './types.js';
+import { isMemoryEligibleForInjection } from '../../../utils/memory-injection.js';
 import {
   NARROW_OVERLAP_MIN_MEANINGFUL_TOKENS,
   narrowPolicyExclusions,
@@ -178,6 +179,7 @@ export function renderTier3(
   const fetchPitfallCount = pitfallCount * 2;
   const pitfallsRaw = memoryRepo.topPitfalls(ctx.project, fetchPitfallCount, useNarrow ? queryFp : undefined);
   const pitfalls = pitfallsRaw
+    .filter(isMemoryEligibleForInjection)
     .filter(p => passesCrossProjectGuard(p, ctx.project, queryFp))
     .filter(p => passesSameProjectRelevance(p, relevanceFp, null, identityTokens))
     .slice(0, pitfallCount);

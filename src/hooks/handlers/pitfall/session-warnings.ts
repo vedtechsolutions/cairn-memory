@@ -30,7 +30,8 @@ export function applySessionWarnings(
   };
 
   // A1: Check for recent file failures in toolChain
-  if (filePath && shouldFireWarning('A1', filePath)) {
+  if (warnings.length < PROACTIVE.MAX_WARNINGS_PER_CALL
+    && filePath && shouldFireWarning('A1', filePath)) {
     const recentFailures = tracker.toolChain.filter(
       e => e.file === filePath && e.success === false && (nowMs - e.timestamp) < 300_000,
     );
@@ -42,7 +43,8 @@ export function applySessionWarnings(
   }
 
   // A2: Tool chain loop detection (Edit->Bash(fail)->Edit on same file)
-  if (isEditTool && filePath && shouldFireWarning('A2', filePath)) {
+  if (warnings.length < PROACTIVE.MAX_WARNINGS_PER_CALL
+    && isEditTool && filePath && shouldFireWarning('A2', filePath)) {
     const recentChain = tracker.toolChain.slice(-PROACTIVE.LOOP_LOOKBACK);
     const loopDetected = detectEditFailLoop(recentChain, filePath);
     if (loopDetected) {
@@ -52,7 +54,8 @@ export function applySessionWarnings(
   }
 
   // A3: Rapid re-edit detection
-  if (isEditTool && filePath && tracker.lastEditPath === filePath && shouldFireWarning('A3', filePath)) {
+  if (warnings.length < PROACTIVE.MAX_WARNINGS_PER_CALL
+    && isEditTool && filePath && tracker.lastEditPath === filePath && shouldFireWarning('A3', filePath)) {
     const elapsed = nowMs - tracker.lastEditTime;
     if (elapsed < PROACTIVE.RAPID_REEDIT_MS && elapsed > 0) {
       warnings.push('You are re-editing this file quickly. Consider re-reading it first to verify current content.');

@@ -24,6 +24,10 @@ export interface Memory {
   fingerprint: ContextFingerprint | null;
   context: { why?: string; how_to_apply?: string } | null;
   anchor: string | null;
+  /** Truth-maintenance retirement pointer. Present on repository reads;
+   *  optional for compatibility with older adapters that construct Memory. */
+  superseded_by?: string | null;
+  superseded_at?: string | null;
   /** Structural CAS counter (schema v27) — bumped by trigger on any
    *  rendered-semantic column write; memory-tool edits compare against it. */
   revision: number;

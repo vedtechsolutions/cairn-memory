@@ -5,8 +5,11 @@ import { PROACTIVE, FINGERPRINT, RELEVANCE } from '../src/constants/index.js';
 // --- Proactive Warning Constants ---
 
 describe('Proactive Warning Constants', () => {
-  it('should have a max of 3 warnings per call', () => {
-    assert.equal(PROACTIVE.MAX_WARNINGS_PER_CALL, 3);
+  it('locks the SNR golden to one proactive warning per call', () => {
+    // Deliberate 2026-08-29 SNR tightening: this used to be 3. Raising it
+    // again is a product-policy change and must update this golden explicitly.
+    assert.equal(PROACTIVE.MAX_WARNINGS_PER_CALL, 1);
+    assert.equal(PROACTIVE.MAX_WARNINGS_PER_TURN, 1);
   });
 
   it('should have a 30s rapid re-edit window', () => {
@@ -190,7 +193,7 @@ describe('Warning Cap', () => {
   it('should cap warnings at MAX_WARNINGS_PER_CALL', () => {
     const allWarnings = ['w1', 'w2', 'w3', 'w4', 'w5'];
     const capped = allWarnings.slice(0, PROACTIVE.MAX_WARNINGS_PER_CALL);
-    assert.equal(capped.length, 3);
+    assert.equal(capped.length, 1);
   });
 
   it('should preserve order (session warnings first, then pitfalls)', () => {
@@ -201,7 +204,7 @@ describe('Warning Cap', () => {
     ];
     const capped = warnings.slice(0, PROACTIVE.MAX_WARNINGS_PER_CALL);
     assert.equal(capped[0], 'This file had 2 error(s) this session');
-    assert.equal(capped[2], 'Use parameterized queries');
+    assert.equal(capped.length, 1, 'later, lower-priority warnings must stay out of context');
   });
 });
 

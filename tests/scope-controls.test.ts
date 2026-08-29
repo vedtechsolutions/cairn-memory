@@ -44,6 +44,9 @@ import { compileBriefing, type BriefingContext } from '../src/hooks/shared/brief
 import { handlePromptCheck } from '../src/hooks/handlers/prompt-handler.js';
 import { handlePitfallCheck } from '../src/hooks/handlers/pitfall-handler.js';
 import { handleSubagentContext } from '../src/hooks/handlers/subagent-context-handler.js';
+import { applyPredictivePrefetch } from '../src/hooks/handlers/pitfall/auxiliary-signals.js';
+import type { PitfallPassCtx } from '../src/hooks/handlers/pitfall/memory-recall.js';
+import { loadTracker } from '../src/hooks/shared/edit-tracker.js';
 import type { CachedHookContext } from '../src/hooks/shared/db-client.js';
 import type { UserPromptSubmitInput, PreToolUseInput, SubagentStartInput } from '../src/hooks/shared/hook-io.js';
 import type { ContextFingerprint } from '../src/utils/fingerprint.js';
@@ -314,7 +317,7 @@ describe('hook surfaces never leak a private project cross-project', () => {
     assert.ok(text.includes('OPEN-PROJECT'), 'positive control: the surface renders same-project content');
   });
 
-  function seedCoRecallBridge(): void {
+  function seedCoRecallBridge(): string {
     // Cairn builds the bridge itself: a legitimate recall INSIDE the
     // private project pairs the private row with a global; prediction
     // then dereferences the private id by RAW id in another project —
@@ -334,17 +337,13 @@ describe('hook surfaces never leak a private project cross-project', () => {
     // Twice: the prompt layer's MIN_CO_COUNT is 2 (pitfall needs 1).
     client.memoryRepo.trackCoRecall('own-project-recall', [global_.id, priv.id]);
     client.memoryRepo.trackCoRecall('own-project-recall-2', [global_.id, priv.id]);
+    return global_.id;
   }
 
   // Each surface gets its OWN differential with FRESH session ids per
   // call: the pitfall pass records injected ids in the session tracker,
   // and prompt Layer 1b skips already-injected ids — a shared session
   // would let dedup mask a removed guard (reviewer C4).
-  const pitfallInput = (sess: string): PreToolUseInput => ({
-    session_id: sess, transcript_path: null, cwd: OPEN_CWD,
-    hook_event_name: 'PreToolUse', tool_name: 'Edit',
-    tool_input: { file_path: `${OPEN_CWD}/src/hooks/billing.ts` },
-  } as unknown as PreToolUseInput);
   const promptInput = (sess: string): UserPromptSubmitInput => ({
     session_id: sess, transcript_path: null, cwd: OPEN_CWD,
     hook_event_name: 'UserPromptSubmit',
@@ -352,13 +351,26 @@ describe('hook surfaces never leak a private project cross-project', () => {
   } as unknown as UserPromptSubmitInput);
 
   it('PITFALL-surface co-recall differential — leak without the policy, blocked with it', () => {
-    seedCoRecallBridge();
+    const seedId = seedCoRecallBridge();
+    const predictiveWarnings = (): string[] => {
+      const warnings: string[] = [];
+      applyPredictivePrefetch({
+        client,
+        tracker: loadTracker('scope-predictive-helper'),
+        warnings,
+        surfacedPitfallIds: [seedId],
+        project: OPEN_PID,
+        queryFp: OVERLAPPING_FP,
+      } as PitfallPassCtx);
+      return warnings;
+    };
+
     removeScopeConfig();
-    const open = JSON.stringify(handlePitfallCheck(pitfallInput('pit-off'), client) ?? {});
+    const open = JSON.stringify(predictiveWarnings());
     assert.ok(open.includes(PRIVATE_MARKER),
       'differential premise: without config, prediction surfaces the cross-project row');
     writeScopeConfig([PRIVATE_PROJECT]);
-    const closed = JSON.stringify(handlePitfallCheck(pitfallInput('pit-on'), client) ?? {});
+    const closed = JSON.stringify(predictiveWarnings());
     assert.ok(!closed.includes(PRIVATE_MARKER), 'pitfall-surface prediction is guarded');
   });
 

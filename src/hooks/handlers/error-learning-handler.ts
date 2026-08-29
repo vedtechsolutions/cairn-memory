@@ -42,6 +42,7 @@ import { regexDistillError, regexDistillErrorStrict } from '../../utils/distilla
 import { now } from '../../utils/index.js';
 import { recordGovernanceEventFailOpen } from '../../governance/recorder.js';
 import type { RecorderDiagnostic } from '../../governance/types.js';
+import { isMemoryEligibleForInjection } from '../../utils/memory-injection.js';
 
 export interface ErrorLearningResult {
   /** Context to inject, or null */
@@ -307,12 +308,12 @@ function handleErrorLearningBusiness(input: PostToolUseFailureInput, client: Cac
   // A new pitfall (or even a dedup merge) must be visible to the next
   // pitfall-check — invalidate the skip-gate cache.
   client.cache?.bumpMemoryVersion();
+  const storedMemory = client.memoryRepo.findById(result.id);
 
   if (result.deduplicated) {
-    const mem = client.memoryRepo.findById(result.id);
-    if (mem) {
+    if (storedMemory && isMemoryEligibleForInjection(storedMemory)) {
       return {
-        output: buildOutputJson('PostToolUseFailure', `[WAYKEEP] Repeated error. Previous lesson: "${mem.content}"`),
+        output: buildOutputJson('PostToolUseFailure', `[WAYKEEP] Repeated error. Previous lesson: "${storedMemory.content}"`),
         action: 'learned-deduped',
         sessionCount,
         surfacedProcessed,
@@ -342,7 +343,9 @@ function handleErrorLearningBusiness(input: PostToolUseFailureInput, client: Cac
   } catch { /* best-effort */ }
 
   return {
-    output: buildOutputJson('PostToolUseFailure', `[WAYKEEP] ${lesson}`),
+    output: storedMemory && isMemoryEligibleForInjection(storedMemory)
+      ? buildOutputJson('PostToolUseFailure', `[WAYKEEP] ${lesson}`)
+      : null,
     action: 'learned-new',
     sessionCount,
     surfacedProcessed,

@@ -39,6 +39,17 @@ export function isGoalMemoryStale(mem: Memory, nowMs: number = Date.now()): bool
 export function extractDecision(prompt: string): string | null {
   const lower = prompt.toLowerCase();
 
+  // Precision-first auto-capture: requests for agent work and conversational
+  // meta-discussion describe what to do, not a durable product/architecture
+  // choice. This explicitly closes the live "ask Codex to evaluate/review"
+  // false-positive family.
+  const conversationalOrTasking = [
+    /\b(?:ask(?:s|ed|ing)?|review(?:s|ed|ing)?|evaluat(?:e|es|ed|ing|ion))\b/,
+    /^\s*(?:please\b|can\s+you\b|could\s+you\b|would\s+you\b|will\s+you\b)/,
+    /\b(?:what\s+(?:are\s+your\s+thoughts|do\s+you\s+think)|take\s+a\s+look)\b/,
+  ];
+  if (conversationalOrTasking.some(pattern => pattern.test(lower))) return null;
+
   const hasRationale = /\b(because|since|so\s+that|reason\s+is|due\s+to)\b/.test(lower);
   if (!hasRationale) return null;
 

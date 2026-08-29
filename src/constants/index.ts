@@ -600,8 +600,15 @@ export const PROJECT_SCAN = {
 // --- Proactive Pre-Tool Warnings --------------------------------------------
 
 export const PROACTIVE = {
-  /** Max warnings injected per tool call (alert fatigue threshold — research backed) */
-  MAX_WARNINGS_PER_CALL: 3,
+  /** SNR golden: one highest-priority item per tool call. The turn budget
+   *  below prevents different tool calls from each spending this allowance. */
+  MAX_WARNINGS_PER_CALL: 1,
+  /** Hard cross-tool cap when the client supplies a turn id (or the prompt
+   *  hook establishes a synthetic turn boundary). */
+  MAX_WARNINGS_PER_TURN: 1,
+  /** Conservative total context budget for proactive warnings in one
+   *  correlated agent turn, including the Waykeep header. */
+  WARNING_TOKEN_BUDGET_PER_TURN: 96,
   /** Rapid re-edit window: same file edited within this window triggers re-read suggestion */
   RAPID_REEDIT_MS: 30_000,
   /** Confidence floor for pitfalls when file has recent session errors */

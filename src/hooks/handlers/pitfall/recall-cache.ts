@@ -7,6 +7,7 @@ import { fingerprintOverlap } from '../../../utils/fingerprint.js';
 import type { ContextFingerprint } from '../../../utils/fingerprint.js';
 import type { Memory } from '../../../db/memory-repository.js';
 import { SessionCache } from '../../shared/session-cache.js';
+import { isMemoryEligibleForInjection } from '../../../utils/memory-injection.js';
 
 /**
  * Build a cheap, stable hash of the tracker state that affects pitfall-check
@@ -18,6 +19,7 @@ import { SessionCache } from '../../shared/session-cache.js';
  *   - lastEditPath + lastEditTime  (drives rapid re-edit warning A3)
  *   - total session error count    (drives adaptive confidence floor)
  *   - last 3 toolChain entries     (drives recent-failure A1 + loop A2)
+ *   - warning turn + spend         (drives the per-turn injection budget)
  */
 export function sessionStateHash(tracker: EditTracker): string {
   const errorTotal = Object.values(tracker.sessionErrorCounts).reduce(
@@ -32,7 +34,8 @@ export function sessionStateHash(tracker: EditTracker): string {
   // cached null from the prior call. The 60 s skip-gate TTL bounds staleness
   // when the cooldown expires without a new warning event.
   const warnKeys = Object.keys(tracker.recentWarningFired ?? {}).sort().join(',');
-  return `${tracker.lastEditPath ?? ''}@${tracker.lastEditTime}|err=${errorTotal}|chain=${chainTail}|warn=${warnKeys}`;
+  const warningBudget = `${tracker.warningBudgetTurnKey ?? ''}:${tracker.warningCountInjectedThisTurn ?? 0}:${tracker.warningTokensInjectedThisTurn ?? 0}`;
+  return `${tracker.lastEditPath ?? ''}@${tracker.lastEditTime}|err=${errorTotal}|chain=${chainTail}|warn=${warnKeys}|budget=${warningBudget}`;
 }
 
 /**
@@ -69,7 +72,7 @@ export function cachedRecallByFingerprint(
     const out: Array<{ memory: Memory; score: number }> = [];
     for (const id of cachedIds) {
       const mem = client.memoryRepo.findById(id);
-      if (!mem || mem.invalidated || mem.kind !== options.kind) continue;
+      if (!mem || mem.kind !== options.kind || !isMemoryEligibleForInjection(mem)) continue;
       // Fingerprint scores are deterministic — cache them per (id, fpKey).
       let score = client.cache?.getFingerprintScore(mem.id, fpKey);
       if (score === undefined) {
@@ -83,7 +86,8 @@ export function cachedRecallByFingerprint(
     return out;
   }
 
-  const results = client.memoryRepo.recallByFingerprint(queryFp, queryText, options);
+  const results = client.memoryRepo.recallByFingerprint(queryFp, queryText, options)
+    .filter(r => isMemoryEligibleForInjection(r.memory));
   if (client.cache) {
     client.cache.setFTSCandidates(ftsKey, results.map(r => r.memory.id));
     // Warm the per-candidate score cache so the next call short-circuits the

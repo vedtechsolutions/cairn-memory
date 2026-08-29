@@ -37,6 +37,12 @@ import {
   applyPredictivePrefetch,
   applyInvestigationSignals,
 } from './pitfall/auxiliary-signals.js';
+import {
+  alignWarningTurn,
+  recordWarningInjection,
+  warningBudgetAvailable,
+  warningTokensRemaining,
+} from '../shared/warning-budget.js';
 
 // Re-export so existing importers (tests/pitfall-cross-project-guard.test.ts)
 // keep working — canonical impl now lives in src/utils/cross-project-guard.ts.
@@ -54,6 +60,19 @@ export interface PitfallCheckResult {
 }
 
 const EMPTY: PitfallCheckResult = { output: null, pitfallsSurfaced: 0 };
+
+function fitWarningContext(fileLabel: string, warning: string, tokenBudget: number): string | null {
+  const prefix = `[WAYKEEP] Pitfalls for ${fileLabel}:\n  - `;
+  const availableChars = tokenBudget * 3 - prefix.length;
+  if (availableChars <= 0) return null;
+
+  const fitted = warning.length <= availableChars
+    ? warning
+    : availableChars > 3
+      ? `${warning.slice(0, availableChars - 3)}...`
+      : warning.slice(0, availableChars);
+  return `${prefix}${fitted}`;
+}
 
 export function handlePitfallCheck(input: PreToolUseInput, client: CachedHookContext): PitfallCheckResult {
   // Only check for relevant tool types
@@ -93,6 +112,8 @@ export function handlePitfallCheck(input: PreToolUseInput, client: CachedHookCon
 
   // --- Load tracker: in-memory (cache) or file I/O (standalone) ---
   const tracker = client.cache?.getTracker(input.session_id) ?? loadTracker(input.session_id);
+  alignWarningTurn(tracker, input.turn_id, input.tool_use_id);
+  if (!warningBudgetAvailable(tracker)) return EMPTY;
 
   // --- Skip-gate cache lookup ---
   // Conservative policy: only null outputs are ever served from cache. The
@@ -173,24 +194,28 @@ export function handlePitfallCheck(input: PreToolUseInput, client: CachedHookCon
   // --- Investigation chain surfacing ---
   applyInvestigationSignals(ctx);
 
-  // --- Cap at MAX_WARNINGS and build output ---
+  // --- Cap at the SNR golden and fit the remaining per-turn token budget ---
   const capped = warnings.slice(0, PROACTIVE.MAX_WARNINGS_PER_CALL);
 
   let outputStr: string | null = null;
   let injectedContext: string | null = null;
   if (capped.length > 0) {
-    const formatted = capped.map(w => `  - ${w}`).join('\n');
-    const context = `[WAYKEEP] Pitfalls for ${fileLabel}:\n${formatted}`;
-    injectedContext = context;
+    const context = fitWarningContext(fileLabel, capped[0], warningTokensRemaining(tracker));
+    if (context) {
+      injectedContext = context;
+      recordWarningInjection(tracker, estimateTokensFast(context));
+    }
     // Warnings are advisory: clients whose engines reject an explicit
     // "allow" (capability emitsPermissionDecision=false) get context alone.
-    outputStr = JSON.stringify({
-      hookSpecificOutput: {
-        hookEventName: 'PreToolUse',
-        ...(capabilitiesOf(input).emitsPermissionDecision ? { permissionDecision: 'allow' } : {}),
-        additionalContext: context,
-      },
-    });
+    if (injectedContext) {
+      outputStr = JSON.stringify({
+        hookSpecificOutput: {
+          hookEventName: 'PreToolUse',
+          ...(capabilitiesOf(input).emitsPermissionDecision ? { permissionDecision: 'allow' } : {}),
+          additionalContext: injectedContext,
+        },
+      });
+    }
   }
 
   // Save tracker: in-memory (cache) or file I/O (standalone)
@@ -216,5 +241,5 @@ export function handlePitfallCheck(input: PreToolUseInput, client: CachedHookCon
     // warning from 18 to 44 recorded tokens).
     recordRollup(client.db, input.session_id, ROLLUP_METRICS.INJECTED, 'pitfall-check', estimateTokensFast(injectedContext));
   }
-  return { output: outputStr, pitfallsSurfaced: capped.length };
+  return { output: outputStr, pitfallsSurfaced: injectedContext ? capped.length : 0 };
 }

@@ -9,6 +9,7 @@ import { passesCrossProjectGuard } from '../../../utils/cross-project-guard.js';
 import { predictRelated } from '../../../utils/prediction.js';
 import type { PromptCtx } from './types.js';
 import { isGoalMemoryStale } from './extractors.js';
+import { isMemoryEligibleForInjection } from '../../../utils/memory-injection.js';
 
 export function runRecallLayers(ctx: PromptCtx): void {
   const { client, prompt, project, fp, mode, intent, previouslyInjected, newlyInjected, budgetAvailable, budgetPush } = ctx;
@@ -22,6 +23,7 @@ export function runRecallLayers(ctx: PromptCtx): void {
       minConfidence: RELEVANCE.MIN_CONFIDENCE_FOR_FACT,
     });
     const broadRelevant = broadResults
+      .filter(r => isMemoryEligibleForInjection(r.memory))
       .filter(r => r.score >= RELEVANCE.MIN_SCORE_FOR_INJECTION)
       .filter(r => passesCrossProjectGuard(r.memory, project, fp))
       .filter(r => !isGoalMemoryStale(r.memory))
@@ -46,7 +48,8 @@ export function runRecallLayers(ctx: PromptCtx): void {
         if (!budgetAvailable() || surfaced >= PREDICTION.MAX_PER_PROMPT) break;
         if (allInjected.has(predId)) continue;
         const mem = client.memoryRepo.findById(predId);
-        if (!mem || mem.invalidated || mem.confidence < RELEVANCE.MIN_CONFIDENCE_FOR_FACT) continue;
+        if (!mem || !isMemoryEligibleForInjection(mem)
+          || mem.confidence < RELEVANCE.MIN_CONFIDENCE_FOR_FACT) continue;
         // Co-recall pairs are recorded WITHOUT a project dimension, so a
         // prediction can dereference another project's row — the one hook
         // path where a cross-project (or private) memory arrives by raw
@@ -81,6 +84,7 @@ export function runRecallLayers(ctx: PromptCtx): void {
           cached.embedding,
           { project, maxResults: 3, minConfidence: RELEVANCE.MIN_CONFIDENCE_FOR_FACT },
         ).filter(r => r.score >= RELEVANCE.MIN_RRF_SCORE)
+         .filter(r => isMemoryEligibleForInjection(r.memory))
          .filter(r => passesCrossProjectGuard(r.memory, project, fp))
          .filter(r => !isGoalMemoryStale(r.memory))
          .filter(r => !allInjected.has(r.memory.id))
@@ -91,6 +95,7 @@ export function runRecallLayers(ctx: PromptCtx): void {
           allInjected,
           { project, maxResults: 2, minConfidence: RELEVANCE.MIN_CONFIDENCE_FOR_FACT },
         ).filter(r => passesCrossProjectGuard(r.memory, project, fp))
+         .filter(r => isMemoryEligibleForInjection(r.memory))
          .filter(r => !isGoalMemoryStale(r.memory));
       }
 

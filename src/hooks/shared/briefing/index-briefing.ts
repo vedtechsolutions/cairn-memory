@@ -23,6 +23,7 @@ import {
   formatPlanSummary,
 } from './render-helpers.js';
 import { GOVERNANCE_TIER_MAX_TOKENS, renderGovernanceTier } from './governance-tier.js';
+import { isMemoryEligibleForInjection } from '../../../utils/memory-injection.js';
 
 /**
  * Emit a compact index briefing. Each memory entry is rendered as a single
@@ -152,6 +153,7 @@ export function compileIndexBriefing(
     indexUseNarrow ? indexQueryFp : undefined,
   );
   const pitfallsGuarded = pitfallCandidates
+    .filter(isMemoryEligibleForInjection)
     .filter(p => passesCrossProjectGuard(p, ctx.project, indexQueryFp))
     .filter(p => passesSameProjectRelevance(p, indexRelevanceFp, null, identityTokens));
   const pitfalls = pitfallsGuarded
