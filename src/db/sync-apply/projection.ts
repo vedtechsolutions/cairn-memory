@@ -91,6 +91,18 @@ export function projectionHashOfPayload(record: PortableRecord): string {
   return hashCanonical(canonicalRowBytes(projectPayload(record)));
 }
 
+/** A pending local retraction (invalidate or supersession) is an
+ *  unpushed semantic change the projection hash cannot see — the
+ *  clean/diverged guards test this alongside hash equality (slice-4
+ *  review C3). The projection field set itself stays as documented:
+ *  adding these flags to the hashed bytes would break S6's as-stored
+ *  rule and twin matching. */
+export function isLocallyRetracted(db: Database.Database, memoryId: string): boolean {
+  const row = db.prepare('SELECT invalidated, superseded_by FROM memories WHERE id = ?').get(memoryId) as
+    | { invalidated: number; superseded_by: string | null } | undefined;
+  return row !== undefined && (row.invalidated === 1 || row.superseded_by !== null);
+}
+
 interface RowFieldsRow {
   kind: string; project: string | null; content: string;
   tags: string | null; context: string | null; anchor: string | null;

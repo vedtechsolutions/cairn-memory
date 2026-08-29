@@ -1,7 +1,7 @@
 import type Database from 'better-sqlite3';
 import {
-  SYNC_PROTOCOL_VERSION, CANONICALIZATION_VERSION, CONTENT_HASH_VERSION,
-  isSyncEventType, validateRecordPayload, MEMORY_KINDS,
+  CANONICALIZATION_VERSION, CONTENT_HASH_VERSION,
+  isSyncEventType, validateRecordPayload, SHAREABLE_KINDS,
   type SyncEvent, type SyncUpsertEvent, type SyncTombstoneEvent,
   type SyncAliasEvent, type SyncConflictOpenEvent, type SyncResolveCommitEvent,
   type SyncEntityEnvelope, type PortableRecord,
@@ -9,11 +9,11 @@ import {
 
 import { generateId } from '../../utils/index.js';
 import {
-  getByEntityId, closeEntry, recordAlias, mergeContributors,
-  openConflictSet, resolveConflictSet, bumpGeneration, bindEntity,
+  getByEntityId, closeEntry, recordAlias, mergeContributors, contributorsOf,
+  openConflictSet, resolveConflictSet, bumpGeneration, readGeneration, bindEntity,
 } from './entity-map.js';
-import { canonicalHashOfRow } from './projection.js';
-import { applyUpsert, insertProjectedRow, type InertProjection, type UpsertOutcome } from './upsert-apply.js';
+import { canonicalHashOfRow, isLocallyRetracted } from './projection.js';
+import { applyUpsert, insertProjectedRow, writeForkNotice, type InertProjection, type UpsertOutcome } from './upsert-apply.js';
 import { ApplyValidationError, ProtocolInvariantError } from './errors.js';
 
 /**
@@ -71,10 +71,13 @@ function validateEnvelope(env: SyncEntityEnvelope, targetProject: string): Porta
   }
   const record = validateRecordPayload(parsed);
   if (!record.id) throw new ApplyValidationError(`entity ${env.entity_id}: payload record carries no id`);
-  if (!(MEMORY_KINDS as readonly string[]).includes(record.kind)) {
-    throw new ApplyValidationError(`entity ${env.entity_id}: unknown kind '${record.kind}'`);
+  // D7's frozen v1 allowlist, enforced INBOUND too: correction
+  // (user-voice, highest injection authority), user_profile, reference,
+  // goal, task_state and rule never replicate into this store —
+  // regardless of what a server or a hostile teammate sends.
+  if (!(SHAREABLE_KINDS as readonly string[]).includes(record.kind)) {
+    throw new ApplyValidationError(`entity ${env.entity_id}: kind '${record.kind}' is not team-shareable`);
   }
-  if (record.kind === 'rule') throw new ApplyValidationError('rule memories never replicate');
   if (record.project !== targetProject) {
     throw new ApplyValidationError(`entity ${env.entity_id}: record project does not match the caller's target binding`);
   }
@@ -98,10 +101,12 @@ function applyTombstone(db: Database.Database, ev: SyncTombstoneEvent): EventOut
     return 'assoc-closed';
   }
   const localHash = canonicalHashOfRow(db, entry.local_memory_id);
-  if (localHash !== null && localHash !== entry.projection_hash) {
-    // S9 fork-preserve: an unpushed local edit is never destroyed —
-    // close the binding and force the row local-only.
+  if (localHash !== null && (localHash !== entry.projection_hash || isLocallyRetracted(db, entry.local_memory_id))) {
+    // S9 fork-preserve: an unpushed local edit — including a pending
+    // local retraction, which the projection cannot see (review C3) —
+    // is never destroyed: close the binding and force the row local-only.
     db.prepare("UPDATE memories SET share_state = 'local' WHERE id = ?").run(entry.local_memory_id);
+    writeForkNotice(db, entry.local_memory_id, { entity: ev.entity_id, path: 'S9', seq: ev.seq });
     closeEntry(db, ev.entity_id);
     return 'fork-preserved';
   }
@@ -132,7 +137,9 @@ function applyAlias(db: Database.Database, project: string, ev: SyncAliasEvent):
       version: toEntry.canonical_version, canonicalHash: toEntry.canonical_hash, projectionHash: toEntry.projection_hash,
     });
   }
-  mergeContributors(db, ev.to_entity_id, fromEntry.contributors ? (JSON.parse(fromEntry.contributors) as string[]) : [], ev.seq);
+  // Provenance lives in the sync_contributors projection — the map's
+  // snapshot column is populated only for shadow-assocs (review C5).
+  mergeContributors(db, ev.to_entity_id, contributorsOf(db, ev.from_entity_id), ev.seq);
   return 'aliased';
 }
 
@@ -147,10 +154,16 @@ function applyConflictOpen(db: Database.Database, project: string, ev: SyncConfl
 
 function applyResolveCommit(db: Database.Database, project: string, ev: SyncResolveCommitEvent): EventOutcome {
   const record = validateEnvelope(ev.canonical, project);
-  applyUpsert(db, project, ev.canonical, record);
+  // D1 (frozen): within composed applications, TOMBSTONES BEFORE
+  // UPSERTS. The reverse order let the canonical's exact-match see a
+  // still-live member — minting a spurious near-dup set, or, when the
+  // canonical carries a tombstoned member's hash (the ordinary "pick
+  // one member" resolution), halting the project on T8a (review C1).
   for (const entityId of ev.tombstoned_entity_ids) {
+    if (entityId === ev.canonical.entity_id) continue;
     applyTombstone(db, { type: 'tombstone', seq: ev.seq, entity_id: entityId, entity_version: 0, deleted_by: '', deleted_at: '' });
   }
+  applyUpsert(db, project, ev.canonical, record);
   mergeContributors(db, ev.canonical.entity_id, ev.contributors, ev.seq);
   resolveConflictSet(db, ev.conflict_set_id, ev.seq);
   return 'resolved';
@@ -192,9 +205,13 @@ export function applyEventBatch(db: Database.Database, targetProject: string, ev
       cursor = Math.max(cursor, ev.seq);
     }
     writeCursor(db, targetProject, cursor);
-    const generation = bumpGeneration(db);
+    // The generation invalidates every peer's memory-derived caches —
+    // bump only when some event actually changed state (review C7): an
+    // empty or pure-replay batch must not flush caches fleet-wide.
+    const changed = outcomes.some((o) => o.outcome !== 'replay-noop');
+    const generation = changed ? bumpGeneration(db) : readGeneration(db);
     return { outcomes, generation, cursor };
   }).immediate();
 }
 
-export { ApplyValidationError, ProtocolInvariantError, SYNC_PROTOCOL_VERSION };
+export { ApplyValidationError, ProtocolInvariantError };

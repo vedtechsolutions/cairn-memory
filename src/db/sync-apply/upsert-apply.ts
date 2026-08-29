@@ -3,7 +3,7 @@ import type { SyncEntityEnvelope, PortableRecord } from 'waykeep-contract';
 
 import { generateId } from '../../utils/index.js';
 import {
-  projectPayload, canonicalRowBytes, hashCanonical, canonicalHashOfRow,
+  projectPayload, canonicalRowBytes, hashCanonical, canonicalHashOfRow, isLocallyRetracted,
   type ProjectionFields,
 } from './projection.js';
 import {
@@ -64,6 +64,16 @@ function storedHashes(env: SyncEntityEnvelope, projected: ProjectionFields): { c
   return { ch: env.canonical_content_hash, ph: hashCanonical(canonicalRowBytes(projected)) };
 }
 
+/** Durable fork marker (§6 "conflict notice", M1 form): without it a
+ *  forked row is indistinguishable from a deliberate opt-out and M3's
+ *  conflict inbox could never reconstruct what happened (review C9). */
+export function writeForkNotice(db: Database.Database, memoryId: string, notice: { entity: string; path: 'T3' | 'S9'; seq: number }): void {
+  db.prepare(`
+    INSERT INTO sync_state (ns, k, v, updated_at) VALUES ('fork-notice', ?, ?, datetime('now'))
+    ON CONFLICT(ns, k) DO NOTHING
+  `).run(memoryId, JSON.stringify(notice));
+}
+
 export type UpsertOutcome =
   | 'applied-new'          // T1
   | 'applied-edit'         // T2
@@ -71,6 +81,7 @@ export type UpsertOutcome =
   | 'shadow-assoc'         // T4
   | 'twin-inserted'        // T5
   | 'coexist-conflict'     // T8b
+  | 'assoc-refreshed'      // S8 (refresh half)
   | 'replay-noop';
 
 /** One exact-match check at apply (D2/R14). Precedence among matching
@@ -92,11 +103,16 @@ function selectExactMatch(
   for (const c of candidates) {
     if (canonicalHashOfRow(db, c.id) !== pHash) continue;
     const entry = getByLocalMemoryId(db, c.id);
-    if (entry?.state === 'bound') classes[0].push({ ...c, boundTo: entry });
-    else if (c.share_state === 'local') classes[1].push(c);
-    else if (!entry) classes[2].push(c);
-    // shadow-assoc'd rows are already associated (cardinality X26): a
-    // second match against them dispatches nothing new here.
+    if (entry?.state === 'bound') { classes[0].push({ ...c, boundTo: entry }); continue; }
+    // A row already carrying a shadow-assoc is EXCLUDED before the
+    // opted-out class, not just from it: cardinality (X26) allows one
+    // association per row, and selecting it for a second T4 would
+    // destroy the first assoc's Π unmaterialized — the no-vanish
+    // violation of review C4. The incoming entity falls through to T1
+    // and coexists as its own row instead.
+    if (entry) continue;
+    if (c.share_state === 'local') classes[1].push(c);
+    else classes[2].push(c);
   }
   return classes[0][0] ?? classes[1][0] ?? classes[2][0];
 }
@@ -119,7 +135,7 @@ export function applyUpsert(db: Database.Database, project: string, env: SyncEnt
           inertProjection: JSON.stringify(buildInertProjection(env, record)),
           contributors: env.contributors,
         });
-        return 'replay-noop';
+        return 'assoc-refreshed';
       }
       // Diverged remote edit of a shadowed row (S8 materializing half)
       // is out of M1 scope: leave the assoc at its version — the worker
@@ -128,23 +144,33 @@ export function applyUpsert(db: Database.Database, project: string, env: SyncEnt
     }
     // Bound: T2 (clean) or T3 (diverged).
     const localHash = canonicalHashOfRow(db, existing.local_memory_id);
-    if (localHash !== existing.projection_hash) {
+    if (localHash !== existing.projection_hash || isLocallyRetracted(db, existing.local_memory_id)) {
       // T3 fork (M1-minimal): the incoming edit materializes as a NEW
-      // row and takes the binding; the locally-edited row is unbound
-      // and forced 'local' — the user's edit is never destroyed.
+      // row and takes the binding; the locally-edited row — including a
+      // locally-RETRACTED one, which the projection hash cannot see
+      // (review C3) — is unbound and forced 'local': the user's edit or
+      // retraction is never destroyed.
       const forkId = generateId();
       insertProjectedRow(db, forkId, buildInertProjection(env, record));
       db.prepare("UPDATE memories SET share_state = 'local' WHERE id = ?").run(existing.local_memory_id);
+      writeForkNotice(db, existing.local_memory_id, { entity: env.entity_id, path: 'T3', seq: env.entity_version });
       bindEntity(db, { entityId: env.entity_id, localMemoryId: forkId, project, version: env.entity_version, canonicalHash: ch, projectionHash: ph });
       mergeContributors(db, env.entity_id, env.contributors, env.entity_version);
       return 'forked';
     }
     db.prepare(`
-      UPDATE memories SET content = ?, tags = ?, context = ?, anchor = ?, confidence = ?, updated_at = ?
+      UPDATE memories SET content = ?, tags = ?, context = ?, anchor = ?, confidence = ?,
+        embedding = NULL, embedding_model = NULL
       WHERE id = ?
     `).run(projected.content, JSON.stringify(projected.tags),
       projected.context ? JSON.stringify(projected.context) : null,
-      projected.anchor, record.confidence, env.updated_at, existing.local_memory_id);
+      projected.anchor, record.confidence, existing.local_memory_id);
+    // The revision trigger just stamped the local clock; the SERVER
+    // timestamp is authoritative for replicated state (D13 — review
+    // C10). updated_at is not in the trigger's UPDATE OF list, so this
+    // does not re-fire it. The old vector described the old content —
+    // cleared above for the backfill worker to re-embed (review C6).
+    db.prepare('UPDATE memories SET updated_at = ? WHERE id = ?').run(env.updated_at, existing.local_memory_id);
     bindEntity(db, { entityId: env.entity_id, localMemoryId: existing.local_memory_id, project, version: env.entity_version, canonicalHash: ch, projectionHash: ph });
     mergeContributors(db, env.entity_id, env.contributors, env.entity_version);
     return 'applied-edit';
@@ -192,7 +218,10 @@ export function applyUpsert(db: Database.Database, project: string, env: SyncEnt
     if (!isSelf && db.prepare('SELECT 1 FROM memories WHERE id = ?').get(record.id!) === undefined) {
       insertProjectedRow(db, record.id!, buildInertProjection(env, record));
     }
-    bindEntity(db, { entityId: env.entity_id, localMemoryId: record.id!, project, version: env.entity_version, canonicalHash: ch, projectionHash: ph });
+    // S6/R22: ph is the hash of the bytes actually stored — on a rebind
+    // of a pre-existing row those may not be the incoming payload's
+    // (review C8).
+    bindEntity(db, { entityId: env.entity_id, localMemoryId: record.id!, project, version: env.entity_version, canonicalHash: ch, projectionHash: canonicalHashOfRow(db, record.id!) ?? ph });
     mergeContributors(db, env.entity_id, env.contributors, env.entity_version);
     return isSelf ? 'replay-noop' : 'twin-inserted';
   }
@@ -200,8 +229,9 @@ export function applyUpsert(db: Database.Database, project: string, env: SyncEnt
   // T1: genuinely new entity.
   if (db.prepare('SELECT 1 FROM memories WHERE id = ?').get(record.id!) !== undefined) {
     // Replay after a lost map (or an id collision): never silently
-    // duplicate and never clobber — rebind to the existing row.
-    bindEntity(db, { entityId: env.entity_id, localMemoryId: record.id!, project, version: env.entity_version, canonicalHash: ch, projectionHash: ph });
+    // duplicate and never clobber — rebind to the existing row, with
+    // the AS-STORED projection hash (S6/R22 — review C8).
+    bindEntity(db, { entityId: env.entity_id, localMemoryId: record.id!, project, version: env.entity_version, canonicalHash: ch, projectionHash: canonicalHashOfRow(db, record.id!) ?? ph });
     mergeContributors(db, env.entity_id, env.contributors, env.entity_version);
     return 'replay-noop';
   }
