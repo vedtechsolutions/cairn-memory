@@ -3,7 +3,7 @@ import type { SyncEntityEnvelope, PortableRecord } from 'waykeep-contract';
 
 import { generateId } from '../../utils/index.js';
 import {
-  projectPayload, canonicalRowBytes, hashCanonical, projectionHashOfRow, isLocallyRetracted, cleanDeep,
+  projectPayload, canonicalRowBytes, hashCanonical, projectionHashOfRow, isLocallyRetracted, isRowOptedOut, cleanDeep,
   type ProjectionFields,
 } from './projection.js';
 import { ApplyValidationError } from './errors.js';
@@ -77,6 +77,9 @@ export function hasUnpushedLocalIntent(db: Database.Database, memoryId: string, 
   const localHash = projectionHashOfRow(db, memoryId);
   if (localHash !== entry.projection_hash) return true;
   if (isLocallyRetracted(db, memoryId)) return true;
+  // §6 S4: opting a bound row out IS intent — its upload eligibility
+  // ended, so remote edits fork (T3) and tombstones fork-preserve (S9).
+  if (isRowOptedOut(db, memoryId)) return true;
   return db.prepare(`
     SELECT 1 FROM sync_journal
     WHERE memory_id = ? AND (classification IS NULL OR classification = 'deferred-pending-eligibility')
@@ -209,8 +212,11 @@ export function applyUpsert(db: Database.Database, project: string, env: SyncEnt
     // the binding cleanly even while the push's journal entry is still
     // unconsumed. A pending RETRACTION still forks first: byte equality
     // cannot outrank an explicit local retraction.
+    // The echo rule never applies to an opted-out row: an S4 row does
+    // not push, so a byte-equal event is not its own echo — it forks
+    // per T3 like any other remote edit onto it.
     const localPh = projectionHashOfRow(db, existing.local_memory_id);
-    if (!isLocallyRetracted(db, existing.local_memory_id) && localPh === ph) {
+    if (!isLocallyRetracted(db, existing.local_memory_id) && !isRowOptedOut(db, existing.local_memory_id) && localPh === ph) {
       // fall through to the clean T2 update below
     } else if (hasUnpushedLocalIntent(db, existing.local_memory_id, existing)) {
       // T3 fork (M1-minimal): the incoming edit materializes as a NEW

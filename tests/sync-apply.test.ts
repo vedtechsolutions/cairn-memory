@@ -661,6 +661,34 @@ describe('sync apply — §6 M1 transitions', () => {
     }]), /collides with a different existing set/);
   });
 
+  it('S1/§6-S4: an opted-out BOUND row forks remote edits (even byte-equal ones) and fork-preserves remote tombstones', () => {
+    const id = randomUUID();
+    applyEventBatch(db, PROJECT, [upsertEvent(1, envelope(record({ id }), { entityId: 'E1', version: 1 }))]);
+    db.prepare("UPDATE memories SET share_state = 'local' WHERE id = ?").run(id);
+
+    // A remote edit forks per T3 — the opted-out row is never overwritten.
+    const edit = applyEventBatch(db, PROJECT, [upsertEvent(2, envelope(record({ id, content: 'team edit after opt-out' }), { entityId: 'E1', version: 2 }))]);
+    assert.deepEqual(edit.outcomes.map((o) => o.outcome), ['forked']);
+    assert.ok(db.prepare('SELECT 1 FROM memories WHERE id = ? AND content = ?').get(id, 'a team lesson worth replicating'), 'the opted-out row keeps its bytes');
+    assert.equal(rowCount(), 2, 'the team edit materialized as its own row');
+
+    // Even a BYTE-EQUAL event forks: an S4 row does not push, so it has no echo.
+    const id2 = randomUUID();
+    applyEventBatch(db, PROJECT, [upsertEvent(3, envelope(record({ id: id2, content: 'byte equal opt out row' }), { entityId: 'E2', version: 1 }))]);
+    db.prepare("UPDATE memories SET share_state = 'local' WHERE id = ?").run(id2);
+    const echo = applyEventBatch(db, PROJECT, [upsertEvent(4, envelope(record({ id: id2, content: 'byte equal opt out row' }), { entityId: 'E2', version: 2 }))]);
+    assert.deepEqual(echo.outcomes.map((o) => o.outcome), ['forked'], 'no echo shortcut for opted-out rows');
+
+    // A remote tombstone routes to S9 fork-preserve, never S5 deletion.
+    const id3 = randomUUID();
+    applyEventBatch(db, PROJECT, [upsertEvent(5, envelope(record({ id: id3, content: 'opted out then tombstoned' }), { entityId: 'E3', version: 1 }))]);
+    db.prepare("UPDATE memories SET share_state = 'local' WHERE id = ?").run(id3);
+    const tomb = applyEventBatch(db, PROJECT, [tombstoneEvent(6, 'E3', 2)]);
+    assert.deepEqual(tomb.outcomes.map((o) => o.outcome), ['fork-preserved']);
+    assert.ok(db.prepare('SELECT 1 FROM memories WHERE id = ?').get(id3), 'the opted-out row survives the team tombstone');
+    assert.equal(getByEntityId(db, 'E3'), undefined, 'its binding is closed');
+  });
+
   it('inbound predicate: project mismatch, unknown kinds, rule kind, and unknown event types are refused whole-batch', () => {
     const wrongProject = record({ id: randomUUID(), project: 'other-proj' });
     assert.throws(() => applyEventBatch(db, PROJECT, [upsertEvent(1, envelope(wrongProject, { entityId: 'E1', version: 1 }))]), ApplyValidationError);

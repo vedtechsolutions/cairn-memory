@@ -35,6 +35,12 @@ import { scrubSecrets, sanitize } from '../../utils/index.js';
  *
  * P's scrub IS the apply path's scrub, by construction (R22): the bytes
  * hashed are exactly the bytes stored.
+ *
+ * Documented interaction (final verification): because volatile fields
+ * are outside the projection, a byte-equal remote event CAN overwrite
+ * an unpushed local confidence change through the convergent-echo rule.
+ * That is the field-set decision's direct consequence, not an accident:
+ * volatile fields are replicated data, never divergence evidence.
  */
 
 export { CANONICALIZATION_VERSION, CONTENT_HASH_VERSION, PROJECTION_VERSION };
@@ -111,6 +117,16 @@ export function projectionHashOfPayload(record: PortableRecord): string {
  *  review C3). The projection field set itself stays as documented:
  *  adding these flags to the hashed bytes would break S6's as-stored
  *  rule and twin matching. */
+/** §6 S4: an opted-out (`share_state='local'`) BOUND row keeps its
+ *  binding but its upload eligibility ended — later remote edits fork
+ *  per T3 and remote tombstones fork-preserve per S9. Opt-out is
+ *  therefore local intent, checked alongside retraction (slice-4 final
+ *  verification S1). */
+export function isRowOptedOut(db: Database.Database, memoryId: string): boolean {
+  const row = db.prepare('SELECT share_state FROM memories WHERE id = ?').get(memoryId) as { share_state: string | null } | undefined;
+  return row?.share_state === 'local';
+}
+
 export function isLocallyRetracted(db: Database.Database, memoryId: string): boolean {
   const row = db.prepare('SELECT invalidated, superseded_by FROM memories WHERE id = ?').get(memoryId) as
     | { invalidated: number; superseded_by: string | null } | undefined;
