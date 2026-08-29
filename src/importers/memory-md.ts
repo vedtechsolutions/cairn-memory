@@ -63,30 +63,39 @@ export function isAutoMemoryType(type: string | null): boolean {
  *  as lessons); an unclosed fence runs to EOF. Line scanner because the
  *  closer's char and minimum length depend on the opener (review rounds
  *  2 and closing, all three shapes executed). */
-function stripFences(markdown: string): string {
+function stripFences(markdown: string): { text: string; unclosedDropped: number } {
   const kept: string[] = [];
   let fence: { char: string; len: number } | null = null;
+  let droppedInCurrent = 0;
   for (const line of markdown.split('\n')) {
     if (fence) {
       if (new RegExp(`^ {0,3}${fence.char}{${fence.len},}[ \\t]*$`).test(line)) fence = null;
+      else droppedInCurrent++;
       continue; // fence lines (opener, content, closer) all drop
     }
     const open = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
     if (open && (open[1][0] === '~' || !open[2].includes('`'))) {
       fence = { char: open[1][0], len: open[1].length };
+      droppedInCurrent = 0;
       continue;
     }
     kept.push(line);
   }
-  return kept.join('\n');
+  // A still-open fence at EOF swallowed everything after its opener —
+  // CommonMark-correct, but the module promises lossy-VISIBLE: a stray
+  // ``` must not silently vanish the rest of the file (review).
+  return { text: kept.join('\n'), unclosedDropped: fence ? droppedInCurrent : 0 };
 }
 
-/** Transform one freeform markdown document into learn sections. */
-export function sectionsFromFreeformMarkdown(rawMarkdown: string, baseTags: string[]): LearnSection[] {
+/** Transform one freeform markdown document into learn sections.
+ *  `notes` (optional) receives lossy-visibility warnings. */
+
+export function sectionsFromFreeformMarkdown(rawMarkdown: string, baseTags: string[], notes?: string[]): LearnSection[] {
   // CRLF normalize, then MASK fenced code blocks: a '## ' inside a fence
   // is an example, not a section boundary, and a '#' line inside one is
   // not a lesson (review). Imported lessons are prose — fences drop.
-  const noFences = stripFences(rawMarkdown.replace(/\r\n/g, '\n'));
+  const { text: noFences, unclosedDropped } = stripFences(rawMarkdown.replace(/\r\n/g, '\n'));
+  if (unclosedDropped > 0) notes?.push(`unclosed code fence: ${unclosedDropped} line(s) dropped as fence content (no closing fence found)`);
   const { body: markdown, type } = stripFrontmatter(noFences);
   const kindHint = type && Object.hasOwn(FRONTMATTER_KIND, type) ? FRONTMATTER_KIND[type] : undefined;
   const typeTags = type ? [slugTag('type', type)] : [];
@@ -135,9 +144,11 @@ export function transformMemoryMd(path: string, opts: { includeSiblings?: boolea
   const sections: LearnSection[] = [];
   const baseTags = ['import:memory-md'];
 
-  const main = sectionsFromFreeformMarkdown(readFileSync(path, 'utf-8'), baseTags);
+  const fenceNotes: string[] = [];
+  const main = sectionsFromFreeformMarkdown(readFileSync(path, 'utf-8'), baseTags, fenceNotes);
   sections.push(...main);
   notes.push(`${basename(path)}: ${main.length} section(s)`);
+  notes.push(...fenceNotes.map((n) => `warning: ${basename(path)}: ${n}`));
 
   // Sibling .md files import ONLY when they are recognizably auto-memory
   // topic files (YAML frontmatter with a type:) or the caller opted in —
@@ -157,9 +168,11 @@ export function transformMemoryMd(path: string, opts: { includeSiblings?: boolea
         continue;
       }
       const topicSlug = name.replace(/\.md$/, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40);
-      const fileSections = sectionsFromFreeformMarkdown(raw, [...baseTags, `topic:${topicSlug}`]);
+      const sibNotes: string[] = [];
+      const fileSections = sectionsFromFreeformMarkdown(raw, [...baseTags, `topic:${topicSlug}`], sibNotes);
       sections.push(...fileSections);
       notes.push(`${name}: ${fileSections.length} section(s)`);
+      notes.push(...sibNotes.map((n) => `warning: ${name}: ${n}`));
     } catch (err) {
       excluded.push({ name, reason: `unreadable (${(err as NodeJS.ErrnoException).code ?? 'error'})` });
     }

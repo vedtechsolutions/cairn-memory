@@ -217,8 +217,10 @@ export function transformCodexMemories(dir: string, opts: { includeNotes?: boole
     if (opts.includeNotes) {
       for (const name of adHoc) {
         try {
+          const fenceNotes: string[] = [];
           const fileSections = sectionsFromFreeformMarkdown(
-            readFileSync(join(dir, name), 'utf-8'), ['import:codex-memories', 'ad-hoc']);
+            readFileSync(join(dir, name), 'utf-8'), ['import:codex-memories', 'ad-hoc'], fenceNotes);
+          notes.push(...fenceNotes.map((n) => `warning: ${name}: ${n}`));
           // Same provenance as the structured sections — these notes are
           // codex-authored too (closing review).
           sections.push(...fileSections.map((fs) => ({ ...fs, originClient: 'codex' })));

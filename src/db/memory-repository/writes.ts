@@ -191,35 +191,51 @@ export function probeSimilar(db: Database.Database, content: string, project: st
 
 export function findSimilar(db: Database.Database, content: string, project: string | null, kind: string, inputEmbedding?: Buffer): Memory | null {
   if (kind === 'rule') return null;
+  // An EXACT row always wins over a near match: with both present
+  // (restored/legacy stores have them), merging into the near-dup
+  // overwrites the WRONG row and leaves two identical copies (closing
+  // review, reproduced). The near-candidate query below stays UNORDERED:
+  // ORDER BY rank forces bm25 scoring of every matching row before the
+  // LIMIT (measured 22ms vs 0.15ms per query on a common-token 10k-row
+  // store) on every gateway write, and with exactness guaranteed here it
+  // bought only speculative merge-target quality.
+  // Exact by CONSTRUCTION means NO FTS gate:
+  // buildFtsQuery's tokenization is not the index's (unicode61 —
+  // non-ASCII terms diverge), and all-stopword content produces no
+  // query at all, so an FTS-gated "exact" lookup can miss byte-identical
+  // rows and insert duplicates (delta review). The (project, kind)
+  // partial active index narrows the scan before the content compare —
+  // this is NOT the unindexed full-table probe removed in round 2.
+  try {
+    // Two statements, not an OR disjunction: the OR form defeats the
+    // v31 partial index and full-scans every write (measured ~48ms per
+    // write on a 10k-row single-scope store).
+    const scopeClause = project === null ? 'project IS NULL' : 'project = ?';
+    // INDEXED BY pins the v31 partial index (guaranteed by ensureSchema
+    // at open): without stats the planner picked the one-column
+    // invalidated index and scanned every active row per write —
+    // measured ~5ms/probe on a 10k-row store with the target row last.
+    const exact = db.prepare(`
+      SELECT * FROM memories INDEXED BY idx_memories_exact_dedup
+      WHERE kind = ? AND ${scopeClause}
+        AND invalidated = 0
+        AND superseded_by IS NULL
+        AND content = ?
+      LIMIT 1
+    `).get(...(project === null ? [kind, content] : [kind, project, content])) as MemoryRow | undefined;
+    if (exact) return rowToMemory(exact);
+  } catch {
+    return null;
+  }
+
   // Scope-exact: merging across project/global scope would erase the
   // distinction (and the merge path overwrites content on the wrong row).
   // Quick FTS search for candidates
   const ftsQuery = buildFtsQuery(content);
   if (!ftsQuery) return null;
 
-  // An EXACT row always wins over a near match: with both present
-  // (restored/legacy stores have them), merging into the near-dup
-  // overwrites the WRONG row and leaves two identical copies (closing
-  // review, reproduced). Exact by CONSTRUCTION, not window odds — a
-  // stacked store of short term-sharing neighbours can evict the exact
-  // row from any LIMIT-bounded candidate list (measured at 10+ decoys),
-  // so it gets its own indexed lookup rather than a scan of candidates.
   let candidates: MemoryRow[];
   try {
-    const exact = db.prepare(`
-      SELECT m.*
-      FROM memories_fts fts
-      JOIN memories m ON m.rowid = fts.rowid
-      WHERE memories_fts MATCH ?
-        AND m.content = ?
-        AND m.invalidated = 0
-        AND m.superseded_by IS NULL
-        AND m.kind = ?
-        AND ((? IS NULL AND m.project IS NULL) OR m.project = ?)
-      LIMIT 1
-    `).get(ftsQuery, content, kind, project, project) as MemoryRow | undefined;
-    if (exact) return rowToMemory(exact);
-
     candidates = db.prepare(`
       SELECT m.*
       FROM memories_fts fts
@@ -229,7 +245,6 @@ export function findSimilar(db: Database.Database, content: string, project: str
         AND m.superseded_by IS NULL
         AND m.kind = ?
         AND ((? IS NULL AND m.project IS NULL) OR m.project = ?)
-      ORDER BY rank
       LIMIT 10
     `).all(ftsQuery, kind, project, project) as MemoryRow[];
   } catch {

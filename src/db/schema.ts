@@ -4,7 +4,7 @@
 
 import { GOVERNANCE_DDL } from './governance-schema.js';
 
-export const SCHEMA_VERSION = 30;
+export const SCHEMA_VERSION = 31;
 
 export const CREATE_MEMORIES_TABLE = `
 CREATE TABLE IF NOT EXISTS memories (
@@ -307,6 +307,17 @@ END`;
 export const CREATE_EXACT_SCOPE_INDEX =
   'CREATE INDEX IF NOT EXISTS idx_memories_project_kind_active ON memories(project, kind) WHERE invalidated = 0 AND superseded_by IS NULL';
 
+/** v31: exact-content dedup lookup (kind, project, content) over ACTIVE
+ *  records. findSimilar's exact check must be independent of FTS (its
+ *  query tokenization diverges from unicode61 on non-ASCII, and
+ *  stopword-only content builds no query at all), and without an index
+ *  the plain equality read scans every active row in scope on EVERY
+ *  gateway write (measured: 1000 writes into a single-scope 10k-row
+ *  store took ~48s). Content is capped at 2000 chars, so index entries
+ *  are bounded. */
+export const CREATE_EXACT_DEDUP_INDEX =
+  'CREATE INDEX IF NOT EXISTS idx_memories_exact_dedup ON memories(kind, project, content) WHERE invalidated = 0 AND superseded_by IS NULL';
+
 /** Version history for corrected/updated memories — preserves decision evolution. */
 export const CREATE_MEMORY_VERSIONS_TABLE = `
 CREATE TABLE IF NOT EXISTS memory_versions (
@@ -402,6 +413,7 @@ export const ALL_DDL: string[] = [
   CREATE_MEMORY_FILES_TABLE,
   CREATE_MEMORY_FILES_REVISION_TRIGGER,
   CREATE_EXACT_SCOPE_INDEX,
+  CREATE_EXACT_DEDUP_INDEX,
   CREATE_MEMORY_VERSIONS_TABLE,
   CREATE_MEMORY_VERSIONS_INDEX,
   CREATE_INVESTIGATION_CHAINS_TABLE,

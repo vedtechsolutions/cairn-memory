@@ -8,7 +8,7 @@
 
 ### Changed
 
-- Changed memory dedup to always merge into an exact-content row when one exists (its own indexed lookup), and to rank near-match candidates best-match-first — near-duplicate merges may now pick a different (more similar) target row than before.
+- Changed memory dedup to always merge into an exact-content row when one exists (a dedicated indexed lookup, independent of full-text search) — identical content is never merged into a near-duplicate row again.
 - Changed merge tag unions to cap growth at the 5-tag limit without ever shrinking a row that already carries more.
 
 - Added `cairn report` — an honest tokens-saved report: gross (client-reported compaction savings + a clearly-labeled estimated impact proxy), injection cost per surface, and net; `--days=N` selects the window.

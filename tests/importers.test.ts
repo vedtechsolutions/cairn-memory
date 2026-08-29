@@ -658,9 +658,13 @@ describe('closing review fixes', () => {
       '## fake heading inside the unclosed fence',
       '- fake bullet that must never become a lesson row in the store',
     ].join('\n');
-    const secs = sectionsFromFreeformMarkdown(md, []);
+    const fenceNotes: string[] = [];
+    const secs = sectionsFromFreeformMarkdown(md, [], fenceNotes);
     assert.equal(secs.length, 1, 'only the lesson before the fence imports');
     assert.match(secs[0].content, /real lesson/);
+    // Lossy-VISIBLE: the swallowed tail is reported, never silent.
+    assert.equal(fenceNotes.length, 1);
+    assert.match(fenceNotes[0], /unclosed code fence: 2 line\(s\) dropped/);
   });
 
   it('--include-notes sections carry codex provenance', () => {
@@ -755,9 +759,11 @@ describe('codex re-verification round', () => {
     const production = 'never run the production deploy again before the migration lock is released by the operator';
     const seven = ['t1', 't2', 't3', 't4', 't5', 't6', 't7'];
     repo.create({ kind: 'pitfall', content: staging, tags: seven });
-    repo.storePitfall({ content: production, project: null, tags: ['t8'] });
-    const row = db.prepare("SELECT tags FROM memories WHERE kind = 'pitfall'").get() as { tags: string };
-    const tags = JSON.parse(row.tags) as string[];
+    const merged2 = repo.storePitfall({ content: production, project: null, tags: ['t8'] });
+    assert.equal(merged2.deduplicated, true, 'the near-duplicate actually merged');
+    const rows = db.prepare("SELECT tags FROM memories WHERE kind = 'pitfall'").all() as Array<{ tags: string }>;
+    assert.equal(rows.length, 1, 'one row — a second row would make the tag assertion vacuous');
+    const tags = JSON.parse(rows[0].tags) as string[];
     for (const t of seven) assert.ok(tags.includes(t), `pre-existing tag ${t} survives a storeMemory merge`);
   });
 
@@ -777,5 +783,23 @@ describe('codex re-verification round', () => {
       }
       assert.ok(failed, 'an empty --from must not fall through to a default source');
     }
+  });
+});
+
+// --- Delta round: exact dedup must not depend on FTS tokenization --------------
+
+describe('exact dedup independent of FTS', () => {
+  it('non-ASCII and stopword-only content still read as exact repeats', () => {
+    // buildFtsQuery's tokenization diverges from the index's unicode61
+    // on non-ASCII terms, and all-stopword content produces NO query —
+    // an FTS-gated exact lookup missed byte-identical rows on both and
+    // inserted duplicates (delta review).
+    const accented = 'le café du résumé façade sert la spécialité provençale chaque matinée depuis longtemps';
+    learnSections(repo, [{ kind: 'fact', content: accented, tags: [] }], null);
+    const rerun = learnSections(repo, [{ kind: 'fact', content: accented, tags: [] }], null);
+    assert.equal(rerun.exactDuplicates, 1, 'accented content reads as exact on re-import');
+    assert.equal(rerun.ingested, 0);
+    const n = (db.prepare('SELECT COUNT(*) n FROM memories WHERE content LIKE ?').all('%café%') as Array<{ n: number }>)[0].n;
+    assert.equal(n, 1, 'no duplicate row for non-ASCII content');
   });
 });
