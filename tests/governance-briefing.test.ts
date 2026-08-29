@@ -98,3 +98,36 @@ describe('bounded advisory governance briefing', () => {
     assert.ok(output.tokenEstimate <= 400, `${output.tokenEstimate} exceeds index budget`);
   });
 });
+
+describe('capability line wording (field review)', () => {
+  let db2: Database.Database;
+  let root2: string;
+  beforeEach(() => {
+    db2 = openDatabase({ dbPath: ':memory:' });
+    root2 = mkdtempSync(join(tmpdir(), 'cairn-gov-brief-'));
+  });
+  afterEach(() => { db2.close(); rmSync(root2, { recursive: true, force: true }); });
+
+  it('an unsupported client reads as a design boundary, never raw degradation codes', () => {
+    new GovernanceRuleRepository(db2).create({
+      ruleId: 'verify-core', content: 'Verify tests before exit',
+      project: 'proj-x', phases: ['pre_exit'], level: 'warn', gateIds: ['test'], paths: ['**'],
+      confirmation: { userConfirmed: true },
+    });
+    const section = loadGovernanceBriefing(db2, {
+      project: 'proj-x', projectRoot: root2, sessionId: 's-codex', clientName: 'codex',
+      clientInstallationId: 'i-codex', nowMs: Date.parse('2026-08-26T12:00:00.000Z'),
+    });
+    assert.ok(section, 'a rule exists, so the section renders');
+    const output = compileBriefing(new MemoryRepository(db2), new PlanRepository(db2), {
+      project: 'proj-x', sessionType: 'startup', interrupted: false, briefingMode: 'full',
+      budgetOverride: 600, governance: section,
+    });
+    // Raw codes next to doctor's "wired and trusted 10/10" read as a
+    // health contradiction (field review) — the line must say what it
+    // means and drop meaningless secondary reasons.
+    assert.match(output.text, /governance advisory is Claude Code-only today/u);
+    assert.ok(!output.text.includes('unsupported_client'), 'no raw code in user-facing text');
+    assert.ok(!output.text.includes('stale_heartbeat'), 'secondary reasons suppressed for out-of-scope clients');
+  });
+});

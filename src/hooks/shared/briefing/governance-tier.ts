@@ -8,6 +8,20 @@ export interface GovernanceTier {
   tokens: number;
 }
 
+/** An unsupported client is a DESIGN boundary, not a breakage: the
+ *  advisory layer supports Claude Code sessions only today. Raw codes
+ *  ("unsupported_client, stale_heartbeat") next to doctor's "wired and
+ *  trusted 10/10" read as a health contradiction (field review) — say
+ *  it plainly, and drop the secondary reasons, which are meaningless
+ *  once the client itself is out of scope. */
+function renderCapabilityLine(reasons: readonly string[]): string {
+  if (reasons.length === 0) return 'Capability: shadow observation available';
+  if (reasons.includes('unsupported_client')) {
+    return 'Capability: governance advisory is Claude Code-only today (informational for this client)';
+  }
+  return `Capability: degraded (${reasons.join(', ')})`;
+}
+
 function renderLines(section: GovernanceBriefingSection): string[] {
   const lines = ['[Cairn Governance — advisory; not enforced]'];
   if (section.rules.length > 0) {
@@ -16,9 +30,7 @@ function renderLines(section: GovernanceBriefingSection): string[] {
   } else {
     lines.push('Applicable pre-exit rules: none');
   }
-  lines.push(section.capabilityReasons.length > 0
-    ? `Capability: degraded (${section.capabilityReasons.join(', ')})`
-    : 'Capability: shadow observation available');
+  lines.push(renderCapabilityLine(section.capabilityReasons));
   if (section.lastVerdict !== null) {
     const verdict = section.lastVerdict;
     lines.push(

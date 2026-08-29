@@ -456,7 +456,7 @@ describe('doctor checkCodexParity', () => {
     writeFileSync(codexConfigPath(), readFileSync(codexConfigPath(), 'utf-8') + trustAll(codexHooksPath(), file));
     const ok = checkCodexParity();
     assert.equal(ok.status, 'ok');
-    assert.match(ok.detail, /trusted \(10\/10 hooks; MCP registered\)/);
+    assert.match(ok.detail, /trusted \(10\/10 hooks; MCP registered; governance advisory is Claude Code-only/);
 
     // One hook disabled → warn naming the disabled count.
     const config = readFileSync(codexConfigPath(), 'utf-8')
