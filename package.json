@@ -1,7 +1,7 @@
 {
   "name": "cairn-memory",
-  "version": "5.3.1",
-  "description": "Local-first shared memory for AI coding agents \u2014 one ambient memory across Claude Code and Codex: session briefings, pitfall warnings before repeated mistakes, auto-learned lessons with per-agent provenance, and post-compaction recovery. MCP server + lifecycle hooks on SQLite, FTS5, and local vector embeddings.",
+  "version": "5.4.0",
+  "description": "Local-first shared memory for AI coding agents — one ambient memory across Claude Code and Codex: session briefings, pitfall warnings before repeated mistakes, auto-learned lessons with per-agent provenance, and post-compaction recovery. MCP server + lifecycle hooks on SQLite, FTS5, and local vector embeddings.",
   "keywords": [
     "mcp",
     "model-context-protocol",

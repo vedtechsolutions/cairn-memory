@@ -1,7 +1,7 @@
 {
   "name": "cairn",
-  "version": "5.3.1",
-  "description": "Local-first shared memory for AI coding agents. This plugin wires Cairn's MCP tools (recall, learn, plan). For the full passive experience (briefings, pitfall warnings, auto-capture), install the runtime and wire hooks once: npm install -g cairn-memory (requires >= 5.4.0) && cairn init \u2014 then run /hooks in Codex and trust the Cairn entries.",
+  "version": "5.4.0",
+  "description": "Local-first shared memory for AI coding agents. This plugin wires Cairn's MCP tools (recall, learn, plan). For the full passive experience (briefings, pitfall warnings, auto-capture), install the runtime and wire hooks once: npm install -g cairn-memory (requires >= 5.4.0) && cairn init — then run /hooks in Codex and trust the Cairn entries.",
   "author": {
     "name": "VedTech Solutions"
   },
