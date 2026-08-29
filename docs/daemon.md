@@ -4,28 +4,28 @@ Moved from the README front page — same content, same contract.
 
 ### 3b. Standalone Daemon (recommended when multiple agents share a machine)
 
-When more than one agent client uses Cairn on the same machine (for example Claude Code and Codex side by side), run the hook socket as its own service so it survives session churn and no client ever waits on another's lifecycle:
+When more than one agent client uses Waykeep on the same machine (for example Claude Code and Codex side by side), run the hook socket as its own service so it survives session churn and no client ever waits on another's lifecycle:
 
 ```bash
-sudo cp deploy/cairn-daemon.service /etc/systemd/system/   # adjust paths inside first
+sudo cp deploy/waykeep-daemon.service /etc/systemd/system/   # adjust paths inside first
 sudo systemctl daemon-reload
-sudo systemctl enable --now cairn-daemon
+sudo systemctl enable --now waykeep-daemon
 ```
 
-After every `npm run build`, restart it to pick up the new code: `sudo systemctl restart cairn-daemon`. Check it with `curl -s --unix-socket ~/.cairn/hook-daemon.sock http://localhost/health` — `mode` reports `standalone`. Without the daemon everything still works in embedded mode; sampling-backed hook features (Layer 1c reflection) are only available in embedded mode since the standalone daemon has no MCP client to sample through.
+After every `npm run build`, restart it to pick up the new code: `sudo systemctl restart waykeep-daemon`. Check it with `curl -s --unix-socket ~/.cairn/hook-daemon.sock http://localhost/health` — `mode` reports `standalone`. Without the daemon everything still works in embedded mode; sampling-backed hook features (Layer 1c reflection) are only available in embedded mode since the standalone daemon has no MCP client to sample through.
 
 ```json
 {
   "statusLine": {
     "type": "command",
-    "command": "node /path/to/cairn/dist/src/hooks/statusline.js"
+    "command": "node /path/to/waykeep/dist/src/hooks/statusline.js"
   },
   "hooks": {
     "SessionStart": [
       {
         "matcher": "",
         "hooks": [
-          { "type": "command", "command": "/path/to/cairn/dist/src/hooks/hook-relay session-start" }
+          { "type": "command", "command": "/path/to/waykeep/dist/src/hooks/hook-relay session-start" }
         ]
       }
     ],
@@ -33,7 +33,7 @@ After every `npm run build`, restart it to pick up the new code: `sudo systemctl
       {
         "matcher": "",
         "hooks": [
-          { "type": "command", "command": "/path/to/cairn/dist/src/hooks/hook-relay prompt-check" }
+          { "type": "command", "command": "/path/to/waykeep/dist/src/hooks/hook-relay prompt-check" }
         ]
       }
     ],
@@ -41,13 +41,13 @@ After every `npm run build`, restart it to pick up the new code: `sudo systemctl
       {
         "matcher": "Write|Edit|MultiEdit",
         "hooks": [
-          { "type": "command", "command": "/path/to/cairn/dist/src/hooks/hook-relay pitfall-check" }
+          { "type": "command", "command": "/path/to/waykeep/dist/src/hooks/hook-relay pitfall-check" }
         ]
       },
       {
         "matcher": "Bash",
         "hooks": [
-          { "type": "command", "command": "/path/to/cairn/dist/src/hooks/hook-relay pitfall-check" }
+          { "type": "command", "command": "/path/to/waykeep/dist/src/hooks/hook-relay pitfall-check" }
         ]
       }
     ],
@@ -55,13 +55,13 @@ After every `npm run build`, restart it to pick up the new code: `sudo systemctl
       {
         "matcher": "Bash|Write|Edit|MultiEdit",
         "hooks": [
-          { "type": "command", "command": "/path/to/cairn/dist/src/hooks/hook-relay success-tracker", "async": true }
+          { "type": "command", "command": "/path/to/waykeep/dist/src/hooks/hook-relay success-tracker", "async": true }
         ]
       },
       {
         "matcher": "ExitPlanMode",
         "hooks": [
-          { "type": "command", "command": "/path/to/cairn/dist/src/hooks/hook-relay plan-bridge" }
+          { "type": "command", "command": "/path/to/waykeep/dist/src/hooks/hook-relay plan-bridge" }
         ]
       }
     ],
@@ -69,7 +69,7 @@ After every `npm run build`, restart it to pick up the new code: `sudo systemctl
       {
         "matcher": "Bash|Write|Edit|MultiEdit",
         "hooks": [
-          { "type": "command", "command": "/path/to/cairn/dist/src/hooks/hook-relay error-learning", "async": true }
+          { "type": "command", "command": "/path/to/waykeep/dist/src/hooks/hook-relay error-learning", "async": true }
         ]
       }
     ],
@@ -77,7 +77,7 @@ After every `npm run build`, restart it to pick up the new code: `sudo systemctl
       {
         "matcher": "",
         "hooks": [
-          { "type": "command", "command": "node /path/to/cairn/dist/src/hooks/precompact.js" }
+          { "type": "command", "command": "node /path/to/waykeep/dist/src/hooks/precompact.js" }
         ]
       }
     ],
@@ -85,7 +85,7 @@ After every `npm run build`, restart it to pick up the new code: `sudo systemctl
       {
         "matcher": "",
         "hooks": [
-          { "type": "command", "command": "/path/to/cairn/dist/src/hooks/hook-relay postcompact" }
+          { "type": "command", "command": "/path/to/waykeep/dist/src/hooks/hook-relay postcompact" }
         ]
       }
     ],
@@ -93,7 +93,7 @@ After every `npm run build`, restart it to pick up the new code: `sudo systemctl
       {
         "matcher": "",
         "hooks": [
-          { "type": "command", "command": "node /path/to/cairn/dist/src/hooks/session-end.js" }
+          { "type": "command", "command": "node /path/to/waykeep/dist/src/hooks/session-end.js" }
         ]
       }
     ],
@@ -101,7 +101,7 @@ After every `npm run build`, restart it to pick up the new code: `sudo systemctl
       {
         "matcher": "",
         "hooks": [
-          { "type": "command", "command": "/path/to/cairn/dist/src/hooks/hook-relay subagent-context" }
+          { "type": "command", "command": "/path/to/waykeep/dist/src/hooks/hook-relay subagent-context" }
         ]
       }
     ],
@@ -109,8 +109,8 @@ After every `npm run build`, restart it to pick up the new code: `sudo systemctl
       {
         "matcher": "",
         "hooks": [
-          { "type": "command", "command": "/path/to/cairn/dist/src/hooks/hook-relay governance-gate" },
-          { "type": "command", "command": "/path/to/cairn/dist/src/hooks/hook-relay stop", "async": true }
+          { "type": "command", "command": "/path/to/waykeep/dist/src/hooks/hook-relay governance-gate" },
+          { "type": "command", "command": "/path/to/waykeep/dist/src/hooks/hook-relay stop", "async": true }
         ]
       }
     ],
@@ -118,7 +118,7 @@ After every `npm run build`, restart it to pick up the new code: `sudo systemctl
       {
         "matcher": "",
         "hooks": [
-          { "type": "command", "command": "/path/to/cairn/dist/src/hooks/hook-relay subagent-stop", "async": true }
+          { "type": "command", "command": "/path/to/waykeep/dist/src/hooks/hook-relay subagent-stop", "async": true }
         ]
       }
     ],
@@ -126,7 +126,7 @@ After every `npm run build`, restart it to pick up the new code: `sudo systemctl
       {
         "matcher": "rate_limit|max_output_tokens|server_error",
         "hooks": [
-          { "type": "command", "command": "/path/to/cairn/dist/src/hooks/hook-relay stop-failure", "async": true }
+          { "type": "command", "command": "/path/to/waykeep/dist/src/hooks/hook-relay stop-failure", "async": true }
         ]
       }
     ],
@@ -134,7 +134,7 @@ After every `npm run build`, restart it to pick up the new code: `sudo systemctl
       {
         "matcher": "",
         "hooks": [
-          { "type": "command", "command": "/path/to/cairn/dist/src/hooks/hook-relay file-changed", "async": true }
+          { "type": "command", "command": "/path/to/waykeep/dist/src/hooks/hook-relay file-changed", "async": true }
         ]
       }
     ]
@@ -144,24 +144,24 @@ After every `npm run build`, restart it to pick up the new code: `sudo systemctl
 
 The synchronous `governance-gate` entry must remain before the async `stop`
 entry. To disable warn mode or uninstall only the governance relay, remove the
-`governance-gate` command and leave the async `stop` entry in place; Cairn then
+`governance-gate` command and leave the async `stop` entry in place; Waykeep then
 returns to advisory-only Slice B behavior.
 
 Or configure Claude Code automatically instead of editing `settings.json` by hand:
 
 ```bash
-cairn init              # merge Cairn's MCP + StatusLine + hooks into ~/.claude/settings.json
+cairn init              # merge Waykeep's MCP + StatusLine + hooks into ~/.claude/settings.json
 cairn init --dry-run          # preview the changes without writing
 cairn init --migrate-routes   # modernize deprecated hook routes (one re-trust in Codex)
 ```
 
-`cairn init` is idempotent and preserves your existing settings (it backs up
-`settings.json` first and never touches non-Cairn config).
+`waykeep init` is idempotent and preserves your existing settings (it backs up
+`settings.json` first and never touches non-Waykeep config).
 
 A C compiler is **not** required: the hooks run through the shell relay by
-default. For the fast compiled relay, run `cairn build-relay` where a C
+default. For the fast compiled relay, run `waykeep build-relay` where a C
 compiler is available (it falls back to the shell relay otherwise). The shell
-relay needs a POSIX shell (`bash` + `curl`); on Windows, run `cairn build-relay`
+relay needs a POSIX shell (`bash` + `curl`); on Windows, run `waykeep build-relay`
 for the compiled relay, or use WSL. Install paths containing spaces are not
 currently supported by the generated hook commands.
 

@@ -1,5 +1,5 @@
 /**
- * Cairn's config file — ~/.cairn/config.json, overridable via
+ * Waykeep's config file — ~/.cairn/config.json, overridable via
  * CAIRN_CONFIG_PATH (same hermeticity pattern as CAIRN_CODEX_DIR: tests
  * point it into a temp dir and can never read a real user's config).
  *
@@ -7,7 +7,7 @@
  * invalid JSON, or wrong-shaped fields all yield the empty config — the
  * behavior with no config present must be exactly the pre-config
  * behavior. The schema is INTERNAL in v1 (documented in the README, not
- * part of cairn-contract): only additive changes, unknown fields
+ * part of waykeep-contract): only additive changes, unknown fields
  * ignored.
  *
  * Read path is hot (guard functions consult it per memory-set filter),

@@ -1,22 +1,24 @@
 #!/bin/sh
-# Cairn thin-plugin launcher: locate the npm-installed cairn-memory
+# Waykeep thin-plugin launcher: locate the npm-installed waykeep
 # package and exec its hook relay (compiled binary when runnable, shell
 # relay otherwise). With --node <script>, exec the node-form hook. The
 # plugin ships NO runtime — this script only finds the one install.
+# `waykeep` is preferred over the legacy `cairn` alias so a leftover
+# cairn-memory install can never displace the current one.
 #
 # Resolution order (result cached, revalidated on every run):
 #   1. cached hook dir (still valid)
-#   2. `cairn` bin symlink chain + package-layout suffix (classic npm)
-#   3. `cairn locate hook-dir` — the CLI reports its own install; this
-#      covers executable SHIMS (Volta, pnpm shim scripts) that are not
-#      symlinks at all (review: suffix-strip alone silently no-opped
-#      every hook on those layouts)
+#   2. bin symlink chain + package-layout suffix (classic npm)
+#   3. `locate hook-dir` via the resolved bin — the CLI reports its own
+#      install; this covers executable SHIMS (Volta, pnpm shim scripts)
+#      that are not symlinks at all (review: suffix-strip alone silently
+#      no-opped every hook on those layouts)
 set -u
 fail() {
   # A missing/broken install must not break the host agent's hook
-  # pipeline: say why on stderr (hook debug output; `cairn doctor`
+  # pipeline: say why on stderr (hook debug output; `waykeep doctor`
   # diagnoses the same condition loudly) and exit 0 as a no-op.
-  echo "cairn plugin: $1 (npm install -g cairn-memory, then: cairn init)" >&2
+  echo "waykeep plugin: $1 (npm install -g waykeep, then: waykeep init)" >&2
   exit 0
 }
 # NEVER a world-writable fallback: with no HOME and no plugin-data dir
@@ -24,8 +26,8 @@ fail() {
 # have the next hook exec it (review, demonstrated).
 CACHE_DIR="${CLAUDE_PLUGIN_DATA:-${HOME:+$HOME/.cairn}}"
 CACHE="${CACHE_DIR:+$CACHE_DIR/plugin-hook-dir}"
-BIN="$(command -v cairn || true)"
-[ -n "$BIN" ] || fail "cairn-memory is not installed or not on PATH"
+BIN="$(command -v waykeep || command -v cairn || true)"
+[ -n "$BIN" ] || fail "waykeep is not installed or not on PATH"
 HOOK_DIR=""
 if [ -n "$CACHE" ] && [ -f "$CACHE" ]; then
   # Cache line: "<bin-path>|<hook-dir>". IDENTITY-validated, not just
@@ -53,13 +55,13 @@ if [ -z "$HOOK_DIR" ]; then
     esac
     HOPS=$((HOPS + 1))
   done
-  [ "$HOPS" -lt 40 ] || fail "the cairn bin symlink chain does not terminate"
+  [ "$HOPS" -lt 40 ] || fail "the waykeep bin symlink chain does not terminate"
   CANDIDATE="${TARGET%/dist/src/cli/index.js}/dist/src/hooks"
   if [ -f "$CANDIDATE/hook-relay.sh" ]; then
     HOOK_DIR="$CANDIDATE"
   else
-    HOOK_DIR="$(cairn locate hook-dir 2>/dev/null || true)"
-    [ -n "$HOOK_DIR" ] && [ -f "$HOOK_DIR/hook-relay.sh" ] || fail "could not locate the cairn-memory install"
+    HOOK_DIR="$("$BIN" locate hook-dir 2>/dev/null || true)"
+    [ -n "$HOOK_DIR" ] && [ -f "$HOOK_DIR/hook-relay.sh" ] || fail "could not locate the waykeep install"
   fi
   if [ -n "$CACHE" ]; then
     mkdir -p "$CACHE_DIR" 2>/dev/null || true

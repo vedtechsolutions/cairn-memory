@@ -1,6 +1,6 @@
 /**
- * `cairn import` — one-way migration from other memory systems into
- * Cairn, riding the shared learn pipeline (dedup, neutralization, secret
+ * `waykeep import` — one-way migration from other memory systems into
+ * Waykeep, riding the shared learn pipeline (dedup, neutralization, secret
  * scrub via the repository gateway). CLI rather than MCP tool so it works
  * before any agent session and can print a dry-run preview.
  *
@@ -58,15 +58,15 @@ export function runImport(options: ImportOptions): number {
         break;
       }
       default:
-        console.error(`cairn import: unknown source "${options.from}" (expected codex-memories | memory-md | claude-mem)`);
+        console.error(`waykeep import: unknown source "${options.from}" (expected codex-memories | memory-md | claude-mem)`);
         return 1;
     }
   } catch (err) {
-    console.error(`cairn import: ${(err as Error).message}`);
+    console.error(`waykeep import: ${(err as Error).message}`);
     return 1;
   }
 
-  console.log(`cairn import — ${options.from}`);
+  console.log(`waykeep import — ${options.from}`);
   for (const note of notes) console.log(`  ${note}`);
   for (const ex of excluded) console.log(`  excluded: ${ex.name} (${ex.reason})`);
   if (sections.length === 0) {

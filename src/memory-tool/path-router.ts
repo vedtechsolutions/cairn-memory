@@ -1,6 +1,6 @@
 /**
  * Memory-tool path router — the VFS path GRAMMAR now lives in
- * cairn-contract (it is part of the portable format's validation
+ * waykeep-contract (it is part of the portable format's validation
  * surface; research §1.8). This shim keeps the five in-tree consumers'
  * import sites stable.
  */
@@ -11,4 +11,4 @@ export {
   normalizeMemoryPath, routeMemoryPath, canonicalPathFor,
   invalidPathMessage,
   type Category, type RoutedPath,
-} from 'cairn-contract';
+} from 'waykeep-contract';

@@ -1,13 +1,13 @@
 {
-  "name": "cairn",
+  "name": "waykeep",
   "plugins": [
     {
-      "name": "cairn",
-      "source": "./plugins/codex/cairn",
-      "description": "Local-first shared memory for AI coding agents (MCP tools; hooks wired via cairn init). Requires the cairn-memory npm package.",
+      "name": "waykeep",
+      "source": "./plugins/codex/waykeep",
+      "description": "Local-first shared memory for AI coding agents (MCP tools; hooks wired via waykeep init). Formerly cairn. Requires the waykeep npm package.",
       "category": "development",
       "interface": {
-        "displayName": "Cairn"
+        "displayName": "Waykeep"
       },
       "policy": {
         "installation": "AVAILABLE"

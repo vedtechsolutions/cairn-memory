@@ -15,7 +15,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 /** The provenance failure kind, for callers that must react differently to
- *  each (e.g. `cairn doctor`): a `missing` cache downloads on first use, but
+ *  each (e.g. `waykeep doctor`): a `missing` cache downloads on first use, but
  *  `unpinned` and `mismatch` are hard failures the server refuses to boot on. */
 export type ArtifactErrorKind = 'unpinned' | 'missing' | 'mismatch';
 

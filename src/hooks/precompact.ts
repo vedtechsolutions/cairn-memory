@@ -28,7 +28,7 @@ try {
   const project = projectId(input.cwd);
 
   // Parse transcript per the client's format — the adapter degrades to an
-  // empty snapshot for formats Cairn cannot parse (rollout parser is a
+  // empty snapshot for formats Waykeep cannot parse (rollout parser is a
   // recorded follow-up).
   const snapshot = readTranscriptSnapshotFor(input, input.transcript_path);
 

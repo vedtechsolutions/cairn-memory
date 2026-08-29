@@ -23,7 +23,7 @@ describe('estimateTokensFast', () => {
     // Real briefing-style content has ~3.75 chars/token on average.
     // The fast estimator uses /3.0 which overestimates by roughly 25% aggregate.
     const briefing = [
-      '[Cairn Memory Briefing]',
+      '[Waykeep Memory Briefing]',
       'Project: cairn-2f161aa3',
       'Stack: TypeScript/Node.js | src/{constants/,db/,hooks/,mcp/,utils/}',
       'Git: branch: feat/primary-memory-integration, 22 uncommitted files',

@@ -267,8 +267,8 @@ export function sanitize(input: string): string {
  * Neutralize stored memory text before it is rendered back into the model's
  * context. Memory content and its context fields originate from tool output,
  * transcripts, and imported files — all untrusted — and are later injected
- * into briefings and subagent prompts. Cairn's own injected lines are prefixed
- * `[CAIRN] `, so a memory whose text begins with that marker could impersonate
+ * into briefings and subagent prompts. Waykeep's own injected lines are prefixed
+ * `[WAYKEEP] `, so a memory whose text begins with that marker could impersonate
  * the system voice and read as a genuine directive. Strip any leading
  * `[CAIRN…]`-style prefix (repeatedly), and drop control characters as defense
  * in depth. Wording is otherwise preserved.
@@ -276,6 +276,6 @@ export function sanitize(input: string): string {
 export function neutralizeMemoryText(input: string): string {
   return input
     .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')
-    .replace(/^(?:\s*\[\s*cairn\b[^\]\n]*\]\s*)+/gi, '')
+    .replace(/^(?:\s*\[\s*(?:cairn|waykeep)\b[^\]\n]*\]\s*)+/gi, '')
     .trim();
 }

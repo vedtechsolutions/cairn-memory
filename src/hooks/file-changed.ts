@@ -26,7 +26,7 @@ try {
   const reminders = client.reminderRepo.checkFileReminders(filePath, project);
 
   if (reminders.length > 0) {
-    const lines = reminders.map(r => `[CAIRN] Reminder: ${r.action}`);
+    const lines = reminders.map(r => `[WAYKEEP] Reminder: ${r.action}`);
     outputAdditionalContext('FileChanged', lines.join('\n'));
   }
 

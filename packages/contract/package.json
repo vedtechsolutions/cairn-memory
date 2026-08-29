@@ -1,7 +1,7 @@
 {
-  "name": "cairn-contract",
-  "version": "1.0.0-dev.0",
-  "description": "Integration contract for Cairn — normalized hook event types, client identity, memory vocabulary, portable round-trip format, and hook-socket routes. Types and constants only; zero dependencies.",
+  "name": "waykeep-contract",
+  "version": "1.0.0-dev.1",
+  "description": "Integration contract for Waykeep (formerly Cairn) — normalized hook event types, client identity, memory vocabulary, portable round-trip format, and hook-socket routes. Types and constants only; zero dependencies.",
   "license": "MIT",
   "type": "module",
   "main": "dist/index.js",
@@ -19,12 +19,12 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/vedtechsolutions/cairn-memory.git",
+    "url": "git+https://github.com/vedtechsolutions/waykeep.git",
     "directory": "packages/contract"
   },
-  "homepage": "https://github.com/vedtechsolutions/cairn-memory/tree/main/packages/contract#readme",
+  "homepage": "https://github.com/vedtechsolutions/waykeep/tree/main/packages/contract#readme",
   "bugs": {
-    "url": "https://github.com/vedtechsolutions/cairn-memory/issues"
+    "url": "https://github.com/vedtechsolutions/waykeep/issues"
   },
   "keywords": [
     "cairn",

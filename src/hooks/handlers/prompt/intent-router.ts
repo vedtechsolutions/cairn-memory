@@ -65,7 +65,7 @@ export function routeIntent(ctx: PromptCtx): void {
           .filter(r => !previouslyInjected.has(r.memory.id));
         for (const r of relevant) {
           if (!budgetAvailable()) break;
-          budgetPush(`[CAIRN] ${r.memory.content}${client.memoryRepo.stalenessMarker(r.memory)}`);
+          budgetPush(`[WAYKEEP] ${r.memory.content}${client.memoryRepo.stalenessMarker(r.memory)}`);
           newlyInjected.push(r.memory.id);
         }
       }
@@ -83,7 +83,7 @@ export function routeIntent(ctx: PromptCtx): void {
           .filter(r => !previouslyInjected.has(r.memory.id));
         for (const r of relevantDecisions) {
           if (!budgetAvailable()) break;
-          budgetPush(`[CAIRN] ${r.memory.content}${client.memoryRepo.stalenessMarker(r.memory)}`);
+          budgetPush(`[WAYKEEP] ${r.memory.content}${client.memoryRepo.stalenessMarker(r.memory)}`);
           newlyInjected.push(r.memory.id);
         }
       }
@@ -147,7 +147,7 @@ export function routeIntent(ctx: PromptCtx): void {
           .filter(r => !previouslyInjected.has(r.memory.id));
         for (const r of relevant) {
           if (!budgetAvailable()) break;
-          budgetPush(`[CAIRN] ${r.memory.content}${client.memoryRepo.stalenessMarker(r.memory)}`);
+          budgetPush(`[WAYKEEP] ${r.memory.content}${client.memoryRepo.stalenessMarker(r.memory)}`);
           newlyInjected.push(r.memory.id);
         }
       }

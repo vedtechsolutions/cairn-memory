@@ -129,7 +129,7 @@ describe('handleErrorLearning', () => {
     assert.equal(result.action, 'learned-new');
     assert.equal(result.sessionCount, 1);
     assert.ok(result.output, 'first occurrence must inject the lesson');
-    assert.ok(result.output.includes('[CAIRN]'));
+    assert.ok(result.output.includes('[WAYKEEP]'));
     assert.ok(result.output.includes('TS2345'));
 
     assert.equal(pitfallCount(), 1);

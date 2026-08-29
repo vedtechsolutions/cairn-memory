@@ -309,7 +309,7 @@ describe('governance gate config v1', () => {
 
   it('keeps the generated JSON Schema byte-identical to the checked-in artifact', () => {
     const checkedIn = readFileSync(
-      resolve(process.cwd(), 'schemas', 'cairn-gates.schema.json'), 'utf8',
+      resolve(process.cwd(), 'schemas', 'waykeep-gates.schema.json'), 'utf8',
     );
     assert.equal(generateGateConfigJsonSchema(), checkedIn);
   });

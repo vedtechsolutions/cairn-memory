@@ -131,7 +131,7 @@ export function registerPortabilityTools(
 
       // learn mode ingests untrusted markdown (shared "memory packs", repo
       // files). Neutralize content so an imported memory can't carry a forged
-      // [CAIRN] prefix that would later impersonate Cairn's system voice (M5).
+      // [WAYKEEP] prefix that would later impersonate Waykeep's system voice (M5).
       // restore mode is a faithful id-preserving round-trip of the user's own
       // export and is deliberately left byte-exact above.
       for (const record of parsed.records) {
@@ -234,7 +234,7 @@ export function registerPortabilityTools(
       }
 
       const lines: string[] = [
-        `# Cairn Export v2`,
+        `# Waykeep Export v2`,
         `# Exported: ${new Date().toISOString()}`,
         `# Memories: ${records.length}`,
         `# Files: ${files.length}`,

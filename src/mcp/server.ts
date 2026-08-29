@@ -106,7 +106,7 @@ async function main(): Promise<void> {
 
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error('Cairn MCP server running on stdio');
+  console.error('Waykeep MCP server running on stdio');
 }
 
 /** Background backfill: embed existing memories that don't have embeddings yet.
@@ -146,6 +146,6 @@ async function runEmbeddingBackfill(repo: MemoryRepository): Promise<void> {
 }
 
 main().catch((error) => {
-  console.error('Fatal error in Cairn:', error);
+  console.error('Fatal error in Waykeep:', error);
   process.exit(1);
 });

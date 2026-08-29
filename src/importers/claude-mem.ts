@@ -9,7 +9,7 @@
  * next_steps). A server-beta schema (v13+, opt-in) unifies them into
  * `memory_items` — preferred when present with rows. v3-era leftovers
  * (index/*.jsonl) are read best-effort. Skipped by design: chroma/
- * vectors (derived — Cairn re-embeds), FTS mirrors, sync_* tables,
+ * vectors (derived — Waykeep re-embeds), FTS mirrors, sync_* tables,
  * user_prompts (raw prompt text is noise, not lessons), archives/.
  *
  * Safety: the worker daemon may be LIVE against this DB — the importer
@@ -21,7 +21,7 @@
  * Mapping: observations → one memory each (title — subtitle: text|
  * narrative), kind from wording (their `type` travels as a tag);
  * summaries → the `learned` field (the distilled gold), kind fact.
- * Their `project` is a NAME, not a Cairn project id — it becomes a
+ * Their `project` is a NAME, not a Waykeep project id — it becomes a
  * `src-project:` tag; --project scopes the batch if wanted.
  */
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
@@ -240,7 +240,7 @@ export function transformClaudeMem(path?: string): ClaudeMemImport {
     }
   }
   if (statSync(root).isDirectory() && existsSync(join(root, 'chroma'))) {
-    excluded.push({ name: 'chroma/', reason: 'derived vectors — Cairn re-embeds' });
+    excluded.push({ name: 'chroma/', reason: 'derived vectors — Waykeep re-embeds' });
   }
 
   return { sections, excluded, notes };

@@ -1,8 +1,8 @@
-# Cairn Individual Contributor License Agreement
+# Waykeep Individual Contributor License Agreement
 
 **Version 1.0 — 2026-08-29**
 
-Thank you for your interest in contributing to Cairn. This Contributor License Agreement ("Agreement") is between you ("You") and **VEDTECH Solutions** ("VEDTECH"), and applies to every Contribution You submit to the [`vedtechsolutions/cairn-memory`](https://github.com/vedtechsolutions/cairn-memory) repository — including the `cairn-memory` runtime (Elastic License 2.0) and the `cairn-contract` package (MIT), and any package later added to the repository.
+Thank you for your interest in contributing to Waykeep (formerly Cairn). This Contributor License Agreement ("Agreement") is between you ("You") and **VEDTECH Solutions** ("VEDTECH"), and applies to every Contribution You submit to the [`vedtechsolutions/waykeep`](https://github.com/vedtechsolutions/waykeep) repository — including the `waykeep` runtime (Elastic License 2.0) and the `waykeep-contract` package (MIT), and any package later added to the repository.
 
 This Agreement clarifies the rights You grant. **You keep the copyright in Your Contributions** — this is a license, not a transfer of ownership. The grant below is deliberately broad so that VEDTECH can continue to license, relicense, and commercialize the project as a whole without tracking down every past contributor.
 

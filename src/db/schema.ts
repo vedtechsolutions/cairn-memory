@@ -1,5 +1,5 @@
 // ============================================================================
-// Cairn Database Schema — All table definitions as SQL constants
+// Waykeep Database Schema — All table definitions as SQL constants
 // ============================================================================
 
 import { GOVERNANCE_DDL } from './governance-schema.js';

@@ -25,7 +25,7 @@ function renderCapabilityLine(clientInScope: boolean, reasons: readonly string[]
 }
 
 function renderLines(section: GovernanceBriefingSection): string[] {
-  const lines = ['[Cairn Governance — advisory; not enforced]'];
+  const lines = ['[Waykeep Governance — advisory; not enforced]'];
   if (section.rules.length > 0) {
     lines.push('Applicable pre-exit rules:');
     for (const rule of section.rules) lines.push(`  - ${rule}`);

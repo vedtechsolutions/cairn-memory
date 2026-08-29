@@ -19,7 +19,7 @@ import { cairnHooks } from '../src/cli/init.js';
 import { VERSION } from '../src/constants/index.js';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const PLUGIN_RELAY = '${CLAUDE_PLUGIN_ROOT}/bin/cairn-relay.sh';
+const PLUGIN_RELAY = '${CLAUDE_PLUGIN_ROOT}/bin/waykeep-relay.sh';
 const read = (rel: string): string => readFileSync(join(REPO_ROOT, rel), 'utf-8');
 const readJson = (rel: string): Record<string, unknown> => JSON.parse(read(rel)) as Record<string, unknown>;
 
@@ -32,15 +32,15 @@ describe('thin-plugin packaging', () => {
         .replace(/"node [^"]*dist\/src\/hooks\/([a-z-]+\.js)"/g,
           `"${PLUGIN_RELAY.replace(/\$/g, '\\u0024')} --node $1"`),
     ) as Record<string, unknown>;
-    const checkedIn = readJson('plugins/claude/cairn/hooks/hooks.json');
+    const checkedIn = readJson('plugins/claude/waykeep/hooks/hooks.json');
     assert.deepEqual(checkedIn.hooks, generated,
-      'plugins/claude/cairn/hooks/hooks.json must be regenerated when cairnHooks() changes');
+      'plugins/claude/waykeep/hooks/hooks.json must be regenerated when cairnHooks() changes');
   });
 
   it('plugin versions AND the MCP serverInfo constant ride package.json (lockstep)', () => {
     const pkg = readJson('package.json');
-    assert.equal(readJson('plugins/claude/cairn/.claude-plugin/plugin.json').version, pkg.version);
-    assert.equal(readJson('plugins/codex/cairn/.codex-plugin/plugin.json').version, pkg.version);
+    assert.equal(readJson('plugins/claude/waykeep/.claude-plugin/plugin.json').version, pkg.version);
+    assert.equal(readJson('plugins/codex/waykeep/.codex-plugin/plugin.json').version, pkg.version);
     // The handshake advertised 5.1.0 on a 5.3.1 install — a comment was
     // the only guard (validation finding).
     assert.equal(VERSION, pkg.version, 'src/constants VERSION drifted from package.json — run scripts/sync-plugin-versions.mjs');
@@ -69,10 +69,10 @@ describe('thin-plugin packaging', () => {
     const absPath = /\/(opt|home|usr|Users|var|root|tmp|Volumes|Applications|nix)\/|[A-Z]:\\/;
     assert.ok(absPath.test('x node /opt/cairn/d.js'), 'sanity: the probe regex catches embedded paths');
     for (const rel of [
-      'plugins/claude/cairn/.claude-plugin/plugin.json',
-      'plugins/claude/cairn/hooks/hooks.json',
-      'plugins/claude/cairn/.mcp.json',
-      'plugins/codex/cairn/.codex-plugin/plugin.json',
+      'plugins/claude/waykeep/.claude-plugin/plugin.json',
+      'plugins/claude/waykeep/hooks/hooks.json',
+      'plugins/claude/waykeep/.mcp.json',
+      'plugins/codex/waykeep/.codex-plugin/plugin.json',
       '.claude-plugin/marketplace.json',
       '.agents/plugins/marketplace.json',
     ]) {
@@ -85,14 +85,14 @@ describe('thin-plugin packaging', () => {
     // output lands on stdout AHEAD of the MCP handshake (protocol
     // requires protocol-only stdout), and sh reads .profile — not the
     // .bashrc/.zshrc where nvm PATH init lives.
-    const claudeMcp = readJson('plugins/claude/cairn/.mcp.json') as unknown as { mcpServers: Record<string, { command: string; args: string[] }> };
-    const codexPlugin = readJson('plugins/codex/cairn/.codex-plugin/plugin.json') as unknown as { mcpServers: Record<string, { command: string; args: string[] }> };
+    const claudeMcp = readJson('plugins/claude/waykeep/.mcp.json') as unknown as { mcpServers: Record<string, { command: string; args: string[] }> };
+    const codexPlugin = readJson('plugins/codex/waykeep/.codex-plugin/plugin.json') as unknown as { mcpServers: Record<string, { command: string; args: string[] }> };
     // Claude: the plugin-root launcher (reviewer-verified to expand,
     // load, and connect with `cairn` absent from PATH) — GUI-safe
     // without a shell. Codex: bare command (plugin-root-relative spawn
     // is unproven there; caveat documented, step-7 validation item).
-    assert.equal(claudeMcp.mcpServers.cairn.command, '${CLAUDE_PLUGIN_ROOT}/bin/cairn-mcp.sh');
-    assert.equal(codexPlugin.mcpServers.cairn.command, 'cairn');
+    assert.equal(claudeMcp.mcpServers.cairn.command, '${CLAUDE_PLUGIN_ROOT}/bin/waykeep-mcp.sh');
+    assert.equal(codexPlugin.mcpServers.cairn.command, 'waykeep');
     assert.deepEqual(codexPlugin.mcpServers.cairn.args, ['serve']);
   });
 
@@ -117,7 +117,7 @@ describe('thin-plugin packaging', () => {
       // the scan must take the newest version that actually HAS cairn.
       mkdirSync(join(sim, '.nvm', 'versions', 'node', 'v23.5.0', 'bin'), { recursive: true });
       symlinkSync(process.execPath, join(sim, '.nvm', 'versions', 'node', 'v23.5.0', 'bin', 'node'));
-      const r = spawnSync(join(REPO_ROOT, 'plugins/claude/cairn/bin/cairn-mcp.sh'), [], {
+      const r = spawnSync(join(REPO_ROOT, 'plugins/claude/waykeep/bin/waykeep-mcp.sh'), [], {
         // cairn is off this PATH; the version-ordering half is fully
         // proven here, and the PATH-prepend keeps the fixture's own
         // node first even where the OS has a system node (the fully
@@ -152,7 +152,7 @@ describe('thin-plugin packaging', () => {
       // pinned race-free: the launcher CODE (comments stripped) must
       // reference no /tmp path at all — the fallback that would have
       // read a planted cache no longer exists to be probed.
-      const launcherCode = read('plugins/claude/cairn/bin/cairn-relay.sh')
+      const launcherCode = read('plugins/claude/waykeep/bin/waykeep-relay.sh')
         .split('\n').filter(l => !l.trim().startsWith('#')).join('\n');
       assert.ok(!launcherCode.includes('/tmp'),
         'the launcher CODE must never reference /tmp (the comment documenting the removed fallback may)');
@@ -171,15 +171,15 @@ describe('thin-plugin packaging', () => {
     // "failed to load" (duplicate hooks file; review B1, reproduced on a
     // real install). The conventional files exist; the manifest must not
     // double-declare them.
-    const manifest = readJson('plugins/claude/cairn/.claude-plugin/plugin.json');
+    const manifest = readJson('plugins/claude/waykeep/.claude-plugin/plugin.json');
     assert.equal(manifest.hooks, undefined, 'an explicit hooks key duplicates the auto-loaded path');
     assert.equal(manifest.mcpServers, undefined, '.mcp.json is auto-loaded too');
-    assert.ok(read('plugins/claude/cairn/hooks/hooks.json').length > 0);
-    assert.ok(read('plugins/claude/cairn/.mcp.json').length > 0);
+    assert.ok(read('plugins/claude/waykeep/hooks/hooks.json').length > 0);
+    assert.ok(read('plugins/claude/waykeep/.mcp.json').length > 0);
   });
 
   it('codex plugin manifest carries the validator-required objects', () => {
-    const manifest = readJson('plugins/codex/cairn/.codex-plugin/plugin.json') as unknown as {
+    const manifest = readJson('plugins/codex/waykeep/.codex-plugin/plugin.json') as unknown as {
       author?: { name?: string }; interface?: { displayName?: string; defaultPrompt?: string };
     };
     // The bundled ingestion validator requires `author` and `interface`
@@ -189,7 +189,7 @@ describe('thin-plugin packaging', () => {
     assert.equal(typeof manifest.interface?.defaultPrompt, 'string');
   });
 
-  const LAUNCHER = join(REPO_ROOT, 'plugins/claude/cairn/bin/cairn-relay.sh');
+  const LAUNCHER = join(REPO_ROOT, 'plugins/claude/waykeep/bin/waykeep-relay.sh');
   const CLI_JS = join(REPO_ROOT, 'dist/src/cli/index.js');
 
   /** Run the launcher with an isolated PATH + plugin-data cache dir. */
@@ -284,11 +284,11 @@ exec node "${CLI_JS}" "$@"
   });
 
   it('launcher without an install is a loud-stderr NO-OP, never a hook failure', () => {
-    const result = spawnSync(join(REPO_ROOT, 'plugins/claude/cairn/bin/cairn-relay.sh'), ['session-start'], {
+    const result = spawnSync(join(REPO_ROOT, 'plugins/claude/waykeep/bin/waykeep-relay.sh'), ['session-start'], {
       encoding: 'utf-8', env: { ...process.env, PATH: '/usr/bin:/bin' },
     });
     assert.equal(result.status, 0, 'a missing install must not break the host agent');
-    assert.match(result.stderr, /npm install -g cairn-memory/, 'the fix is named');
+    assert.match(result.stderr, /npm install -g waykeep/, 'the fix is named');
     assert.equal(result.stdout, '', 'no stray stdout into the hook pipeline');
   });
 });

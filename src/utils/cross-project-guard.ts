@@ -37,7 +37,7 @@ export const GENERIC_MODULE_TOKENS: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * Derive project-identity tokens from a project slug. The Cairn slug format
+ * Derive project-identity tokens from a project slug. The Waykeep slug format
  * is `<name>-<stable-hash>` (e.g. `cairn-2f161aa3`); the name segment is
  * invariant across every memory stored under the project and carries no
  * task signal. Used to strip project name from overlap counting so that

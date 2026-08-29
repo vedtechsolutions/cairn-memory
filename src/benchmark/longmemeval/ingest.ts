@@ -6,7 +6,7 @@
  *   - corpus modes: 'user-only' mirrors the official flat turn index
  *     (run_retrieval.py ingests user turns only — assistant replies often
  *     paraphrase evidence and inflate session recall); 'all-roles' is a
- *     separately-labeled Cairn experiment;
+ *     separately-labeled Waykeep experiment;
  *   - turn-preserving ingestion — one memory per turn at its ORIGINAL turn
  *     index (official doc ids are sessionId_<1-indexed original position>),
  *     split only when a single turn exceeds the chunk bound;
@@ -30,7 +30,7 @@ export const UNIFORM_CONFIDENCE = 0.65;
 /** Split threshold for a single oversized turn (~512 tokens at ~4 chars/token) */
 export const MAX_TURN_CHARS = 2000;
 
-/** 'user-only' = official protocol; 'all-roles' = labeled Cairn experiment. */
+/** 'user-only' = official protocol; 'all-roles' = labeled Waykeep experiment. */
 export type CorpusMode = 'user-only' | 'all-roles';
 
 export interface TurnRef {

@@ -1,25 +1,29 @@
 #!/usr/bin/env node
 /**
- * `cairn` CLI entry point. Dispatches subcommands and preserves the original
- * behavior — a bare `cairn` (or `cairn serve`) starts the MCP server — so the
- * repurposed bin stays backward compatible.
+ * `waykeep` CLI entry point (also installed as `cairn` — the pre-rebrand bin
+ * name, kept so existing wiring and muscle memory survive). Dispatches
+ * subcommands and preserves the original behavior — a bare invocation (or
+ * `serve`) starts the MCP server — so the repurposed bin stays backward
+ * compatible.
  */
 
 function printHelp(): void {
-  console.log(`cairn — memory system for AI coding agents
+  console.log(`waykeep — memory system for AI coding agents (formerly cairn; both bins work)
 
 Usage:
-  cairn [serve]     Start the MCP server over stdio (default)
-  cairn report      Tokens-saved report (--days=N, default 30)
-  cairn import      Migrate memories in (--from codex-memories|memory-md|claude-mem)
-  cairn init        Write Cairn's client config (--dry-run to preview,
-                    --migrate-routes to modernize deprecated hook routes,
-                    --statusline-only when hooks+MCP come from the plugin)
-  cairn build-relay Compile the fast C hook relay (optional; needs a C compiler)
-  cairn locate      Print install locations (JSON; "locate hook-dir" prints that path bare)
-  cairn doctor      Run install health checks
-  cairn --version   Print the installed version
-  cairn --help      Show this help
+  waykeep [serve]          Start the MCP server over stdio (default)
+  waykeep report           Tokens-saved report (--days=N, default 30)
+  waykeep import           Migrate memories in (--from codex-memories|memory-md|claude-mem)
+  waykeep migrate-project  Move rows from an old project id to the current one
+                           (after a git remote rename; --dry-run to preview)
+  waykeep init             Write the client config (--dry-run to preview,
+                           --migrate-routes to modernize deprecated hook routes,
+                           --statusline-only when hooks+MCP come from the plugin)
+  waykeep build-relay      Compile the fast C hook relay (optional; needs a C compiler)
+  waykeep locate           Print install locations (JSON; "locate hook-dir" prints that path bare)
+  waykeep doctor           Run install health checks
+  waykeep --version        Print the installed version
+  waykeep --help           Show this help
 `);
 }
 
@@ -37,14 +41,14 @@ switch (command) {
         // Reject rather than silently reinterpret: '--days=abc' reporting
         // one day (or a huge N reporting nothing) misleads.
         if (!Number.isInteger(parsed) || parsed < 1 || parsed > 3650) {
-          console.error(`cairn report: --days must be an integer between 1 and 3650 (got "${raw}")`);
+          console.error(`waykeep report: --days must be an integer between 1 and 3650 (got "${raw}")`);
           process.exit(1);
         }
         days = parsed;
       }
       process.exit(await runReport(days));
     } catch (err) {
-      console.error(`cairn report: failed — ${(err as Error).message}`);
+      console.error(`waykeep report: failed — ${(err as Error).message}`);
       process.exit(1);
     }
     break;
@@ -65,7 +69,7 @@ switch (command) {
       for (let i = 0; i < argv.length; i++) {
         const token = argv[i];
         if (!token.startsWith('--')) {
-          // Positional source form: `cairn import codex-memories`.
+          // Positional source form: `waykeep import codex-memories`.
           if (i === 0 && !values.from) { values.from = token; continue; }
           argError = `unexpected argument "${token}"`;
           break;
@@ -94,8 +98,8 @@ switch (command) {
         }
       }
       if (argError || !values.from) {
-        if (argError) console.error(`cairn import: ${argError}`);
-        console.error('usage: cairn import --from codex-memories|memory-md|claude-mem [--path P] [--project ID] [--dry-run] [--include-notes]');
+        if (argError) console.error(`waykeep import: ${argError}`);
+        console.error('usage: waykeep import --from codex-memories|memory-md|claude-mem [--path P] [--project ID] [--dry-run] [--include-notes]');
         process.exit(1);
       }
       process.exit(runImport({
@@ -106,7 +110,26 @@ switch (command) {
         includeNotes: flags.has('include-notes'),
       }));
     } catch (err) {
-      console.error(`cairn import: failed — ${(err as Error).message}`);
+      console.error(`waykeep import: failed — ${(err as Error).message}`);
+      process.exit(1);
+    }
+    break;
+  }
+  case 'migrate-project': {
+    try {
+      const { runMigrateProject } = await import('./migrate-project.js');
+      const args = process.argv.slice(3);
+      const dryRun = args.includes('--dry-run');
+      const positional = args.filter((a) => !a.startsWith('--'));
+      const unknown = args.find((a) => a.startsWith('--') && a !== '--dry-run');
+      if (unknown || positional.length !== 1) {
+        if (unknown) console.error(`migrate-project: unknown flag ${unknown}`);
+        console.error('usage: waykeep migrate-project <old-project-id> [--dry-run]');
+        process.exit(1);
+      }
+      process.exit(runMigrateProject({ oldId: positional[0], dryRun }));
+    } catch (err) {
+      console.error(`migrate-project: failed — ${(err as Error).message}`);
       process.exit(1);
     }
     break;
@@ -120,7 +143,7 @@ switch (command) {
         statuslineOnly: process.argv.includes('--statusline-only'),
       }));
     } catch (err) {
-      console.error(`cairn init: failed to run — ${(err as Error).message}`);
+      console.error(`waykeep init: failed to run — ${(err as Error).message}`);
       process.exit(1);
     }
     break;
@@ -146,7 +169,7 @@ switch (command) {
     if (which === undefined) console.log(JSON.stringify(locations, null, 2));
     else if (which === 'hook-dir') console.log(locations.hookDir);
     else if (which === 'package-root') console.log(locations.packageRoot);
-    else { console.error(`cairn locate: unknown location "${which}" (expected hook-dir | package-root)`); process.exit(1); }
+    else { console.error(`waykeep locate: unknown location "${which}" (expected hook-dir | package-root)`); process.exit(1); }
     break;
   }
   case 'build-relay': {
@@ -154,7 +177,7 @@ switch (command) {
       const { runBuildRelay } = await import('./build-relay.js');
       process.exit(runBuildRelay());
     } catch (err) {
-      console.error(`cairn build-relay: failed to run — ${(err as Error).message}`);
+      console.error(`waykeep build-relay: failed to run — ${(err as Error).message}`);
       process.exit(1);
     }
     break;
@@ -164,7 +187,7 @@ switch (command) {
       const { runDoctor } = await import('./doctor.js');
       process.exit(await runDoctor());
     } catch (err) {
-      console.error(`cairn doctor: failed to run — ${(err as Error).message}`);
+      console.error(`waykeep doctor: failed to run — ${(err as Error).message}`);
       process.exit(1);
     }
     break;

@@ -76,7 +76,7 @@ try {
   writeState(state);
 
   // Build display string with DB metadata
-  let display = `Cairn: ${mode} | ${freeUntilCompact}% free`;
+  let display = `Waykeep: ${mode} | ${freeUntilCompact}% free`;
 
   if (input.cwd) {
     const dbPath = process.env.CAIRN_DB_PATH ?? undefined;
@@ -120,5 +120,5 @@ try {
   process.stdout.write(display);
 } catch {
   // Silent failure — don't break the status bar
-  process.stdout.write('Cairn: --');
+  process.stdout.write('Waykeep: --');
 }

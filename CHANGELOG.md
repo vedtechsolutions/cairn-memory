@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+## [5.5.0] - 2026-08-29
+
+### Changed
+
+- Renamed the project: Cairn is now **Waykeep**. The npm package is [`waykeep`](https://www.npmjs.com/package/waykeep) (installs both the `waykeep` bin and the legacy `cairn` alias), the repository is `vedtechsolutions/waykeep` (old URLs redirect), and the contract package is `waykeep-contract`. Nothing about local state changes: data stays in `~/.cairn`, MCP tool names keep their `cairn_` prefix, the MCP server key, hook routes, and `CAIRN_*` environment variables are unchanged. Switching packages re-points hook wiring at the new install (`waykeep init`; Codex re-trusts its hook entries once because the paths move).
+- Renamed the marketplace plugins `cairn` → `waykeep` for both agents (install: `/plugin install waykeep@waykeep`, `codex plugin add waykeep@waykeep`); the plugin launchers now prefer the `waykeep` bin and fall back to `cairn`, so a leftover cairn-memory install can never displace the current one.
+- Rebranded display surfaces: briefings (`[Waykeep Memory Briefing]`), injection prefixes (`[WAYKEEP]`), the subagent framing line, StatusLine, and CLI messages.
+- Renamed the gate-config JSON Schema artifact to `schemas/waykeep-gates.schema.json`; its `$id` now points at `waykeep.dev` (the previous `cairn.dev` was never an owned domain).
+- Export files now open with `# Waykeep Export v2` — readers never keyed on the header line, so existing export files import unchanged.
+
+### Added
+
+- Added `waykeep migrate-project <old-project-id>`: carries a project's memories, sessions, plans, and telemetry to the current project id after a git remote rename or repo transfer changed the remote-derived identity (`--dry-run` to preview). Fails closed on privacy: rows of a project marked private are not moved to an id the scope config does not list.
+- The system-voice neutralizer now strips forged `[waykeep …]` prefixes from stored memory text as well as `[cairn …]` ones.
+
 ### Added
 
 - Added a Contributor License Agreement ([`CLA.md`](CLA.md)) with a CLA-signature gate on pull requests (contributors keep their copyright and grant VEDTECH Solutions relicensing rights); `CONTRIBUTING.md` and the PR template now document the CLA + DCO flow.

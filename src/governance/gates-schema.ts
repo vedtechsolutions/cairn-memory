@@ -242,8 +242,8 @@ export function generateGateConfigJsonSchema(): string {
   });
   const schema = {
     ...generated,
-    $id: 'https://cairn.dev/schemas/cairn-gates.schema.json',
-    title: 'Cairn gate configuration v1',
+    $id: 'https://waykeep.dev/schemas/waykeep-gates.schema.json',
+    title: 'Waykeep gate configuration v1',
   };
   return `${JSON.stringify(sortJson(schema), null, 2)}\n`;
 }

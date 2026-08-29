@@ -25,7 +25,7 @@ export function renderTier1(
   ctx: BriefingContext,
 ): { tier: TierResult; plan: Plan | null } {
   const lines: string[] = [];
-  lines.push('[Cairn Memory Briefing]');
+  lines.push('[Waykeep Memory Briefing]');
 
   if (ctx.project) {
     lines.push(`Project: ${ctx.project}`);

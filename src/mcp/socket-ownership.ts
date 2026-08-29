@@ -2,7 +2,7 @@
  * Socket ownership — cooperative claim protocol for the shared hook socket.
  *
  * Multiple agent clients (Claude Code, Codex, future MCP consumers) each
- * spawn their own Cairn MCP server process, and a standalone daemon may own
+ * spawn their own Waykeep MCP server process, and a standalone daemon may own
  * the socket permanently. Exactly one process may serve
  * ~/.cairn/hook-daemon.sock at a time; everyone else must LEAVE THE OWNER
  * ALONE and share its socket. The historical failure mode this module
@@ -50,7 +50,7 @@ export function pidPath(): string {
 }
 
 /**
- * Create the Cairn state directory with owner-only permissions, tightening an
+ * Create the Waykeep state directory with owner-only permissions, tightening an
  * already-existing world-readable dir (older installs created it at 0755).
  * Directory containment is the socket's only access control, so this runs
  * before the socket is bound. Best-effort chmod: never crash startup on a

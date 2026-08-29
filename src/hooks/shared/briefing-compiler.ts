@@ -144,7 +144,7 @@ function appendContradictions(
   const clip = (s: string) => (s.length > 70 ? s.slice(0, 67) + '...' : s);
   const lines = pairs.slice(0, LIMITS.BRIEFING_CONTRADICTIONS_MAX)
     .map(p => `  ⚠ "${clip(p.winner.content)}" vs "${clip(p.loser.content)}"`);
-  const section = ['[CAIRN] Conflicting memories — verify & resolve:', ...lines].join('\n');
+  const section = ['[WAYKEEP] Conflicting memories — verify & resolve:', ...lines].join('\n');
   const text = out.text ? `${out.text}\n${section}` : section;
   return { ...out, text, tokenEstimate: estimateTokensFast(text) };
 }

@@ -1,6 +1,6 @@
 /**
  * Publish-artifact guard: the tarball must be self-sufficient. Every
- * other test runs inside the monorepo, where node_modules/cairn-contract
+ * other test runs inside the monorepo, where node_modules/waykeep-contract
  * is a workspace symlink — so a missing bundled dependency is invisible
  * to the whole suite while being fatal to every installed copy
  * (ERR_MODULE_NOT_FOUND from constants/index.js kills the CLI, the MCP
@@ -16,7 +16,7 @@ import { fileURLToPath } from 'node:url';
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 describe('npm pack integrity', () => {
-  it('bundles cairn-contract and the load-bearing entry points', () => {
+  it('bundles waykeep-contract and the load-bearing entry points', () => {
     const json = execFileSync('npm', ['pack', '--dry-run', '--json'], {
       cwd: REPO, encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'],
     });
@@ -25,9 +25,9 @@ describe('npm pack integrity', () => {
 
     const required = [
       // The unpublished workspace dependency MUST travel in the tarball.
-      'node_modules/cairn-contract/package.json',
-      'node_modules/cairn-contract/dist/index.js',
-      'node_modules/cairn-contract/dist/routes.js',
+      'node_modules/waykeep-contract/package.json',
+      'node_modules/waykeep-contract/dist/index.js',
+      'node_modules/waykeep-contract/dist/routes.js',
       // Entry points and both post-tool fallback shims (D3 cross-version).
       'dist/src/cli/index.js',
       'dist/src/mcp/server.js',
@@ -55,7 +55,7 @@ describe('npm pack integrity', () => {
       dependencies: Record<string, string>; bundleDependencies?: string[];
     };
     const contract = JSON.parse(readFileSync(join(REPO, 'packages', 'contract', 'package.json'), 'utf-8')) as { version: string };
-    assert.equal(root.dependencies['cairn-contract'], contract.version);
-    assert.ok(root.bundleDependencies?.includes('cairn-contract'));
+    assert.equal(root.dependencies['waykeep-contract'], contract.version);
+    assert.ok(root.bundleDependencies?.includes('waykeep-contract'));
   });
 });

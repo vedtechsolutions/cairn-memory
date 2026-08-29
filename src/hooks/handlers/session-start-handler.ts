@@ -473,7 +473,7 @@ export function handleSessionStart(
   const truncated = truncateToTokenBudget(outputText, effectiveBudget);
   const output = framing ? `${framing}\n${truncated}` : truncated;
 
-  // Tokens-saved report: what Cairn injects is a COST — recorded from the
+  // Tokens-saved report: what Waykeep injects is a COST — recorded from the
   // emitted text so the report's cost column is the same thing the agent
   // actually paid for.
   recordRollup(client.db, sessionId, ROLLUP_METRICS.INJECTED, 'session-start', estimateTokensFast(output));

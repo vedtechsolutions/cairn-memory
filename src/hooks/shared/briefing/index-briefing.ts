@@ -43,7 +43,7 @@ export function compileIndexBriefing(
   const includedPitfallIds: string[] = [];
   const renderedMemoryIds: string[] = [];
 
-  lines.push('[Cairn Memory Briefing — index]');
+  lines.push('[Waykeep Memory Briefing — index]');
 
   if (ctx.project) {
     lines.push(`Project: ${ctx.project}`);

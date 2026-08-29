@@ -1,5 +1,5 @@
 /**
- * `cairn init` — write Cairn's client configuration.
+ * `waykeep init` — write Waykeep's client configuration.
  *
  * Replaces the manual settings.json editing the README documents: it resolves
  * this install's absolute paths, generates the canonical Claude Code config
@@ -21,9 +21,9 @@ const PKG_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
 const HOOK_DIR = join(PKG_ROOT, 'dist', 'src', 'hooks');
 const SERVER = join(PKG_ROOT, 'dist', 'src', 'mcp', 'server.js');
 
-/** Every Cairn hook — relay or node-form, current or legacy — lives under
- *  the marker directory, so one substring identifies Cairn entries across
- *  reinstalls; a user's own hook pointing into a Cairn install's hooks dir
+/** Every Waykeep hook — relay or node-form, current or legacy — lives under
+ *  the marker directory, so one substring identifies Waykeep entries across
+ *  reinstalls; a user's own hook pointing into a Waykeep install's hooks dir
  *  is effectively impossible. */
 const CAIRN_HOOK_MARKERS = [CAIRN_HOOK_DIR_MARKER];
 
@@ -35,7 +35,7 @@ interface Settings { mcpServers?: Record<string, unknown>; statusLine?: unknown;
 function nodeHook(script: string): HookCommand { return { type: 'command', command: `node ${join(HOOK_DIR, script)}` }; }
 function one(matcher: string, ...hooks: HookCommand[]): HookMatcher[] { return [{ matcher, hooks }]; }
 
-/** The canonical Cairn hook set (mirrors README section 3), built against the
+/** The canonical Waykeep hook set (mirrors README section 3), built against the
  *  resolved relay command prefix (compiled binary or shell fallback).
  *  Exported for tests that assert the generated commands per relay form. */
 export function cairnHooks(relayCmd: string): HookMap {
@@ -71,7 +71,7 @@ function cairnStatusLine(): Record<string, unknown> {
   return { type: 'command', command: `node ${join(HOOK_DIR, 'statusline.js')}` };
 }
 
-/** True when any command in the entry references a Cairn hook. A
+/** True when any command in the entry references a Waykeep hook. A
  *  malformed entry (no hooks array — user-authored settings are
  *  arbitrary JSON) is NOT ours: treating it as foreign preserves it,
  *  where `.some` on undefined aborted the whole init (review). */
@@ -80,8 +80,8 @@ function isCairnEntry(entry: HookMatcher): boolean {
     && entry.hooks.some(h => CAIRN_HOOK_MARKERS.some(marker => typeof h?.command === 'string' && h.command.includes(marker)));
 }
 
-/** Remove Cairn HANDLERS from entries, at handler granularity: a MIXED
- *  entry (a Cairn handler beside the user's own) keeps its foreign
+/** Remove Waykeep HANDLERS from entries, at handler granularity: a MIXED
+ *  entry (a Waykeep handler beside the user's own) keeps its foreign
  *  handlers — entry-level removal deleted them (review). Entries left
  *  empty drop; returns null when nothing remains for the event. */
 function sweepCairnHandlers(entries: HookMatcher[]): { kept: HookMatcher[] | null; swept: boolean } {
@@ -99,10 +99,10 @@ function sweepCairnHandlers(entries: HookMatcher[]): { kept: HookMatcher[] | nul
 interface MergePlan { changed: string[]; skipped: string[]; result: Settings }
 
 /**
- * Merge Cairn's config into existing settings without clobbering the user's:
+ * Merge Waykeep's config into existing settings without clobbering the user's:
  * the `cairn` MCP server is set (other servers kept); each hook event gets
- * Cairn's entries with any prior Cairn entries replaced and non-Cairn entries
- * preserved; StatusLine is set only when absent or already Cairn's.
+ * Waykeep's entries with any prior Waykeep entries replaced and non-Waykeep entries
+ * preserved; StatusLine is set only when absent or already Waykeep's.
  */
 function mergeSettings(existing: Settings, relayCmd: string, statuslineOnly = false): MergePlan {
   const changed: string[] = [];
@@ -115,14 +115,14 @@ function mergeSettings(existing: Settings, relayCmd: string, statuslineOnly = fa
     result.statusLine = cairnStatusLine();
     changed.push('statusLine');
   } else {
-    skipped.push('statusLine (a non-Cairn StatusLine is already set — left untouched)');
+    skipped.push('statusLine (a non-Waykeep StatusLine is already set — left untouched)');
   }
   if (statuslineOnly) {
     // The flag MEANS "the plugin manages hooks + MCP", so settings.json
     // must not keep a parallel set: an existing user who ran a full
     // init under the old docs and then installed the plugin stayed
     // double-wired (two briefings per session) with nothing to remove
-    // it (review N4). Sweep Cairn's entries; foreign ones untouched.
+    // it (review N4). Sweep Waykeep's entries; foreign ones untouched.
     const hooks: HookMap = { ...(existing.hooks ?? {}) };
     let sweptEvents = 0;
     for (const [event, entries] of Object.entries(hooks)) {
@@ -135,7 +135,7 @@ function mergeSettings(existing: Settings, relayCmd: string, statuslineOnly = fa
     }
     if (sweptEvents > 0) {
       result.hooks = hooks;
-      changed.push(`hooks (${sweptEvents} event(s) of settings-wired Cairn hooks removed — the plugin provides them)`);
+      changed.push(`hooks (${sweptEvents} event(s) of settings-wired Waykeep hooks removed — the plugin provides them)`);
     }
     const existingServer = (existing.mcpServers ?? {}).cairn as { args?: unknown[] } | undefined;
     if (existingServer && JSON.stringify(existingServer).includes('dist/src/mcp/server.js')) {
@@ -159,7 +159,7 @@ function mergeSettings(existing: Settings, relayCmd: string, statuslineOnly = fa
     const preserved = (hooks[event] ?? []).filter(entry => !isCairnEntry(entry));
     hooks[event] = [...preserved, ...cairnEntries];
   }
-  // Orphan sweep: Cairn entries under events the CURRENT hook set no
+  // Orphan sweep: Waykeep entries under events the CURRENT hook set no
   // longer wires (e.g. FileChanged after its removal) would otherwise
   // survive every upgrade forever, pointing at whatever install wrote
   // them (review). Foreign entries under those events are untouched.
@@ -169,7 +169,7 @@ function mergeSettings(existing: Settings, relayCmd: string, statuslineOnly = fa
     if (swept) {
       if (kept) hooks[event] = kept;
       else delete hooks[event];
-      changed.push(`hooks.${event} (stale Cairn entries removed)`);
+      changed.push(`hooks.${event} (stale Waykeep entries removed)`);
     }
   }
   result.hooks = hooks;
@@ -210,7 +210,7 @@ export interface InitOptions {
 
 /** Run init; returns the process exit code. */
 export function runInit(options: InitOptions = {}): number {
-  console.log(`cairn init — configuring clients for this install\n  install: ${PKG_ROOT}\n`);
+  console.log(`waykeep init — configuring clients for this install\n  install: ${PKG_ROOT}\n`);
 
   const hasRelay = existsSync(relayBinaryPath(HOOK_DIR)) || existsSync(relayShellPath(HOOK_DIR));
   if (!hasRelay || !existsSync(SERVER)) {
@@ -230,7 +230,7 @@ export function runInit(options: InitOptions = {}): number {
 
   console.log(`Relay: ${relay.kind === 'binary'
     ? 'compiled hook-relay (fast path)'
-    : 'shell fallback (hook-relay.sh) — run `cairn build-relay` where a C compiler is available for the fast path'}`);
+    : 'shell fallback (hook-relay.sh) — run `waykeep build-relay` where a C compiler is available for the fast path'}`);
   console.log('Claude Code (~/.claude/settings.json):');
   for (const change of plan.changed) console.log(`  ✓ ${change}`);
   for (const skip of plan.skipped) console.log(`  ! ${skip}`);
@@ -265,11 +265,11 @@ export function runInit(options: InitOptions = {}): number {
   const detected = OTHER_CLIENTS.filter(c => existsSync(join(homedir(), c.dir)));
   if (detected.length > 0) {
     console.log(`\nOther MCP clients detected: ${detected.map(c => c.name).join(', ')}`);
-    console.log(`  Cairn works as an MCP server in any of them. Register this command:`);
+    console.log(`  Waykeep works as an MCP server in any of them. Register this command:`);
     console.log(`    node ${SERVER}`);
     console.log(`  (each client's MCP config format differs, so init does not edit them automatically)`);
   }
 
-  console.log(`\ncairn init: done${options.dryRun ? ' (dry run)' : ''}. Run \`cairn doctor\` to verify.`);
+  console.log(`\nwaykeep init: done${options.dryRun ? ' (dry run)' : ''}. Run \`waykeep doctor\` to verify.`);
   return 0;
 }

@@ -1,5 +1,5 @@
 /**
- * MCP Resource registrations for Cairn.
+ * MCP Resource registrations for Waykeep.
  * Exposes read-only views of plan state and briefings without token budget constraints.
  */
 import { ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -32,7 +32,7 @@ export function registerResources(
       // (step descriptions, decision rationale) is richer than most
       // memory rows and gets the same protection.
       if (!canReadPrivate(project, sessionProjectId())) {
-        return { contents: [{ uri: uri.href, mimeType: 'text/plain', text: `[Cairn] ${project} is marked private — its plan is available only from a session inside that project.` }] };
+        return { contents: [{ uri: uri.href, mimeType: 'text/plain', text: `[Waykeep] ${project} is marked private — its plan is available only from a session inside that project.` }] };
       }
       const plan = planRepo.getActive(project);
       if (!plan) {
@@ -58,12 +58,12 @@ export function registerResources(
         return {
           contents: [{
             uri: uri.href,
-            text: `[Cairn] ${project} is marked private — its briefing is available only from a session inside that project.`,
+            text: `[Waykeep] ${project} is marked private — its briefing is available only from a session inside that project.`,
           }],
         };
       }
       const lines: string[] = [];
-      lines.push(`[Cairn Full Briefing — ${project}]`);
+      lines.push(`[Waykeep Full Briefing — ${project}]`);
 
       // Plan state
       const plan = planRepo.getActive(project);

@@ -417,7 +417,7 @@ describe('runner — end-to-end on the fixture', () => {
 
     const report = JSON.parse(toJsonReport(run, {
       dataset: 'fixture', datasetRevision: 'rev123', datasetSha256: 'sha456',
-      harnessCommit: 'abc1234', harnessVersion: 'cairn-memory@5.1.0',
+      harnessCommit: 'abc1234', harnessVersion: 'waykeep@5.1.0',
     }));
     assert.equal(report.meta.variant_label, 'hybrid-fts-fallback');
     assert.equal(report.meta.corpus_mode, 'user-only');

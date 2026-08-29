@@ -36,7 +36,7 @@ describe('Briefing Compiler', () => {
     };
 
     const briefing = compileBriefing(memoryRepo, planRepo, ctx);
-    assert.ok(briefing.text.includes('[Cairn Memory Briefing]'));
+    assert.ok(briefing.text.includes('[Waykeep Memory Briefing]'));
     assert.ok(briefing.text.includes('test-proj'));
     assert.ok(briefing.tokenEstimate > 0);
   });

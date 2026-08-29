@@ -36,7 +36,7 @@
              │ Unix socket                 │
              ▼                             ▼
 ┌──────────────────────────────────────────────────────────┐
-│ Cairn MCP Server (single Node.js process)                │
+│ Waykeep MCP Server (single Node.js process)                │
 │                                                          │
 │  ┌────────────────────┐  ┌─────────────────────────────┐ │
 │  │ Embedded Hook      │  │ MCP Protocol Server         │ │
@@ -65,7 +65,7 @@
 ```
 
 
-## Manual configuration (what `cairn init` automates)
+## Manual configuration (what `waykeep init` automates)
 
 ### 2. Configure MCP Server
 
@@ -87,23 +87,23 @@ Add to your Claude Code settings (`~/.claude/settings.json`):
 
 ### 3. Configure Hooks And StatusLine
 
-Add all hook events to your `settings.json`. Every hook is important: missing hooks create blind spots in Cairn's learning. Most hooks should call the compiled relay so they run against the shared hook socket at `~/.cairn/hook-daemon.sock`; the relay falls back to direct Node when the socket is unavailable. `PreCompact` and `SessionEnd` are standalone Node hooks because they are not socket routes. `StatusLine` is not a hook event, but it is required for context-pressure tracking and dynamic briefing budgets.
+Add all hook events to your `settings.json`. Every hook is important: missing hooks create blind spots in Waykeep's learning. Most hooks should call the compiled relay so they run against the shared hook socket at `~/.cairn/hook-daemon.sock`; the relay falls back to direct Node when the socket is unavailable. `PreCompact` and `SessionEnd` are standalone Node hooks because they are not socket routes. `StatusLine` is not a hook event, but it is required for context-pressure tracking and dynamic briefing budgets.
 
 The socket has exactly one owner at a time, arbitrated cooperatively (a live owner is never displaced): the standalone daemon below when installed, otherwise the first agent client's MCP server to start (embedded mode). Client servers that find a live owner share its socket and relay their write-tool cache invalidations to it over `/bump-memory-version`.
 
 
 ### 3c. Codex CLI (cross-agent parity)
 
-Cairn gives Codex the same automatic experience Claude Code gets — session
+Waykeep gives Codex the same automatic experience Claude Code gets — session
 briefing, ambient recall, pre-tool pitfall warnings, and auto-capture of
 errors/decisions/successes into the same shared store, with per-memory
-`origin_client` provenance. `cairn init` wires it when `~/.codex` exists:
+`origin_client` provenance. `waykeep init` wires it when `~/.codex` exists:
 it generates `~/.codex/hooks.json` (every event through the relay with
 `--client codex`) and registers the MCP server in `~/.codex/config.toml`.
 
 **One manual step**: Codex hash-pins hooks and silently skips them until you
-approve them once. After `cairn init`, start `codex` — the startup review
-lists the 10 "Cairn memory hooks"; accept them (or use `/hooks`). Trust
+approve them once. After `waykeep init`, start `codex` — the startup review
+lists the 10 "Waykeep memory hooks"; accept them (or use `/hooks`). Trust
 survives reinstalls as long as the hook commands don't change; `cairn
 doctor`'s `codex parity` check reports wired / awaiting-trust state.
 
@@ -143,7 +143,7 @@ sqlite3 ~/.cairn/cairn.db "SELECT kind, COUNT(*) FROM memories WHERE invalidated
 
 ### 5. Optional: Use as Primary Memory
 
-To use Cairn as Claude's primary memory instead of the built-in file-based auto memory:
+To use Waykeep as Claude's primary memory instead of the built-in file-based auto memory:
 
 1. Add `"autoMemoryEnabled": false` to your `~/.claude/settings.json` (suppresses built-in MEMORY.md writes)
 2. Copy `.claude/rules/cairn.md` to your project (or symlink for global use)
@@ -153,9 +153,9 @@ To use Cairn as Claude's primary memory instead of the built-in file-based auto 
 
 ### 6. Optional: Claude Memory-Tool Backend
 
-Cairn implements the handler side of Anthropic's `memory_20250818` tool:
+Waykeep implements the handler side of Anthropic's `memory_20250818` tool:
 Claude browses and edits `/memories/**` through the standard six file
-commands while every write lands in Cairn's structured store — CAS-token
+commands while every write lands in Waykeep's structured store — CAS-token
 edit grammar, smart-merge gateway, frozen paging, and per-command write
 transactions included.
 
@@ -218,7 +218,7 @@ Test-environment overrides (all set automatically by `tests/hermetic-env.cjs`):
 
 ## Truth Maintenance
 
-Cairn keeps stored facts and decisions trustworthy without deleting anything:
+Waykeep keeps stored facts and decisions trustworthy without deleting anything:
 
 - **Supersession** — when a new fact/decision gives a newer semver value for the same subject ("node 18.1" → "20.3"), the older claim is retired (excluded from recall, kept queryable). This is the only path that hides a memory, so it's limited to unambiguous version advances — a lower-authority observation never silently retires a higher-authority claim, and a bare-number difference (error codes, ports, counts) is treated as a contradiction to flag, not a supersession.
 - **Standing contradiction** — genuinely opposing memories (negation/antonym flip on the same subject, scope-guarded) get a `contradicts` edge; both keep surfacing and the briefing lists them under "Conflicting memories — verify & resolve." Nothing is auto-resolved.

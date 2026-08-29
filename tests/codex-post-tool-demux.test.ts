@@ -208,7 +208,7 @@ describe('error synthesis (classifier-facing contract)', () => {
       const p = join(dir, 'unlearnable.jsonl');
       writeFileSync(p, rolloutLine({
         id: 'exec-plain-fail', type: 'CommandExecution', status: 'failed', exit_code: 3,
-        aggregated_output: `> cairn-memory@5.2.0 test UNLEARN-${RUN}\nordinary build output, no error signature\n`,
+        aggregated_output: `> waykeep@5.2.0 test UNLEARN-${RUN}\nordinary build output, no error signature\n`,
       }));
       const before = (client.db.prepare("SELECT COUNT(*) n FROM memories WHERE kind='pitfall'").get() as { n: number }).n;
       const result = await handleCodexPostTool({

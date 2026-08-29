@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
- * PostToolUse hook for ExitPlanMode — bridges Claude Code plan mode to Cairn's
+ * PostToolUse hook for ExitPlanMode — bridges Claude Code plan mode to Waykeep's
  * persistent plan system. When the assistant exits plan mode, auto-creates a
- * Cairn plan from the plan file written during plan mode.
+ * Waykeep plan from the plan file written during plan mode.
  *
  * Plan file discovery: reads the EditTracker's toolChain to find the most
  * recent Write event (the plan file), then parses its markdown content.
@@ -67,7 +67,7 @@ try {
   process.exit(0);
 }
 
-/** Create a persistent Cairn plan and output confirmation context */
+/** Create a persistent Waykeep plan and output confirmation context */
 function createCairnPlan(
   input: PostToolUseInput,
   planContent: { name: string; steps: string[] },
@@ -87,7 +87,7 @@ function createCairnPlan(
       steps,
     });
 
-    const msg = `[CAIRN] Plan auto-persisted: "${planContent.name}" (${steps.length} steps). Survives compaction. Use cairn_plan(step) to track progress.`;
+    const msg = `[WAYKEEP] Plan auto-persisted: "${planContent.name}" (${steps.length} steps). Survives compaction. Use cairn_plan(step) to track progress.`;
     // Same cost row the shared handler records — plan-bridge is a SYNC
     // route, so this stdout IS delivered (standalone twin must not be the
     // one uncounted path; review round 2).

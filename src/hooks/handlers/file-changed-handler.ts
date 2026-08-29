@@ -34,7 +34,7 @@ function handleFileChangedBusiness(input: FileChangedInput, client: HookDbClient
   const reminders = client.reminderRepo.checkFileReminders(filePath, project);
 
   if (reminders.length > 0) {
-    const lines = reminders.map(r => `[CAIRN] Reminder: ${r.action}`);
+    const lines = reminders.map(r => `[WAYKEEP] Reminder: ${r.action}`);
     // NOT a report cost surface: file-changed is an ASYNC route, so this
     // additionalContext is never injected (async responses are discarded)
     // — recording it billed for undelivered text (review round 2). Same

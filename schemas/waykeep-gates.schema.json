@@ -1,5 +1,5 @@
 {
-  "$id": "https://cairn.dev/schemas/cairn-gates.schema.json",
+  "$id": "https://waykeep.dev/schemas/waykeep-gates.schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "properties": {
@@ -205,6 +205,6 @@
     "gates",
     "pathRules"
   ],
-  "title": "Cairn gate configuration v1",
+  "title": "Waykeep gate configuration v1",
   "type": "object"
 }

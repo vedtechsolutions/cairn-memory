@@ -31,8 +31,8 @@ import { writeState } from '../src/hooks/shared/state-io.js';
 import { projectId } from '../src/utils/project-id.js';
 import { BRIEFING_BUDGET } from '../src/constants/index.js';
 
-const FULL_HEADER = '[Cairn Memory Briefing]';
-const INDEX_HEADER = '[Cairn Memory Briefing — index]';
+const FULL_HEADER = '[Waykeep Memory Briefing]';
+const INDEX_HEADER = '[Waykeep Memory Briefing — index]';
 
 let db: Database.Database;
 let memoryRepo: MemoryRepository;
@@ -218,7 +218,7 @@ describe('briefing content', () => {
     mkdirSync(join(cwd, '.cairn'));
     writeFileSync(join(cwd, '.cairn', 'gates.json'), '{}');
     const governed = handleSessionStart(makeInput(randomUUID(), 'startup'), client);
-    assert.match(governed.output, /\[Cairn Governance — advisory; not enforced\]/u);
+    assert.match(governed.output, /\[Waykeep Governance — advisory; not enforced\]/u);
     assert.ok(governed.tokenEstimate <= BRIEFING_BUDGET.STARTUP_MAX);
   });
 

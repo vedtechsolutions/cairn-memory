@@ -12,7 +12,7 @@
  * Claude's mutually-exclusive PostToolUse/PostToolUseFailure split.
  */
 import type Database from 'better-sqlite3';
-import type { ToolOutcome } from 'cairn-contract';
+import type { ToolOutcome } from 'waykeep-contract';
 import type { PostToolUseInput, PostToolUseFailureInput } from '../shared/hook-io.js';
 import type { CachedHookContext } from '../shared/db-client.js';
 import { adapterFor } from '../shared/client-adapter.js';

@@ -2,7 +2,7 @@
  * Durable tokens-saved aggregates (schema v30, `telemetry_rollup`).
  *
  * hook_telemetry answers "are the hooks healthy" and is pruned at 7 days;
- * this table answers "what is Cairn worth in tokens" and keeps a year.
+ * this table answers "what is Waykeep worth in tokens" and keeps a year.
  * One row per (session, surface) event, written best-effort from the
  * hook handlers — a rollup failure must never affect a hook, and when
  * disabled (config `report.rollup: false`, or CAIRN_ROLLUP=0) the write

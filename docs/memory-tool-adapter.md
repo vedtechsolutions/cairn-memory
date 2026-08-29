@@ -1,9 +1,9 @@
-# Memory-Tool Adapter: Cairn as a Claude memory backend
+# Memory-Tool Adapter: Waykeep as a Claude memory backend
 
-Cairn implements the handler side of Anthropic's `memory_20250818` tool:
+Waykeep implements the handler side of Anthropic's `memory_20250818` tool:
 Claude reads and edits its memory through the standard six file commands
 (`view`, `create`, `str_replace`, `insert`, `delete`, `rename`) while every
-write lands in Cairn's structured store — same records, same smart-merge
+write lands in Waykeep's structured store — same records, same smart-merge
 gateway, same truth maintenance as `cairn_learn`/`cairn_recall`.
 
 Design contract: `docs/plans/2026-07-22-w4-memory-tool-adapter-design.md`
@@ -21,9 +21,9 @@ npm install @anthropic-ai/sdk@0.113.0
 ```ts
 import Anthropic from '@anthropic-ai/sdk';
 import { betaMemoryTool } from '@anthropic-ai/sdk/helpers/beta/memory';
-import { openDatabase } from 'cairn-memory/dist/src/db/connection.js';
-import { PlanRepository } from 'cairn-memory/dist/src/db/plan-repository.js';
-import { createMemoryToolHandlers } from 'cairn-memory/dist/src/memory-tool/sdk-adapter.js';
+import { openDatabase } from 'waykeep/dist/src/db/connection.js';
+import { PlanRepository } from 'waykeep/dist/src/db/plan-repository.js';
+import { createMemoryToolHandlers } from 'waykeep/dist/src/memory-tool/sdk-adapter.js';
 
 const db = openDatabase(); // resolves the default ~/.cairn/cairn.db
 const tool = betaMemoryTool(createMemoryToolHandlers({

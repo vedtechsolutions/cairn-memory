@@ -62,7 +62,7 @@ export function isMetaGoal(goal: string): boolean {
     /\bi('m| am) (going to )?(exit|leave|go\b(?! ahead))/,
     /\b(come|coming|came) back\b/,
     /\bi('m| am) back\b/,
-    // SNR/briefing meta-analysis — about Cairn itself, not a task
+    // SNR/briefing meta-analysis — about Waykeep itself, not a task
     /\bsnr\b.*\b(analysis|ratio|score)\b/,
     /\bsnr\b.*\b(to|at least|above|over|up to)\b.*\d/,  // "bring SNR to 95%" — metric targets
     /\b(bring|get|raise|push)\b.*\bsnr\b/,               // "bring up our SNR" in any form

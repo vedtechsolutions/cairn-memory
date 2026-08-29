@@ -1454,7 +1454,7 @@ describe('Tier-Based Briefing: Budget Allocation', () => {
     const ctx: BriefingContext = { project: 'tp', sessionType: 'startup', interrupted: false };
     const result = compileBriefing(memRepo, planRepo, ctx);
 
-    assert.ok(result.text.includes('[Cairn Memory Briefing]'), 'should have header');
+    assert.ok(result.text.includes('[Waykeep Memory Briefing]'), 'should have header');
     assert.ok(!result.text.includes('Decisions:'), 'no decisions section when empty');
     assert.ok(!result.text.includes('Pitfalls:'), 'no pitfalls section when empty');
     assert.ok(result.includedPitfallIds.length === 0);

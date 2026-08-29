@@ -350,7 +350,7 @@ export function inspectGates(options: InspectGatesOptions): InspectorReport {
 
 export function renderInspectorText(report: InspectorReport): string {
   const lines = [
-    'Cairn gate inspector',
+    'Waykeep gate inspector',
     `Project: ${JSON.stringify(report.projectRoot)}`,
     `Mode: ${report.mode}`,
     `Config: v${report.config.version} sha256:${report.config.sha256}`,

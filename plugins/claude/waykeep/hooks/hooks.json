@@ -1,5 +1,5 @@
 {
-  "description": "Cairn memory hooks — passive briefing, ambient recall, pitfall warnings, auto-capture. Requires cairn-memory installed from npm (npm install -g cairn-memory).",
+  "description": "Waykeep memory hooks — passive briefing, ambient recall, pitfall warnings, auto-capture. Requires waykeep installed from npm (npm install -g waykeep).",
   "hooks": {
     "SessionStart": [
       {
@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/bin/cairn-relay.sh session-start"
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/waykeep-relay.sh session-start"
           }
         ]
       }
@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/bin/cairn-relay.sh prompt-check"
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/waykeep-relay.sh prompt-check"
           }
         ]
       }
@@ -29,7 +29,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/bin/cairn-relay.sh pitfall-check"
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/waykeep-relay.sh pitfall-check"
           }
         ]
       },
@@ -38,7 +38,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/bin/cairn-relay.sh pitfall-check"
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/waykeep-relay.sh pitfall-check"
           }
         ]
       }
@@ -49,7 +49,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/bin/cairn-relay.sh success-tracker",
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/waykeep-relay.sh success-tracker",
             "async": true
           }
         ]
@@ -59,7 +59,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/bin/cairn-relay.sh plan-bridge"
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/waykeep-relay.sh plan-bridge"
           }
         ]
       }
@@ -70,7 +70,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/bin/cairn-relay.sh error-learning",
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/waykeep-relay.sh error-learning",
             "async": true
           }
         ]
@@ -82,7 +82,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/bin/cairn-relay.sh --node precompact.js"
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/waykeep-relay.sh --node precompact.js"
           }
         ]
       }
@@ -93,7 +93,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/bin/cairn-relay.sh postcompact"
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/waykeep-relay.sh postcompact"
           }
         ]
       }
@@ -104,7 +104,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/bin/cairn-relay.sh --node session-end.js"
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/waykeep-relay.sh --node session-end.js"
           }
         ]
       }
@@ -115,7 +115,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/bin/cairn-relay.sh subagent-context"
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/waykeep-relay.sh subagent-context"
           }
         ]
       }
@@ -126,11 +126,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/bin/cairn-relay.sh governance-gate"
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/waykeep-relay.sh governance-gate"
           },
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/bin/cairn-relay.sh stop",
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/waykeep-relay.sh stop",
             "async": true
           }
         ]
@@ -142,7 +142,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/bin/cairn-relay.sh subagent-stop",
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/waykeep-relay.sh subagent-stop",
             "async": true
           }
         ]
@@ -154,7 +154,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/bin/cairn-relay.sh stop-failure",
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/waykeep-relay.sh stop-failure",
             "async": true
           }
         ]

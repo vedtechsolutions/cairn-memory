@@ -15,7 +15,7 @@
  * src/adapters/ — separate on purpose, so this hot-path module never
  * loads installer or worker code.
  */
-import type { ClientAdapter, AdapterCapabilities, RawHookPayload } from 'cairn-contract';
+import type { ClientAdapter, AdapterCapabilities, RawHookPayload } from 'waykeep-contract';
 import { CLIENT_CLAUDE, CLIENT_CODEX, CLIENT_UNKNOWN } from '../../constants/clients.js';
 import { parseTranscript, emptySnapshot, type TranscriptSnapshot } from './transcript-parser.js';
 
@@ -54,7 +54,7 @@ const codexAdapter: ClientAdapter = {
   name: CLIENT_CODEX,
   capabilities: CODEX_CAPABILITIES,
   // SessionStart dialect: Codex names the session-origin field `source`
-  // where Cairn's handlers read `type`. Gated on DECLARED identity:
+  // where Waykeep's handlers read `type`. Gated on DECLARED identity:
   // Claude Code also sends `source`, but its sessionType is deliberately
   // derived by tracker/snapshot inference — mapping it there would be an
   // unreviewed Claude behavior change. Explicit `type` wins.

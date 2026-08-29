@@ -1,5 +1,5 @@
 /**
- * Round-trip format v2 — now owned by cairn-contract (it IS the portable
+ * Round-trip format v2 — now owned by waykeep-contract (it IS the portable
  * format). This shim keeps in-tree import sites stable.
  */
 export {
@@ -8,4 +8,4 @@ export {
   assertPortableFilePath, validateContextShape, validateFingerprintShape,
   validateRecordPayload, parseExportDocument,
   type PortableRecord, type PortableFile, type ParsedExport,
-} from 'cairn-contract';
+} from 'waykeep-contract';

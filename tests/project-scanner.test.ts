@@ -30,7 +30,7 @@ describe('scanProject', () => {
 
   it('should extract project name from package.json', () => {
     const ctx = scanProject(process.cwd());
-    assert.equal(ctx.projectName, 'cairn-memory');
+    assert.equal(ctx.projectName, 'waykeep');
   });
 
   it('should extract structure from directory listing', () => {

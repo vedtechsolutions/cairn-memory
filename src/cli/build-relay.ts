@@ -1,5 +1,5 @@
 /**
- * `cairn build-relay` — compile the C hook relay from the shipped source.
+ * `waykeep build-relay` — compile the C hook relay from the shipped source.
  *
  * The compiled relay is an optional fast path (it avoids per-hook process
  * startup). Where a C compiler is available, this builds it with the same
@@ -24,7 +24,7 @@ const CC_FLAGS = [
 
 export function runBuildRelay(): number {
   if (!existsSync(SRC)) {
-    console.error(`cairn build-relay: relay source missing at ${SRC}`);
+    console.error(`waykeep build-relay: relay source missing at ${SRC}`);
     return 1;
   }
   mkdirSync(dirname(OUT), { recursive: true });
@@ -38,17 +38,17 @@ export function runBuildRelay(): number {
     const hint = code === 'ENOENT'
       ? `no C compiler found (tried "${cc}") — set CC or install one; hooks use the shell fallback meanwhile`
       : result.error.message;
-    console.error(`cairn build-relay: ${hint}`);
+    console.error(`waykeep build-relay: ${hint}`);
     return 1;
   }
   if (result.status !== 0) {
     // A stricter/older or non-gcc/clang compiler may reject a hardening flag;
     // retry with plain -O2 so a machine that HAS a compiler still gets the fast
     // path (the security flags are a hardening nicety, not a correctness need).
-    console.error('cairn build-relay: hardened compile failed; retrying with -O2 only');
+    console.error('waykeep build-relay: hardened compile failed; retrying with -O2 only');
     result = compile(['-O2']);
     if (result.error || result.status !== 0) {
-      console.error(`cairn build-relay: compilation failed (exit ${result.status ?? 'signal'})`);
+      console.error(`waykeep build-relay: compilation failed (exit ${result.status ?? 'signal'})`);
       return 1;
     }
   }
@@ -58,6 +58,6 @@ export function runBuildRelay(): number {
     copyFileSync(SHELL_SRC, SHELL_OUT);
     chmodSync(SHELL_OUT, EXEC_MODE);
   }
-  console.log(`cairn build-relay: compiled ${OUT}`);
+  console.log(`waykeep build-relay: compiled ${OUT}`);
   return 0;
 }

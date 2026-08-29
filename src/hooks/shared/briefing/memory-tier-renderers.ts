@@ -108,7 +108,7 @@ export function renderTier2(
 
     for (const d of rendered) {
       const eff = computeEffectiveness(d);
-      // Neutralize untrusted memory text so it can't impersonate Cairn's
+      // Neutralize untrusted memory text so it can't impersonate Waykeep's
       // system voice when injected back into the briefing (see H2).
       const content = neutralizeMemoryText(d.content);
       let line: string;

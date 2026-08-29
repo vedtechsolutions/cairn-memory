@@ -1,7 +1,7 @@
 {
-  "name": "cairn-memory",
-  "version": "5.4.0",
-  "description": "Local-first shared memory for AI coding agents — one ambient memory across Claude Code and Codex: session briefings, pitfall warnings before repeated mistakes, auto-learned lessons with per-agent provenance, and post-compaction recovery. MCP server + lifecycle hooks on SQLite, FTS5, and local vector embeddings.",
+  "name": "waykeep",
+  "version": "5.5.0",
+  "description": "Local-first shared memory for AI coding agents — one ambient memory across Claude Code and Codex: session briefings, pitfall warnings before repeated mistakes, auto-learned lessons with per-agent provenance, and post-compaction recovery. MCP server + lifecycle hooks on SQLite, FTS5, and local vector embeddings. Formerly published as cairn-memory.",
   "keywords": [
     "mcp",
     "model-context-protocol",
@@ -25,6 +25,7 @@
   "type": "module",
   "main": "dist/src/mcp/server.js",
   "bin": {
+    "waykeep": "dist/src/cli/index.js",
     "cairn": "dist/src/cli/index.js"
   },
   "files": [
@@ -54,11 +55,11 @@
   "license": "Elastic-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/vedtechsolutions/cairn-memory.git"
+    "url": "git+https://github.com/vedtechsolutions/waykeep.git"
   },
-  "homepage": "https://github.com/vedtechsolutions/cairn-memory#readme",
+  "homepage": "https://github.com/vedtechsolutions/waykeep#readme",
   "bugs": {
-    "url": "https://github.com/vedtechsolutions/cairn-memory/issues"
+    "url": "https://github.com/vedtechsolutions/waykeep/issues"
   },
   "dependencies": {
     "@anthropic-ai/tokenizer": "^0.0.4",
@@ -67,7 +68,7 @@
     "better-sqlite3": "^12.11.1",
     "sqlite-vec": "^0.1.8",
     "zod": "^3.25.56",
-    "cairn-contract": "1.0.0-dev.0"
+    "waykeep-contract": "1.0.0-dev.1"
   },
   "devDependencies": {
     "@anthropic-ai/sdk": "0.113.0",
@@ -79,6 +80,6 @@
     "packages/contract"
   ],
   "bundleDependencies": [
-    "cairn-contract"
+    "waykeep-contract"
   ]
 }

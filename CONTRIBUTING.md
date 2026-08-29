@@ -1,14 +1,14 @@
-# Contributing to Cairn
+# Contributing to Waykeep
 
-Thanks for your interest in improving Cairn. This document covers how to get set up, what we expect from changes, and the contribution terms.
+Thanks for your interest in improving Waykeep. This document covers how to get set up, what we expect from changes, and the contribution terms.
 
 ## Getting started
 
 Requirements: Node.js `>= 20`. A C compiler is optional — it builds the fast hook relay, but the install works without one and falls back to a shell relay.
 
 ```bash
-git clone https://github.com/vedtechsolutions/cairn-memory.git
-cd cairn-memory
+git clone https://github.com/vedtechsolutions/waykeep.git
+cd waykeep
 npm install
 npm run build
 npm test        # full suite runs on clean in-memory databases
@@ -48,8 +48,8 @@ We also use the [DCO](https://developercertificate.org/). Sign off each commit w
 
 ## Project licenses
 
-The `cairn-memory` runtime is licensed under the **Elastic License 2.0**; the `cairn-contract` package under **MIT**. Your contributions are distributed under the license of the package they land in (and under other terms VEDTECH may choose, per the CLA). Do not submit code you do not have the right to contribute.
+The `waykeep` runtime is licensed under the **Elastic License 2.0**; the `waykeep-contract` package under **MIT**. Your contributions are distributed under the license of the package they land in (and under other terms VEDTECH may choose, per the CLA). Do not submit code you do not have the right to contribute.
 
 ## Questions
 
-Open an [issue](https://github.com/vedtechsolutions/cairn-memory/issues) or email **info@vedtechsolutions.com**.
+Open an [issue](https://github.com/vedtechsolutions/waykeep/issues) or email **info@vedtechsolutions.com**.

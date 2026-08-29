@@ -1,5 +1,5 @@
 /**
- * Hook-relay resolution shared by `cairn init` and `cairn doctor`.
+ * Hook-relay resolution shared by `waykeep init` and `waykeep doctor`.
  *
  * The compiled C relay is a performance optimization. The shell relay
  * (`hook-relay.sh`, bash + curl) is a complete drop-in — same socket protocol,

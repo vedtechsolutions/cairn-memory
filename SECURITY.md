@@ -13,7 +13,7 @@ Cairn follows semantic versioning. Security fixes land on the latest published m
 
 **Please do not open a public issue for security vulnerabilities.**
 
-Report privately through GitHub's [private vulnerability reporting](https://github.com/vedtechsolutions/cairn-memory/security/advisories/new) (the repository's **Security → Report a vulnerability**), or email **info@vedtechsolutions.com** with:
+Report privately through GitHub's [private vulnerability reporting](https://github.com/vedtechsolutions/waykeep/security/advisories/new) (the repository's **Security → Report a vulnerability**), or email **info@vedtechsolutions.com** with:
 
 - a description of the issue and its impact,
 - steps to reproduce (a minimal proof of concept if possible),

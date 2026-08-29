@@ -1,6 +1,6 @@
-# cairn-contract
+# waykeep-contract
 
-The integration contract for [Cairn](https://github.com/vedtechsolutions/cairn-memory) — types and constants only, zero dependencies.
+The integration contract for [Cairn](https://github.com/vedtechsolutions/waykeep) — types and constants only, zero dependencies.
 
 This package defines the surfaces a client adapter or external integration builds against:
 
@@ -15,14 +15,14 @@ This package defines the surfaces a client adapter or external integration build
 ## Install
 
 ```sh
-npm install cairn-contract
+npm install waykeep-contract
 ```
 
 ## Usage
 
 ```ts
-import type { ClientAdapterLifecycle } from 'cairn-contract';
-import { CONTEXT_MODES, INTENTS } from 'cairn-contract';
+import type { ClientAdapterLifecycle } from 'waykeep-contract';
+import { CONTEXT_MODES, INTENTS } from 'waykeep-contract';
 ```
 
 ## Stability

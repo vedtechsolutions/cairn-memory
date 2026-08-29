@@ -2,7 +2,7 @@
  * Shared importer helpers — ONE kind-inference heuristic and ONE slug
  * shape across all sources (three divergent copies invited drift;
  * review). Inference is deliberately conservative: imports land at
- * default confidence, and Cairn's decay/feedback loops correct
+ * default confidence, and Waykeep's decay/feedback loops correct
  * misclassification over time.
  */
 import type { LearnSection } from './learn-pipeline.js';

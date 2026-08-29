@@ -312,7 +312,7 @@ function handleErrorLearningBusiness(input: PostToolUseFailureInput, client: Cac
     const mem = client.memoryRepo.findById(result.id);
     if (mem) {
       return {
-        output: buildOutputJson('PostToolUseFailure', `[CAIRN] Repeated error. Previous lesson: "${mem.content}"`),
+        output: buildOutputJson('PostToolUseFailure', `[WAYKEEP] Repeated error. Previous lesson: "${mem.content}"`),
         action: 'learned-deduped',
         sessionCount,
         surfacedProcessed,
@@ -342,7 +342,7 @@ function handleErrorLearningBusiness(input: PostToolUseFailureInput, client: Cac
   } catch { /* best-effort */ }
 
   return {
-    output: buildOutputJson('PostToolUseFailure', `[CAIRN] ${lesson}`),
+    output: buildOutputJson('PostToolUseFailure', `[WAYKEEP] ${lesson}`),
     action: 'learned-new',
     sessionCount,
     surfacedProcessed,
@@ -382,7 +382,7 @@ function buildEscalationMessage(
 function buildWarningMessage(errorText: string, filePath?: string): string {
   const firstLine = errorText.split('\n')[0]?.trim().slice(0, 100) ?? 'unknown error';
   const context = filePath ? ` (${basename(filePath)})` : '';
-  return `[CAIRN] This error occurred before this session${context}: "${firstLine}"`;
+  return `[WAYKEEP] This error occurred before this session${context}: "${firstLine}"`;
 }
 
 function extractFilePaths(input: PostToolUseFailureInput): string[] {

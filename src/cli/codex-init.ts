@@ -1,9 +1,9 @@
 /**
- * Codex CLI wiring for `cairn init` / `cairn doctor` (parity step 5).
+ * Codex CLI wiring for `waykeep init` / `waykeep doctor` (parity step 5).
  *
  * Generates ~/.codex/hooks.json from this install's resolved relay (every
  * event through `hook-relay --client codex`, mirroring the Claude wiring),
- * merges it idempotently (non-Cairn hook groups preserved), and registers
+ * merges it idempotently (non-Waykeep hook groups preserved), and registers
  * the MCP server in ~/.codex/config.toml by appending a table when absent —
  * a scoped line-level edit, deliberately no TOML dependency.
  *
@@ -59,7 +59,7 @@ export type PostToolRoute = typeof POST_TOOL_ROUTE | typeof LEGACY_POST_TOOL_ROU
  * re-trust rides the migration for free). Per-command trust matters: a
  * trusted foreign hook or an already-trusted canonical route must not
  * make an untrusted legacy command look preservation-worthy. Migration
- * is otherwise an explicit opt-in (`cairn init --migrate-routes`).
+ * is otherwise an explicit opt-in (`waykeep init --migrate-routes`).
  */
 export function postToolRouteFor(
   trustedCommands: readonly string[],
@@ -76,9 +76,9 @@ export function codexHooks(relayCmd: string, postToolRoute: PostToolRoute = POST
   const sync = (sub: string, extra: Partial<CodexHookCommand> = {}): CodexMatcherGroup[] =>
     [{ hooks: [{ type: 'command', command: cmd(sub), timeout: SYNC_TIMEOUT_S, ...extra }] }];
   return {
-    description: 'Cairn memory hooks — passive briefing, ambient recall, pitfall warnings, auto-capture (same experience as Claude Code). Requires one interactive trust review at next Codex start.',
+    description: 'Waykeep memory hooks — passive briefing, ambient recall, pitfall warnings, auto-capture (same experience as Claude Code). Requires one interactive trust review at next Codex start.',
     hooks: {
-      SessionStart: sync('session-start', { statusMessage: 'Cairn briefing', additionalContextLimit: CONTEXT_LIMIT_TOKENS }),
+      SessionStart: sync('session-start', { statusMessage: 'Waykeep briefing', additionalContextLimit: CONTEXT_LIMIT_TOKENS }),
       UserPromptSubmit: sync('prompt-check', { additionalContextLimit: CONTEXT_LIMIT_TOKENS }),
       PreToolUse: [{ matcher: 'Bash|apply_patch', hooks: [{ type: 'command', command: cmd('pitfall-check'), timeout: SYNC_TIMEOUT_S }] }],
       PostToolUse: [{ matcher: 'Bash|apply_patch', hooks: [{ type: 'command', command: cmd(postToolRoute), timeout: ASYNC_TIMEOUT_S, async: true }] }],
@@ -94,13 +94,13 @@ export function codexHooks(relayCmd: string, postToolRoute: PostToolRoute = POST
 
 /** Count of (event, group, handler) hook tuples in the WHOLE file — the
  *  same basis the trust review and [hooks.state] use (file-scoped, not
- *  Cairn-scoped), so numerator and denominator always agree. */
+ *  Waykeep-scoped), so numerator and denominator always agree. */
 export function codexHookCount(file: CodexHooksFile): number {
   return Object.values(file.hooks ?? {}).reduce(
     (sum, groups) => sum + groups.reduce((s, g) => s + g.hooks.length, 0), 0);
 }
 
-/** The sorted Cairn command strings in a hooks file — trust is hash-pinned
+/** The sorted Waykeep command strings in a hooks file — trust is hash-pinned
  *  per handler, so a changed command set means Codex will re-review. */
 export function cairnCommandSet(file: Partial<CodexHooksFile>): string[] {
   const commands: string[] = [];
@@ -118,10 +118,10 @@ export function cairnCommandSet(file: Partial<CodexHooksFile>): string[] {
  * Merge, POSITION-STABLE: Codex pins trust to (event, group, handler)
  * INDICES as well as command hashes, so a merge that reorders groups
  * silently invalidates trust for every shifted hook — including foreign
- * ones — without changing any command. Therefore: the first all-Cairn
- * group is replaced IN PLACE; extra all-Cairn groups are dropped; a
- * mixed group keeps its foreign handlers (Cairn handlers stripped) at
- * its original index; a file with no Cairn group appends at the end.
+ * ones — without changing any command. Therefore: the first all-Waykeep
+ * group is replaced IN PLACE; extra all-Waykeep groups are dropped; a
+ * mixed group keeps its foreign handlers (Waykeep handlers stripped) at
+ * its original index; a file with no Waykeep group appends at the end.
  * Foreign events untouched; description ours (documents the trust step).
  */
 export function mergeCodexHooks(existing: Partial<CodexHooksFile>, generated: CodexHooksFile): CodexHooksFile {
@@ -136,10 +136,10 @@ export function mergeCodexHooks(existing: Partial<CodexHooksFile>, generated: Co
       } else if (foreign.length > 0) {
         merged.push({ ...group, hooks: foreign }); // mixed — keep the foreign handlers, same slot
       } else if (!placed) {
-        merged.push(...cairnGroups); // first all-Cairn slot — replace in place
+        merged.push(...cairnGroups); // first all-Waykeep slot — replace in place
         placed = true;
       }
-      // later all-Cairn groups: dropped (stale duplicates)
+      // later all-Waykeep groups: dropped (stale duplicates)
     }
     if (!placed) merged.push(...cairnGroups);
     hooks[event] = merged;
@@ -198,7 +198,7 @@ export function commandAt(file: Partial<CodexHooksFile>, entry: Pick<TrustStateE
  * (the hash inputs are Codex-internal), so the position join alone would
  * attribute a stale hash to whatever command now occupies the position —
  * e.g. after a hand-edit of hooks.json. The shadow records what each
- * position held at OUR last write; a Cairn command that no longer matches
+ * position held at OUR last write; a Waykeep command that no longer matches
  * its shadow entry is treated as untrusted (fail-safe: the worst case is
  * an unnecessary "trust step required", never a false "trusted"). Foreign
  * commands are not ours to attest and keep position-join semantics.
@@ -238,7 +238,7 @@ export function writeTrustShadow(hooksJsonPath: string, file: CodexHooksFile): v
 }
 
 /** The command strings whose pinned positions currently hold live trust
- *  (trusted_hash, not disabled), shadow-attested for Cairn commands —
+ *  (trusted_hash, not disabled), shadow-attested for Waykeep commands —
  *  per-command trust, which the file-wide counters cannot give. */
 export function trustedCommandsIn(configToml: string, hooksJsonPath: string, file: Partial<CodexHooksFile>): string[] {
   const shadow = readTrustShadow();
@@ -254,7 +254,7 @@ export function trustedCommandsIn(configToml: string, hooksJsonPath: string, fil
 }
 
 /** Remove exactly the [hooks.state] sections named by `keys` — scoped
- *  pruning, so invalidating one changed Cairn command never wipes the
+ *  pruning, so invalidating one changed Waykeep command never wipes the
  *  trust of unrelated (foreign) hooks sharing the file. */
 export function pruneTrustKeys(configToml: string, keys: ReadonlySet<string>): string {
   if (keys.size === 0) return configToml;
@@ -299,7 +299,7 @@ export function hasCairnMcpServer(configToml: string): boolean {
 export interface TrustCount { trusted: number; disabled: number }
 
 /** Count [hooks.state] entries for a hooks.json file. File-scoped like
- *  the state itself (Cairn and foreign hooks alike): an entry with
+ *  the state itself (Waykeep and foreign hooks alike): an entry with
  *  trusted_hash counts as trusted unless enabled = false. Derived from
  *  parseTrustState — ONE parser: if Codex ever changes the key shape,
  *  decisions AND displayed counts go to zero together, which reads as
@@ -337,7 +337,7 @@ function backupOnce(path: string): void {
   }
 }
 
-/** The Codex section of `cairn init`. Prints its own lines; never throws. */
+/** The Codex section of `waykeep init`. Prints its own lines; never throws. */
 export function runCodexInit(relayCmd: string, serverPath: string, dryRun: boolean, migrateRoutes = false): void {
   if (!existsSync(codexDir())) return;
   console.log(`\nCodex CLI (${codexHooksPath()}):`);
@@ -385,11 +385,11 @@ export function runCodexInit(relayCmd: string, serverPath: string, dryRun: boole
     if (commandAt(merged, e) !== commandAt(existing, e)) return true;
     // LAUNDERING GUARD: an externally reordered hooks.json is identical
     // between `existing` and `merged`, so there is no command delta — but
-    // a Cairn position whose command mismatches what our LAST init
+    // a Waykeep position whose command mismatches what our LAST init
     // recorded there carries a hash we cannot vouch for. Without pruning
     // it here, the unconditional shadow refresh after the write would
     // re-attest it (reproduced: a swapped foreign group left its stale
-    // hash counted as trust for Cairn's session-start).
+    // hash counted as trust for Waykeep's session-start).
     const cmd = commandAt(merged, e);
     return oldShadow !== null && cmd !== null
       && cmd.includes(CAIRN_HOOK_DIR_MARKER) && oldShadow[e.key] !== cmd;
@@ -397,10 +397,10 @@ export function runCodexInit(relayCmd: string, serverPath: string, dryRun: boole
   const invalidatesTrust = invalidated.some((e) => e.trusted);
 
   const wrote = dryRun ? 'would write' : 'writing';
-  console.log(`  ✓ hooks.json — ${wrote} ${Object.keys(generated.hooks).length} Cairn hook events (${total} hooks total in file)`);
+  console.log(`  ✓ hooks.json — ${wrote} ${Object.keys(generated.hooks).length} Waykeep hook events (${total} hooks total in file)`);
   if (postToolRoute === LEGACY_POST_TOOL_ROUTE) {
     console.log(`  = keeping deprecated '${LEGACY_POST_TOOL_ROUTE}' PostToolUse route — trusted wiring preserved.`);
-    console.log(`    Migrate with \`cairn init --migrate-routes\` when convenient (one re-trust in codex).`);
+    console.log(`    Migrate with \`waykeep init --migrate-routes\` when convenient (one re-trust in codex).`);
   }
   if (mcpRegistered) {
     console.log('  = config.toml [mcp_servers.cairn] already registered');
@@ -431,7 +431,7 @@ export function runCodexInit(relayCmd: string, serverPath: string, dryRun: boole
     } catch (err) {
       console.log(`  ✗ could not write Codex configuration: ${(err as Error).message} — ${
         wroteConfig
-          ? 'config.toml was updated but hooks.json was NOT; re-run `cairn init` (hooks re-review pending either way)'
+          ? 'config.toml was updated but hooks.json was NOT; re-run `waykeep init` (hooks re-review pending either way)'
           : 'nothing was changed'}`);
       return;
     }
@@ -442,7 +442,7 @@ export function runCodexInit(relayCmd: string, serverPath: string, dryRun: boole
     console.log(`  ! HOOK TRUST INVALIDATED — ${count} previously trusted hook(s) changed or moved`);
     console.log(`    (Codex pins trust to exact commands; unrelated hooks keep their trust).`);
     console.log(`    Start \`codex\` — the startup review will ask you to re-approve the changed`);
-    console.log(`    Cairn hooks — then re-run \`cairn doctor\`.`);
+    console.log(`    Waykeep hooks — then re-run \`waykeep doctor\`.`);
     return;
   }
   const trust = countTrustedHooksIn(config, codexHooksPath(), merged);
@@ -451,7 +451,7 @@ export function runCodexInit(relayCmd: string, serverPath: string, dryRun: boole
   } else {
     console.log(`  ! ONE-TIME TRUST STEP REQUIRED (${trust.trusted}/${total} trusted): Codex hash-pins hooks`);
     console.log(`    and silently skips them until you approve. Start \`codex\` — the startup review`);
-    console.log(`    lists the Cairn memory hooks — accept them (or use /hooks). Re-run`);
-    console.log(`    \`cairn doctor\` afterwards to confirm.`);
+    console.log(`    lists the Waykeep memory hooks — accept them (or use /hooks). Re-run`);
+    console.log(`    \`waykeep doctor\` afterwards to confirm.`);
   }
 }

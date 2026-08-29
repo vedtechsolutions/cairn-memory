@@ -18,7 +18,7 @@ export function applyWorkflowNudges(ctx: PromptCtx): void {
   // Pre-flight workflow reminder
   if (ctx.intent === 'task' && !tracker.preflightFired && mode === 'normal'
     && prompt.length > 50 && hasEntityTerms(prompt)) {
-    budgetPush('[CAIRN] Task detected. Pre-flight: cairn_recall → review skills → read existing code → plan approach.');
+    budgetPush('[WAYKEEP] Task detected. Pre-flight: cairn_recall → review skills → read existing code → plan approach.');
     tracker.preflightFired = true;
   }
 
@@ -26,7 +26,7 @@ export function applyWorkflowNudges(ctx: PromptCtx): void {
     && prompt.length > 50 && tracker.toolChain.length > 0 && hasEntityTerms(prompt)) {
     const hasCairnCalls = checkTranscriptForCairnCalls(input.transcript_path);
     if (!hasCairnCalls) {
-      output.push('[CAIRN] No explicit recall this session. Consider cairn_plan(get) for active plans and cairn_recall(query) for prior decisions.');
+      output.push('[WAYKEEP] No explicit recall this session. Consider cairn_plan(get) for active plans and cairn_recall(query) for prior decisions.');
       tracker.complianceNudgeFired = true;
     }
   }
@@ -37,7 +37,7 @@ export function applyWorkflowNudges(ctx: PromptCtx): void {
     const hasEdits = recentChain.some(t => t.tool === 'Edit' || t.tool === 'Write' || t.tool === 'apply_patch');
     const hasBashSuccess = recentChain.some(t => t.tool === 'Bash' && t.success);
     if (hasEdits && hasBashSuccess) {
-      output.push('[CAIRN] You have been making changes successfully. If you made architectural decisions, store them with cairn_learn(kind: "decision", content: "chose X because Y").');
+      output.push('[WAYKEEP] You have been making changes successfully. If you made architectural decisions, store them with cairn_learn(kind: "decision", content: "chose X because Y").');
       tracker.decisionReminderFired = true;
     }
   }
@@ -55,7 +55,7 @@ export function applyWorkflowNudges(ctx: PromptCtx): void {
   // and high-signal. It's the last-ditch reminder when reflection failed.
   if (tracker.pendingDecisionNudge > 0) {
     const n = tracker.pendingDecisionNudge;
-    output.push(`[CAIRN] Last turn had ${n} decision marker${n === 1 ? '' : 's'} but no sigil and no auto-extraction. Next time emit [dec: chose X because Y] inline or call cairn_learn(kind: "decision").`);
+    output.push(`[WAYKEEP] Last turn had ${n} decision marker${n === 1 ? '' : 's'} but no sigil and no auto-extraction. Next time emit [dec: chose X because Y] inline or call cairn_learn(kind: "decision").`);
     tracker.pendingDecisionNudge = 0;
   }
 }

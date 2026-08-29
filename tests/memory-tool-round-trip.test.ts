@@ -179,7 +179,7 @@ describe('export scope and parser strictness', () => {
 
   it('splits mixed documents: v2 by payload, v1 remainder to the legacy parser', () => {
     const text = [
-      '# Cairn Export v2',
+      '# Waykeep Export v2',
       `## Fact: mixed doc [confidence: 0.80]`,
       `data: ${canonicalJson({ kind: 'fact', content: 'v2 half of the mixed document', confidence: 0.8, source: 'learned', tags: [], context: null, fingerprint: null, project: null, expires_at: null, anchor: null, created_at: '2026-01-01T00:00:00.000Z' })}`,
       '',

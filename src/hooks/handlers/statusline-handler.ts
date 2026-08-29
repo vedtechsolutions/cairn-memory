@@ -50,7 +50,7 @@ export function handleStatusLine(input: StatusLineInput, client: HookDbClient): 
 
   writeState({ mode, freeUntilCompact } as CairnState);
 
-  let display = `Cairn: ${mode} | ${freeUntilCompact}% free`;
+  let display = `Waykeep: ${mode} | ${freeUntilCompact}% free`;
 
   if (input.cwd) {
     try {

@@ -11,14 +11,14 @@
  * `## Reusable knowledge`, `## Failures and how to do differently`.
  *
  * Mapping (each consolidated BULLET is already a distilled lesson —
- * exactly Cairn's memory grain):
+ * exactly Waykeep's memory grain):
  *   - Failures and how to do differently → pitfall
  *   - User preferences                   → fact, tagged `preference`
  *   - Reusable knowledge                 → fact
  *   - kind upgrade: a Reusable-knowledge bullet phrased as a choice
  *     ("chose/decided/prefer X over Y") → decision
  * Task sections are provenance, not lessons — they become context, never
- * rows. `applies_to: cwd=<path>` maps to Cairn's project scope via
+ * rows. `applies_to: cwd=<path>` maps to Waykeep's project scope via
  * projectId(path) (deterministic; a missing dir hashes the path). Task
  * Group name + scope travel in context.why; task-local keywords become
  * tags (capped).

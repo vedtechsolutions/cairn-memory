@@ -16,4 +16,4 @@
 - [ ] Tests added or updated for the change
 - [ ] Docs / `CHANGELOG.md` updated if behavior or setup changed
 - [ ] Commits signed off (`git commit -s`, per the DCO)
-- [ ] CLA signed — the bot prompts on your first PR ([CLA.md](https://github.com/vedtechsolutions/cairn-memory/blob/main/CLA.md))
+- [ ] CLA signed — the bot prompts on your first PR ([CLA.md](https://github.com/vedtechsolutions/waykeep/blob/main/CLA.md))

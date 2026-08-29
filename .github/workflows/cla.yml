@@ -28,6 +28,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           path-to-signatures: signatures/version1/cla.json
-          path-to-document: https://github.com/vedtechsolutions/cairn-memory/blob/main/CLA.md
+          path-to-document: https://github.com/vedtechsolutions/waykeep/blob/main/CLA.md
           branch: cla-signatures
           allowlist: vedtechsolutions,*[bot]

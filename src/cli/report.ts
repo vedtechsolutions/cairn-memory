@@ -1,11 +1,11 @@
 /**
- * `cairn report` — the tokens-saved report.
+ * `waykeep report` — the tokens-saved report.
  *
  * HONESTY RULES (the metric is defined, not implied): gross has two
  * components with different provenance — `compact-saved` is CLIENT-
  * REPORTED (the agent's own PostCompact tokens_saved) and `impact-proxy`
  * is an ESTIMATE (verified impact events × a documented constant). The
- * cost column is what Cairn itself injected. Net = gross − cost, and the
+ * cost column is what Waykeep itself injected. Net = gross − cost, and the
  * output labels every estimated number as an estimate. Read-only.
  */
 import { existsSync } from 'node:fs';
@@ -16,7 +16,7 @@ import { computeRollupReport } from '../db/telemetry-rollup.js';
 export async function runReport(days: number = ROLLUP.REPORT_DAYS): Promise<number> {
   const path = resolveDbPath(process.env.CAIRN_DB_PATH);
   if (!existsSync(path)) {
-    console.log(`cairn report — no database yet at ${path} (nothing recorded).`);
+    console.log(`waykeep report — no database yet at ${path} (nothing recorded).`);
     return 0;
   }
   const Database = (await import('better-sqlite3')).default;
@@ -37,12 +37,12 @@ export async function runReport(days: number = ROLLUP.REPORT_DAYS): Promise<numb
     // doctor` heals it on open. Degrade honestly instead of erroring.
     const columns = db.prepare('PRAGMA table_info(telemetry_rollup)').all() as Array<{ name: string }>;
     if (!columns.some((c) => c.name === 'events')) {
-      console.log('cairn report — rollup schema needs a one-time upgrade; run any session (or `cairn doctor`) first, then re-run.');
+      console.log('cairn report — rollup schema needs a one-time upgrade; run any session (or `waykeep doctor`) first, then re-run.');
       return 0;
     }
     const report = computeRollupReport(db, days);
 
-    console.log(`cairn report — tokens saved, last ${report.days} days\n`);
+    console.log(`waykeep report — tokens saved, last ${report.days} days\n`);
     if (report.gross === 0 && report.cost === 0) {
       console.log('  No data recorded in this window yet. Rollup rows accrue as sessions');
       console.log('  run (compactions, briefings, verified pitfall saves).');

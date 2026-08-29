@@ -6,7 +6,7 @@
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import type { ClientAdapterLifecycle } from 'cairn-contract';
+import type { ClientAdapterLifecycle } from 'waykeep-contract';
 import { CLIENT_CLAUDE } from '../constants/clients.js';
 import { cairnHooks } from '../cli/init.js';
 

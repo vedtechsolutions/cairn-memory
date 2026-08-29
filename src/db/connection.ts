@@ -44,7 +44,7 @@ export interface ConnectionOptions {
 }
 
 /**
- * Open (or create) the Cairn SQLite database with proper configuration.
+ * Open (or create) the Waykeep SQLite database with proper configuration.
  * - WAL mode for concurrent reads
  * - Foreign keys enabled
  * - Busy timeout for lock contention

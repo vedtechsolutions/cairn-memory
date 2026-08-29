@@ -180,7 +180,7 @@ export function handlePitfallCheck(input: PreToolUseInput, client: CachedHookCon
   let injectedContext: string | null = null;
   if (capped.length > 0) {
     const formatted = capped.map(w => `  - ${w}`).join('\n');
-    const context = `[CAIRN] Pitfalls for ${fileLabel}:\n${formatted}`;
+    const context = `[WAYKEEP] Pitfalls for ${fileLabel}:\n${formatted}`;
     injectedContext = context;
     // Warnings are advisory: clients whose engines reject an explicit
     // "allow" (capability emitsPermissionDecision=false) get context alone.

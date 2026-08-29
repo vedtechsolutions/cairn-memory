@@ -1,13 +1,13 @@
-# Cairn
+# Waykeep
 
 Local-first shared memory for AI coding agents. One persistent memory across sessions AND across agents — Claude Code and Codex share briefings, pitfall warnings, decisions, and auto-learned lessons, with seamless recovery after context compaction.
 
-[![npm version](https://img.shields.io/npm/v/cairn-memory.svg)](https://www.npmjs.com/package/cairn-memory)
+[![npm version](https://img.shields.io/npm/v/waykeep.svg)](https://www.npmjs.com/package/waykeep)
 [![license: Elastic-2.0](https://img.shields.io/badge/license-Elastic--2.0-blue.svg)](LICENSE)
-[![node](https://img.shields.io/node/v/cairn-memory.svg)](https://nodejs.org)
-[![CI](https://github.com/vedtechsolutions/cairn-memory/actions/workflows/ci.yml/badge.svg)](https://github.com/vedtechsolutions/cairn-memory/actions/workflows/ci.yml)
+[![node](https://img.shields.io/node/v/waykeep.svg)](https://nodejs.org)
+[![CI](https://github.com/vedtechsolutions/waykeep/actions/workflows/ci.yml/badge.svg)](https://github.com/vedtechsolutions/waykeep/actions/workflows/ci.yml)
 
-> Published on npm as [`cairn-memory`](https://www.npmjs.com/package/cairn-memory) — installs the `cairn` CLI.
+> **Formerly Cairn.** Published on npm as [`waykeep`](https://www.npmjs.com/package/waykeep) — installs the `waykeep` CLI (the `cairn` bin still works). Existing installs keep everything: your data stays in `~/.cairn` and MCP tool names keep their `cairn_` prefix. Upgrading is `npm install -g waykeep && waykeep init` — init re-points hook wiring at the new install location (Codex asks to trust its hook entries once; that's the path move, not new behavior). The old [`cairn-memory`](https://www.npmjs.com/package/cairn-memory) package is deprecated but keeps working until you switch.
 
 ## Why
 
@@ -17,34 +17,34 @@ Two problems ruin long agent sessions:
 
 **Every agent is a memory island.** What Claude learned the hard way, Codex re-learns the hard way — and vice versa.
 
-Cairn fixes both: hooks passively capture what happens (errors, successes, corrections, decisions, plans, compaction state), MCP tools give agents explicit recall and learning, and everything lands in one local SQLite store with hybrid keyword+semantic search. Codex fails a command once; Claude gets warned before touching the same file. Switch models freely — the memory stays.
+Waykeep fixes both: hooks passively capture what happens (errors, successes, corrections, decisions, plans, compaction state), MCP tools give agents explicit recall and learning, and everything lands in one local SQLite store with hybrid keyword+semantic search. Codex fails a command once; Claude gets warned before touching the same file. Switch models freely — the memory stays.
 
 ## Install
 
 ```bash
-npm install -g cairn-memory   # the one runtime (no C compiler needed)
-cairn init                    # wires MCP + hooks + StatusLine for your agents
-cairn doctor                  # health check
+npm install -g waykeep   # the one runtime (no C compiler needed)
+waykeep init                    # wires MCP + hooks + StatusLine for your agents
+waykeep doctor                  # health check
 ```
 
-Then, instead of `cairn init`, you can wire your agent through its plugin marketplace — this repository is one (the npm package from the first step is still required — **cairn-memory >= 5.4.0** — the plugins are thin):
+Then, instead of `waykeep init`, you can wire your agent through its plugin marketplace — this repository is one (the npm package from the first step is still required — **waykeep >= 5.5.0** — the plugins are thin):
 
 ```text
 # Claude Code
-/plugin marketplace add vedtechsolutions/cairn-memory
-/plugin install cairn@cairn
+/plugin marketplace add vedtechsolutions/waykeep
+/plugin install waykeep@waykeep
 
 # Codex CLI
-codex plugin marketplace add vedtechsolutions/cairn-memory
-codex plugin add cairn@cairn
-cairn init            # hooks (one-time trust approval at next Codex start)
+codex plugin marketplace add vedtechsolutions/waykeep
+codex plugin add waykeep@waykeep
+waykeep init            # hooks (one-time trust approval at next Codex start)
 ```
 
 Full guide — plugins, hook trust, multi-agent daemon, from-source: [`docs/INSTALL.md`](docs/INSTALL.md).
 
 ## What you get
 
-- **Session briefings** — every session starts with goals, plan state, recent files, decisions, and top pitfalls; after compaction the briefing is rebuilt from the pre-compaction snapshot so the agent resumes instead of restarting. Budget scales with context pressure (600–3000 tokens); when the window is nearly full, Cairn goes silent rather than spend it.
+- **Session briefings** — every session starts with goals, plan state, recent files, decisions, and top pitfalls; after compaction the briefing is rebuilt from the pre-compaction snapshot so the agent resumes instead of restarting. Budget scales with context pressure (600–3000 tokens); when the window is nearly full, Waykeep goes silent rather than spend it.
 - **Pitfall warnings before the mistake** — pre-tool hooks surface relevant past failures before Write/Edit/Bash touches the file that caused them.
 - **Automatic learning** — tool failures become pitfalls, user corrections become rules, decision language becomes recorded decisions (with the `[dec: …]` sigil for zero-cost capture), successes build patterns. No manual bookkeeping.
 - **Plans that survive** — plan-mode plans persist to the store automatically; steps, decisions, and progress notes carry across sessions and compactions.
@@ -71,10 +71,10 @@ Memories carry 0–1 confidence that grows with proven usefulness and decays wit
 One command each, re-runnable — imports are deduplicated, secret-scrubbed, and idempotent:
 
 ```bash
-cairn import --from codex-memories                 # ~/.codex/memories (structured MEMORY.md handbook)
-cairn import --from claude-mem                     # ~/.claude-mem archive (live worker safe — snapshot read)
-cairn import --from memory-md --path ./MEMORY.md   # any MEMORY.md (+ auto-memory topic files)
-cairn import --from codex-memories --dry-run       # preview without writing
+waykeep import --from codex-memories                 # ~/.codex/memories (structured MEMORY.md handbook)
+waykeep import --from claude-mem                     # ~/.claude-mem archive (live worker safe — snapshot read)
+waykeep import --from memory-md --path ./MEMORY.md   # any MEMORY.md (+ auto-memory topic files)
+waykeep import --from codex-memories --dry-run       # preview without writing
 ```
 
 Codex task groups keep their structure: working directories map to project scopes, keywords become tags, failures become pitfalls. Excluded files are excluded **and listed**.
@@ -92,13 +92,13 @@ One rule: a session can neither read nor modify another project's private conten
 ## What is it worth?
 
 ```bash
-cairn report            # tokens saved vs. tokens spent, honestly
-cairn report --days=90
+waykeep report            # tokens saved vs. tokens spent, honestly
+waykeep report --days=90
 ```
 
 Gross savings separates **measured** (your agent's own reported compaction savings) from **estimated** (verified pitfall saves × a fixed proxy, clearly labeled). Injected briefings and warnings count as cost. Net = gross − cost, even when negative.
 
-## Hook handlers (wired by `cairn init` or the Claude plugin)
+## Hook handlers (wired by `waykeep init` or the Claude plugin)
 
 | Hook | Event | Purpose |
 |------|-------|---------|
@@ -114,7 +114,7 @@ Gross savings separates **measured** (your agent's own reported compaction savin
 | session-end | SessionEnd | Record outcome, protect in-progress steps |
 | statusline | StatusLine | Context pressure → dynamic briefing budgets |
 
-Codex gets the same experience through its own 10-hook set (`cairn init` wires `~/.codex/hooks.json`; one-time trust approval).
+Codex gets the same experience through its own 10-hook set (`waykeep init` wires `~/.codex/hooks.json`; one-time trust approval).
 
 ## MCP tools
 
@@ -149,6 +149,6 @@ External contributions require signing the [CLA](CLA.md) (a bot prompts on your 
 
 ## License
 
-[Elastic License 2.0](LICENSE) — source-available. Use, copy, modify, and redistribute freely; you may not offer Cairn as a hosted/managed service, circumvent license-key functionality, or remove licensing notices.
+[Elastic License 2.0](LICENSE) — source-available. Use, copy, modify, and redistribute freely; you may not offer Waykeep as a hosted/managed service, circumvent license-key functionality, or remove licensing notices.
 
-The [`cairn-contract`](packages/contract) types package is [MIT](packages/contract/LICENSE), so adapters and integrations can build against Cairn without restriction. External contributions require the [CLA](CLA.md).
+The [`waykeep-contract`](packages/contract) types package is [MIT](packages/contract/LICENSE), so adapters and integrations can build against Waykeep without restriction. External contributions require the [CLA](CLA.md).

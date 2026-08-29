@@ -1,7 +1,7 @@
 /**
  * Shared learn-mode ingestion — the ONE path every importer and the MCP
  * cairn_ingest v1 branch ride. Untrusted markdown gets the same defenses
- * everywhere: neutralizeMemoryText (a forged "[CAIRN]" prefix in an
+ * everywhere: neutralizeMemoryText (a forged "[WAYKEEP]" prefix in an
  * imported file must never impersonate the system voice), sanitize on
  * tags, and the repository gateway's dedup/merge. Extracted so the CLI
  * importer and the MCP tool cannot drift (the standalone-twin lesson,

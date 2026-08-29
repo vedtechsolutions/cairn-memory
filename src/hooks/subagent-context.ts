@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * SubagentStart hook — thin wrapper around the subagent-context handler.
- * Subagents start with no Cairn context (no SessionStart briefing); the
+ * Subagents start with no Waykeep context (no SessionStart briefing); the
  * handler provides a concise summary: plan state + top pitfalls +
  * corrections. async: false — context must be injected before the
  * subagent processes.

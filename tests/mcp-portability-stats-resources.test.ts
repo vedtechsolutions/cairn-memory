@@ -128,7 +128,7 @@ describe('cairn_export', () => {
     assert.notEqual(result.isError, true);
     const text = textOf(result);
 
-    assert.match(text, /^# Cairn Export v2/);
+    assert.match(text, /^# Waykeep Export v2/);
     assert.ok(text.includes('# Memories: 2'), `expected 2 memories in header, got:\n${text}`);
     assert.match(text, /## Pitfall: HMAC verification.*\[confidence: 0\.90\]/);
     assert.ok(text.includes('"tags":["payments","webhooks"]'), 'tags must ride in the data payload');
@@ -593,7 +593,7 @@ describe('MCP resources', () => {
     h.memoryRepo.create({ content: 'Chose event sourcing over CRUD for the audit trail', kind: 'decision', project: 'proj-a', confidence: 0.9 });
 
     const text = await readResourceText(h.client, 'cairn://briefing/proj-a');
-    assert.ok(text.startsWith('[Cairn Full Briefing — proj-a]'));
+    assert.ok(text.startsWith('[Waykeep Full Briefing — proj-a]'));
     assert.ok(text.includes('Plan: "Briefing plan"'));
     assert.ok(text.includes('Pitfalls:'));
     assert.ok(text.includes('Never run migrations during peak traffic hours (Why: locks starve the write path)'));
@@ -605,7 +605,7 @@ describe('MCP resources', () => {
 
   it('briefing resource on an empty database is just the header', async () => {
     const text = await readResourceText(h.client, 'cairn://briefing/proj-empty');
-    assert.equal(text, '[Cairn Full Briefing — proj-empty]');
+    assert.equal(text, '[Waykeep Full Briefing — proj-empty]');
   });
 
   it('rejects reads of unregistered resource URIs', async () => {
@@ -639,6 +639,6 @@ describe('context-critical mode gating', () => {
   it('resources stay readable regardless of context mode', async () => {
     h.setMode('critical');
     const text = await readResourceText(h.client, 'cairn://briefing/proj-a');
-    assert.ok(text.startsWith('[Cairn Full Briefing — proj-a]'), 'resource reads are not gated by context mode');
+    assert.ok(text.startsWith('[Waykeep Full Briefing — proj-a]'), 'resource reads are not gated by context mode');
   });
 });

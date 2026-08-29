@@ -115,7 +115,7 @@ const meta = {
   dataset: basename(dataPath),
   ...(manifestEntry ? { datasetRevision: manifest.revision, datasetSha256: manifestEntry.sha256 } : {}),
   ...(harnessCommit ? { harnessCommit } : {}),
-  harnessVersion: `cairn-memory@${pkg.version}`,
+  harnessVersion: `waykeep@${pkg.version}`,
   ...(maxQuestions !== undefined ? { maxQuestions } : {}),
   ...(embeddingMeta ? { embedding: embeddingMeta } : {}),
   ...(rerankerMeta ? { reranker: rerankerMeta } : {}),

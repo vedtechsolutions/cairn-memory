@@ -1,11 +1,11 @@
 /**
- * `cairn doctor` — post-install health check.
+ * `waykeep doctor` — post-install health check.
  *
  * Verifies the pieces an install needs before the hooks or MCP server can
  * work: the Node runtime, the native SQLite stack, the compiled hook relay,
  * the embedding model pin, the database schema, and the hook socket. Each
  * check prints one actionable line; a failed critical check exits non-zero so
- * `cairn doctor` can gate CI and setup scripts. Diagnostic only — it never
+ * `waykeep doctor` can gate CI and setup scripts. Diagnostic only — it never
  * creates or migrates the database.
  */
 import { existsSync, readFileSync , realpathSync } from 'node:fs';
@@ -14,7 +14,7 @@ import { dirname, join, resolve } from 'node:path';
 import { SCHEMA_VERSION } from '../db/schema.js';
 import { resolveDbPath } from '../db/db-path.js';
 import { CAIRN_HOOK_DIR_MARKER } from '../constants/index.js';
-import { SYNC_ROUTES, ASYNC_ROUTES, CONTRACT_REVISION } from 'cairn-contract';
+import { SYNC_ROUTES, ASYNC_ROUTES, CONTRACT_REVISION } from 'waykeep-contract';
 import { getEmbeddingModelConfig } from '../utils/embeddings.js';
 import { verifyModelPackage, ArtifactVerificationError } from '../utils/artifact-verification.js';
 import { probeHookSocket, socketPath, pidPath } from '../mcp/socket-ownership.js';
@@ -70,7 +70,7 @@ function checkRelay(): CheckResult {
     return { status: 'ok', detail: `compiled hook relay present and executable` };
   }
   if (existsSync(relayShellPath(HOOK_DIR))) {
-    return { status: 'warn', detail: `compiled relay not usable here — using shell fallback; run \`cairn build-relay\` for the fast path` };
+    return { status: 'warn', detail: `compiled relay not usable here — using shell fallback; run \`waykeep build-relay\` for the fast path` };
   }
   return { status: 'fail', detail: `no hook relay found under ${HOOK_DIR} — run \`npm run build\`` };
 }
@@ -185,7 +185,7 @@ export function checkCodexParity(): CheckResult {
   }
   const hooksPath = codexHooksPath();
   if (!existsSync(hooksPath)) {
-    return { status: 'warn', detail: 'Codex CLI detected but Cairn hooks are not installed — run `cairn init`' };
+    return { status: 'warn', detail: 'Codex CLI detected but Waykeep hooks are not installed — run `waykeep init`' };
   }
   let file: CodexHooksFile;
   let total: number;
@@ -203,11 +203,11 @@ export function checkCodexParity(): CheckResult {
     // array surfaced a raw TypeError instead of this warn (review).
     total = codexHookCount(file);
   } catch {
-    return { status: 'warn', detail: `${hooksPath} is not a valid hooks file (bad JSON or shape) — re-run \`cairn init\`` };
+    return { status: 'warn', detail: `${hooksPath} is not a valid hooks file (bad JSON or shape) — re-run \`waykeep init\`` };
   }
   const wired = JSON.stringify(file).includes(CAIRN_HOOK_DIR_MARKER);
   if (!wired || total === 0) {
-    return { status: 'warn', detail: 'Codex hooks.json exists but carries no Cairn hooks — run `cairn init`' };
+    return { status: 'warn', detail: 'Codex hooks.json exists but carries no Waykeep hooks — run `waykeep init`' };
   }
   // Stale-install detection: hook commands pin the ABSOLUTE install path
   // of whichever install wrote them. Two failure shapes (review): the
@@ -220,21 +220,21 @@ export function checkCodexParity(): CheckResult {
     .map((c) => /(\/[^ ]+\/dist\/src\/hooks)\/hook-relay/.exec(c)?.[1])
     .find((d): d is string => d !== undefined);
   if (wiredDir !== undefined && !existsSync(wiredDir)) {
-    return { status: 'warn', detail: `Codex hooks point at a moved or removed install (${wiredDir}) — re-run \`cairn init\` (one re-trust)` };
+    return { status: 'warn', detail: `Codex hooks point at a moved or removed install (${wiredDir}) — re-run \`waykeep init\` (one re-trust)` };
   }
   // realpath BOTH sides: the same install reached through a symlink must
   // not read as different (review) — that prompted needless re-trust.
   const canonical = (d: string): string => { try { return realpathSync(d); } catch { return resolve(d); } };
   if (wiredDir !== undefined && canonical(wiredDir) !== canonical(HOOK_DIR)) {
-    return { status: 'warn', detail: `Codex hooks run a DIFFERENT install (${wiredDir}) than this one (${HOOK_DIR}) — re-run \`cairn init\` from the install you want (one re-trust)` };
+    return { status: 'warn', detail: `Codex hooks run a DIFFERENT install (${wiredDir}) than this one (${HOOK_DIR}) — re-run \`waykeep init\` from the install you want (one re-trust)` };
   }
   const config = existsSync(codexConfigPath()) ? readFileSync(codexConfigPath(), 'utf-8') : '';
-  const mcp = hasCairnMcpServer(config) ? 'MCP registered' : 'MCP NOT registered (run `cairn init`)';
+  const mcp = hasCairnMcpServer(config) ? 'MCP registered' : 'MCP NOT registered (run `waykeep init`)';
   const trust = countTrustedHooksIn(config, hooksPath, file);
   // Deprecated-route note (D3 window): status stays as-is while the alias
   // is served; this line escalates to a warn when a removal window opens.
   const legacyRoute = cairnCommandSet(file).some((c) => c.endsWith(` ${LEGACY_POST_TOOL_ROUTE}`))
-    ? `; deprecated '${LEGACY_POST_TOOL_ROUTE}' route wiring — modernize with \`cairn init --migrate-routes\` (one re-trust)`
+    ? `; deprecated '${LEGACY_POST_TOOL_ROUTE}' route wiring — modernize with \`waykeep init --migrate-routes\` (one re-trust)`
     : '';
   if (trust.disabled > 0 && trust.trusted < total) {
     return { status: 'warn', detail: `Codex wired but ${trust.disabled} hook(s) are DISABLED and ${total - trust.trusted - trust.disabled} untrusted (${trust.trusted}/${total} active; ${mcp}) — review with /hooks in codex${legacyRoute}` };
@@ -242,7 +242,7 @@ export function checkCodexParity(): CheckResult {
   if (trust.trusted >= total) {
     return { status: 'ok', detail: `Codex wired and trusted (${trust.trusted}/${total} hooks; ${mcp}; governance advisory is Claude Code-only — expected)${legacyRoute}` };
   }
-  return { status: 'warn', detail: `Codex wired, awaiting one-time trust review (${trust.trusted}/${total} hooks trusted; ${mcp}) — start \`codex\` and accept the Cairn hooks${legacyRoute}` };
+  return { status: 'warn', detail: `Codex wired, awaiting one-time trust review (${trust.trusted}/${total} hooks trusted; ${mcp}) — start \`codex\` and accept the Waykeep hooks${legacyRoute}` };
 }
 
 const CHECKS: Check[] = [
@@ -278,6 +278,6 @@ export async function runDoctor(): Promise<number> {
   const summary = failed > 0
     ? `${failed} check(s) failed`
     : warned > 0 ? `all critical checks passed (${warned} warning(s))` : 'all checks passed';
-  console.log(`\ncairn doctor: ${summary}`);
+  console.log(`\nwaykeep doctor: ${summary}`);
   return failed > 0 ? 1 : 0;
 }

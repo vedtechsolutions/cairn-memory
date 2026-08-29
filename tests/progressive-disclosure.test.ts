@@ -55,7 +55,7 @@ describe('compileIndexBriefing', () => {
 
     const result = compileIndexBriefing(memoryRepo, planRepo, ctx);
 
-    assert.ok(result.text.startsWith('[Cairn Memory Briefing — index]'));
+    assert.ok(result.text.startsWith('[Waykeep Memory Briefing — index]'));
     assert.ok(result.text.includes(`dec:${ids.decisionId.slice(0, 8)}`), 'must include decision prefix');
     assert.ok(result.text.includes(`pit:${ids.pitfallId.slice(0, 8)}`), 'must include pitfall prefix');
     assert.ok(result.text.includes(`cor:${ids.correctionId.slice(0, 8)}`), 'must include correction prefix');
@@ -105,7 +105,7 @@ describe('compileIndexBriefing', () => {
     };
 
     const result = compileBriefing(memoryRepo, planRepo, ctx);
-    assert.ok(result.text.includes('[Cairn Memory Briefing — index]'));
+    assert.ok(result.text.includes('[Waykeep Memory Briefing — index]'));
   });
 
   it('auto mode picks full on startup, index on bare compact', () => {
@@ -124,7 +124,7 @@ describe('compileIndexBriefing', () => {
     // the PreCompact hook failed to write a snapshot). The recovery-routing
     // override only fires when snapshot data is actually present.
     const compact = compileBriefing(memoryRepo, planRepo, { ...base, sessionType: 'compact' });
-    assert.ok(compact.text.includes('[Cairn Memory Briefing — index]'), 'auto+compact (no snapshot) must use index format');
+    assert.ok(compact.text.includes('[Waykeep Memory Briefing — index]'), 'auto+compact (no snapshot) must use index format');
   });
 
   it('auto mode routes compact+snapshot to full briefing for recovery fidelity', () => {
@@ -152,7 +152,7 @@ describe('compileIndexBriefing', () => {
     });
 
     assert.ok(
-      !result.text.includes('[Cairn Memory Briefing — index]'),
+      !result.text.includes('[Waykeep Memory Briefing — index]'),
       'compact+snapshot must NOT use the index briefing header',
     );
     // Goal / decisions / files / approach come from the snapshot and are

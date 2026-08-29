@@ -68,7 +68,7 @@ const DISTILLATION_PATTERNS: Array<{
  * Returns a structured lesson, or a truncated first-line fallback. The result
  * is neutralized: error text is attacker-influenceable (a hostile repo can
  * make a build print anything), so the fallback especially must not carry a
- * forged `[CAIRN]` prefix or control characters into stored memory.
+ * forged `[WAYKEEP]` prefix or control characters into stored memory.
  */
 export function regexDistillError(toolName: string, rawError: string): string {
   return neutralizeMemoryText(regexDistillErrorRaw(toolName, rawError));

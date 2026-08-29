@@ -159,7 +159,7 @@ describe('hook-socket embedded daemon router', () => {
     });
 
     assert.equal(reply.status, 200);
-    assert.match(reply.body, /^Cairn: (normal|compact|minimal|critical) \| \d+% free/);
+    assert.match(reply.body, /^Waykeep: (normal|compact|minimal|critical) \| \d+% free/);
     assert.match(reply.body, /\| \d+ mem/, 'cwd-scoped DB stats must be appended');
 
     const statePath = process.env.CAIRN_STATE_PATH!;
@@ -312,6 +312,6 @@ describe('hook-socket embedded daemon router', () => {
       },
     });
     assert.equal(followUp.status, 200, 'server must serve normal requests after a stalled client');
-    assert.match(followUp.body, /^Cairn: /);
+    assert.match(followUp.body, /^Waykeep: /);
   });
 });

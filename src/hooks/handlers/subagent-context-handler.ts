@@ -1,5 +1,5 @@
 /**
- * SubagentStart handler — inject Cairn context into subagent prompts.
+ * SubagentStart handler — inject Waykeep context into subagent prompts.
  * Pure business logic: no stdin/stdout/process.exit.
  */
 import type { SubagentStartInput } from '../shared/hook-io.js';
@@ -23,7 +23,7 @@ export interface SubagentContextResult {
 export function handleSubagentContext(input: SubagentStartInput, client: HookDbClient): SubagentContextResult {
   const project = projectId(input.cwd);
   const lines: string[] = [];
-  lines.push('[Cairn Context for Subagent]');
+  lines.push('[Waykeep Context for Subagent]');
 
   const plan = client.planRepo.getActive(project);
   if (plan) {
@@ -40,7 +40,7 @@ export function handleSubagentContext(input: SubagentStartInput, client: HookDbC
   }
 
   // Render-time neutralization is the actual defense against stored
-  // content impersonating the system voice (a forged "[CAIRN] …" prefix
+  // content impersonating the system voice (a forged "[WAYKEEP] …" prefix
   // would sit directly under the genuine framing line above).
   const pitfalls = client.memoryRepo.topPitfalls(project, 2);
   if (pitfalls.length > 0) {

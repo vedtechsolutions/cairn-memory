@@ -1,0 +1,10 @@
+{
+  "name": "waykeep",
+  "version": "5.5.0",
+  "description": "Local-first shared memory for AI coding agents — briefings, pitfall warnings, decision capture, and cross-session recall. Formerly cairn. Thin plugin: requires the waykeep npm package (npm install -g waykeep (requires >= 5.5.0)).",
+  "author": {
+    "name": "VedTech Solutions"
+  },
+  "homepage": "https://github.com/vedtechsolutions/waykeep",
+  "license": "Elastic-2.0"
+}
