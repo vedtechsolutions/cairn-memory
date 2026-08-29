@@ -1,10 +1,8 @@
 {
   "mcpServers": {
     "cairn": {
-      "command": "cairn",
-      "args": [
-        "serve"
-      ],
+      "command": "${CLAUDE_PLUGIN_ROOT}/bin/cairn-mcp.sh",
+      "args": [],
       "env": {
         "CAIRN_LOG_LEVEL": "info"
       }

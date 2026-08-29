@@ -10,7 +10,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, symlinkSync, mkdirSync, chmodSync, writeFileSync, statSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, symlinkSync, mkdirSync, chmodSync, writeFileSync, statSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -58,7 +58,7 @@ describe('thin-plugin packaging', () => {
   it('no plugin file carries a machine-absolute path', () => {
     // Embedded paths too ("node /opt/…", "/Users/…"), not only values
     // that BEGIN with one (review: the anchored regex missed those).
-    const absPath = /\/(opt|home|usr|Users|var|root|tmp)\/|[A-Z]:\\/;
+    const absPath = /\/(opt|home|usr|Users|var|root|tmp|Volumes|Applications|nix)\/|[A-Z]:\\/;
     assert.ok(absPath.test('x node /opt/cairn/d.js'), 'sanity: the probe regex catches embedded paths');
     for (const rel of [
       'plugins/claude/cairn/.claude-plugin/plugin.json',
@@ -72,19 +72,62 @@ describe('thin-plugin packaging', () => {
     }
   });
 
-  it('MCP wiring is the BARE `cairn serve` — never a login shell', () => {
-    // Round 2 reversed round 1 with better evidence: a login shell's
-    // profile output lands on stdout AHEAD of the MCP handshake
-    // (protocol requires protocol-only stdout), while sh reads .profile
-    // — not the .bashrc/.zshrc where nvm PATH init lives — so the shell
-    // bought corruption risk without reliable PATH help. Bare command +
-    // a documented GUI-launch caveat is the deliberate choice.
+  it('MCP wiring never uses a shell: Claude via plugin-root launcher, Codex bare', () => {
+    // A login shell was rejected by both reviewers' round 2: profile
+    // output lands on stdout AHEAD of the MCP handshake (protocol
+    // requires protocol-only stdout), and sh reads .profile — not the
+    // .bashrc/.zshrc where nvm PATH init lives.
     const claudeMcp = readJson('plugins/claude/cairn/.mcp.json') as unknown as { mcpServers: Record<string, { command: string; args: string[] }> };
     const codexPlugin = readJson('plugins/codex/cairn/.codex-plugin/plugin.json') as unknown as { mcpServers: Record<string, { command: string; args: string[] }> };
-    for (const server of [claudeMcp.mcpServers.cairn, codexPlugin.mcpServers.cairn]) {
-      assert.equal(server.command, 'cairn');
-      assert.deepEqual(server.args, ['serve']);
+    // Claude: the plugin-root launcher (reviewer-verified to expand,
+    // load, and connect with `cairn` absent from PATH) — GUI-safe
+    // without a shell. Codex: bare command (plugin-root-relative spawn
+    // is unproven there; caveat documented, step-7 validation item).
+    assert.equal(claudeMcp.mcpServers.cairn.command, '${CLAUDE_PLUGIN_ROOT}/bin/cairn-mcp.sh');
+    assert.equal(codexPlugin.mcpServers.cairn.command, 'cairn');
+    assert.deepEqual(codexPlugin.mcpServers.cairn.args, ['serve']);
+  });
+
+  it('MCP launcher writes NOTHING to stdout before exec and resolves off-PATH', () => {
+    // stdout purity is the whole reason a login shell was rejected —
+    // and the launcher must find the install when `cairn` is NOT on
+    // the launching app's PATH (the GUI case), here via an nvm layout.
+    const sim = mkdtempSync(join(tmpdir(), 'cairn-mcp-sim-'));
+    try {
+      const nvmBin = join(sim, '.nvm', 'versions', 'node', 'v24.0.0', 'bin');
+      mkdirSync(nvmBin, { recursive: true });
+      writeFileSync(join(nvmBin, 'cairn'), '#!/bin/sh\n[ "$1" = serve ] && exec printf serving\nexit 1\n');
+      chmodSync(join(nvmBin, 'cairn'), 0o755);
+      const r = spawnSync(join(REPO_ROOT, 'plugins/claude/cairn/bin/cairn-mcp.sh'), [], {
+        encoding: 'utf-8', env: { PATH: '/usr/bin:/bin', HOME: sim },
+      });
+      assert.equal(r.stdout, 'serving', 'resolved through the common-locations fallback, stdout protocol-pure');
+    } finally {
+      rmSync(sim, { recursive: true, force: true });
     }
+  });
+
+  it('hook launcher refuses to cache without a trustworthy directory (no HOME)', () => {
+    // ${HOME:-/tmp} put the cache in a world-writable dir: a planted
+    // /tmp/.cairn/plugin-hook-dir got EXECUTED by the next hook
+    // (review, demonstrated). No HOME and no plugin-data = no cache.
+    const sim = mkdtempSync(join(tmpdir(), 'cairn-nohome-sim-'));
+    const priorMode = statSync(CLI_JS).mode;
+    try {
+      mkdirSync(join(sim, 'bin'), { recursive: true });
+      mkdirSync(join(sim, 'lib', 'node_modules'), { recursive: true });
+      symlinkSync(REPO_ROOT, join(sim, 'lib', 'node_modules', 'cairn-memory'));
+      symlinkSync('../lib/node_modules/cairn-memory/dist/src/cli/index.js', join(sim, 'bin', 'cairn'));
+      chmodSync(CLI_JS, 0o755);
+      const env: Record<string, string> = { PATH: `${join(sim, 'bin')}:/usr/bin:/bin` };
+      const r = spawnSync(LAUNCHER, ['--cairn-probe'], { encoding: 'utf-8', env });
+      assert.equal(r.stdout.trim(), 'cairn-relay', 'still works — just uncached');
+    } finally {
+      chmodSync(CLI_JS, priorMode);
+      rmSync(sim, { recursive: true, force: true });
+      rmSync('/tmp/.cairn', { recursive: true, force: true });
+    }
+    assert.ok(!existsSync('/tmp/.cairn/plugin-hook-dir'), 'no cache in a world-writable location');
   });
 
   it('claude plugin manifest relies on CONVENTION auto-load — no hooks/mcpServers keys', () => {

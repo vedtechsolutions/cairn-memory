@@ -98,7 +98,33 @@ function mergeSettings(existing: Settings, relayCmd: string, statuslineOnly = fa
     skipped.push('statusLine (a non-Cairn StatusLine is already set — left untouched)');
   }
   if (statuslineOnly) {
-    skipped.push('hooks + MCP (plugin-managed — --statusline-only)');
+    // The flag MEANS "the plugin manages hooks + MCP", so settings.json
+    // must not keep a parallel set: an existing user who ran a full
+    // init under the old docs and then installed the plugin stayed
+    // double-wired (two briefings per session) with nothing to remove
+    // it (review N4). Sweep Cairn's entries; foreign ones untouched.
+    const hooks: HookMap = { ...(existing.hooks ?? {}) };
+    let sweptEvents = 0;
+    for (const [event, entries] of Object.entries(hooks)) {
+      const foreign = entries.filter(entry => !isCairnEntry(entry));
+      if (foreign.length < entries.length) {
+        if (foreign.length > 0) hooks[event] = foreign;
+        else delete hooks[event];
+        sweptEvents++;
+      }
+    }
+    if (sweptEvents > 0) {
+      result.hooks = hooks;
+      changed.push(`hooks (${sweptEvents} event(s) of settings-wired Cairn hooks removed — the plugin provides them)`);
+    }
+    const existingServer = (existing.mcpServers ?? {}).cairn as { args?: unknown[] } | undefined;
+    if (existingServer && JSON.stringify(existingServer).includes('dist/src/mcp/server.js')) {
+      const servers = { ...(existing.mcpServers ?? {}) };
+      delete servers.cairn;
+      result.mcpServers = servers;
+      changed.push('mcpServers.cairn removed (the plugin provides it)');
+    }
+    skipped.push('hooks + MCP wiring (plugin-managed — --statusline-only)');
     return { changed, skipped, result };
   }
 
@@ -118,7 +144,7 @@ function mergeSettings(existing: Settings, relayCmd: string, statuslineOnly = fa
   // survive every upgrade forever, pointing at whatever install wrote
   // them (review). Foreign entries under those events are untouched.
   for (const [event, entries] of Object.entries(hooks)) {
-    if (event in desired) continue;
+    if (Object.hasOwn(desired, event)) continue;
     const foreign = entries.filter(entry => !isCairnEntry(entry));
     if (foreign.length < entries.length) {
       if (foreign.length > 0) hooks[event] = foreign;

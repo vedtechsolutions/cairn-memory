@@ -38,6 +38,11 @@ same hooks into `~/.claude/settings.json` and every event would fire
 twice (two briefings per session, two recalls per prompt). Pick one:
 plugin, or `cairn init`.
 
+Switching an EXISTING `cairn init` setup to the plugin? The same
+command migrates you: `cairn init --statusline-only` removes Cairn's
+settings-wired hooks and MCP server (your own entries are untouched)
+and keeps only the StatusLine.
+
 ### Claude Code — no plugin
 
 ```bash

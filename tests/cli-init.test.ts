@@ -180,3 +180,27 @@ describe('init review round (step 6)', () => {
     assert.equal(written.hooks?.FileChanged, undefined);
   });
 });
+
+describe('statusline-only migration sweep (review N4)', () => {
+  it('removes settings-wired Cairn hooks + MCP when switching to the plugin', () => {
+    const settingsPath = tempSettingsPath();
+    // The existing-user shape: full init done BEFORE the plugin existed.
+    const first = init(settingsPath);
+    assert.equal(first.status, 0, first.stderr);
+    const before = JSON.parse(readFileSync(settingsPath, 'utf8')) as Settings;
+    assert.ok(Object.keys(before.hooks ?? {}).length >= 10, 'sanity: fully wired');
+    assert.ok(before.mcpServers?.cairn, 'sanity: MCP wired');
+    // Add a foreign hook that must survive the sweep.
+    before.hooks!.SessionStart!.push({ hooks: [{ command: 'users-own-hook' }] });
+    writeFileSync(settingsPath, JSON.stringify(before));
+
+    const r = init(settingsPath, ['--statusline-only']);
+    assert.equal(r.status, 0, r.stderr);
+    const after = JSON.parse(readFileSync(settingsPath, 'utf8')) as Settings;
+    assert.equal(after.mcpServers?.cairn, undefined, 'Cairn MCP removed — the plugin provides it');
+    const allCommands = JSON.stringify(after.hooks ?? {});
+    assert.ok(!allCommands.includes('dist/src/hooks'), 'no settings-wired Cairn hooks remain (double-fire closed)');
+    assert.ok(allCommands.includes('users-own-hook'), 'foreign hooks survive');
+    assert.ok(after.statusLine?.command?.includes('statusline'), 'StatusLine kept');
+  });
+});
