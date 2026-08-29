@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added `@cairn/contract`: the integration contract (client identity, hook events, route classification, memory-path grammar, portable round-trip format, client-adapter interfaces) as a zero-dependency types package, bundled into the npm tarball.
+- Added a client-neutral `/post-tool` hook route; `/codex-post-tool` remains served as a deprecated alias so existing trusted wiring keeps working.
+- Added `cairn init --migrate-routes` to modernize deprecated hook routes explicitly (one re-trust in Codex; unrelated hook trust is preserved).
+- Added a doctor check that detects a running daemon left over from a previous install (missing routes or contract-revision drift) and says to restart it.
+
+### Changed
+
+- Re-running `cairn init` now preserves Codex hook trust precisely: merges keep every hook's position, and only hooks whose command actually changed are re-reviewed.
+- Client-specific behavior now dispatches through a per-agent adapter registry (capabilities), so adding an agent no longer touches core hook logic.
+
+### Fixed
+
+- Fixed silent PostToolUse capture loss on shell-relay installs when the daemon is down or serving an older route table (direct-node fallback added).
+- Fixed `cairn init` wiping trust for a user's own unrelated Codex hooks when Cairn's commands changed.
+
 ## [5.3.1] - 2026-08-28
 
 ### Changed

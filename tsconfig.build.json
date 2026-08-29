@@ -1,0 +1,7 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/contract" },
+    { "path": "tsconfig.core.json" }
+  ]
+}

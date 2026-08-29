@@ -27,7 +27,7 @@
  */
 import type { StopInput } from '../shared/hook-io.js';
 import type { CachedHookContext } from '../shared/db-client.js';
-import { isCodexClient, originClientOf } from '../shared/client-adapter.js';
+import { capabilitiesOf, originClientOf } from '../shared/client-adapter.js';
 import { projectId } from '../../utils/project-id.js';
 import { extractAssistantDecision, extractDecisionSigils } from '../shared/transcript-parser.js';
 import {
@@ -170,9 +170,10 @@ export async function handleStop(
   // next UserPromptSubmit surfaces a one-line reminder to emit sigils
   // next time. Session-scoped: the prompt handler clears the flag after
   // firing. No-op if the tracker file is unavailable.
-  // Codex sessions: reflection can never run (no MCP sampling), so the
-  // nudge would fire on every decision-bearing turn — suppress at set time.
-  if (!isCodexClient(input)) {
+  // Clients without an actionable reflection path (capability
+  // sigilNudges=false) would see the nudge on every decision-bearing
+  // turn — suppress at set time.
+  if (capabilitiesOf(input).sigilNudges) {
     try {
       const tracker = loadTracker(input.session_id);
       tracker.pendingDecisionNudge = Math.max(tracker.pendingDecisionNudge, markerCount);
@@ -182,7 +183,7 @@ export async function handleStop(
 
   return {
     action: 'reflection-empty',
-    // Suppressed for codex (no nudge was armed) — report what actually fired.
-    pendingNudge: isCodexClient(input) ? 0 : markerCount,
+    // Report what actually fired — 0 when the nudge was suppressed.
+    pendingNudge: capabilitiesOf(input).sigilNudges ? markerCount : 0,
   };
 }

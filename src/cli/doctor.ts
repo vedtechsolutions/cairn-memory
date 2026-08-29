@@ -14,13 +14,15 @@ import { dirname, join } from 'node:path';
 import { SCHEMA_VERSION } from '../db/schema.js';
 import { resolveDbPath } from '../db/db-path.js';
 import { CAIRN_HOOK_DIR_MARKER } from '../constants/index.js';
+import { SYNC_ROUTES, ASYNC_ROUTES, CONTRACT_REVISION } from '@cairn/contract';
 import { getEmbeddingModelConfig } from '../utils/embeddings.js';
 import { verifyModelPackage, ArtifactVerificationError } from '../utils/artifact-verification.js';
 import { probeHookSocket, socketPath, pidPath } from '../mcp/socket-ownership.js';
 import { binaryUsable, relayShellPath } from './relay.js';
 import {
   codexDir, codexHooksPath, codexConfigPath, codexHookCount,
-  countTrustedHooksIn, hasCairnMcpServer, type CodexHooksFile,
+  countTrustedHooksIn, hasCairnMcpServer, cairnCommandSet,
+  LEGACY_POST_TOOL_ROUTE, type CodexHooksFile,
 } from './codex-init.js';
 
 const MIN_NODE_MAJOR = 20;
@@ -124,6 +126,25 @@ async function checkDatabase(): Promise<CheckResult> {
 async function checkSocket(): Promise<CheckResult> {
   const live = await probeHookSocket();
   if (live) {
+    // A daemon left running across a package upgrade serves the OLD route
+    // table; async hooks aimed at a route it lacks fail silently (the
+    // relay's direct-node fallback catches the 404, but capture should
+    // not be living on the fallback path).
+    // Absent metadata is itself the oldest form of drift: every daemon of
+    // this contract era serves routes + contract_revision, so a null on
+    // either means the owner PREDATES both fields — exactly the daemon
+    // this check exists to catch. Null must warn, never pass as healthy.
+    if (live.routes === null || live.contractRevision === null) {
+      return { status: 'warn', detail: `hook socket owner (PID ${live.pid}) predates contract metadata (/health lacks routes/contract_revision) — restart it: \`systemctl restart cairn-daemon\` (or restart the agent that owns the socket)` };
+    }
+    const missingRoutes = [...SYNC_ROUTES, ...ASYNC_ROUTES].filter((r) => !live.routes!.includes(`/${r}`));
+    const revisionDrift = live.contractRevision !== CONTRACT_REVISION;
+    if (missingRoutes.length > 0 || revisionDrift) {
+      const what = missingRoutes.length > 0
+        ? `missing routes: ${missingRoutes.join(', ')}`
+        : `contract revision ${live.contractRevision} vs this build's ${CONTRACT_REVISION}`;
+      return { status: 'warn', detail: `hook socket owner (PID ${live.pid}) predates this install (${what}) — restart it: \`systemctl restart cairn-daemon\` (or restart the agent that owns the socket)` };
+    }
     return { status: 'ok', detail: `hook socket served by PID ${live.pid} at ${socketPath()}` };
   }
   // A socket file whose HTTP probe fails has two very different causes; the
@@ -187,14 +208,19 @@ export function checkCodexParity(): CheckResult {
   }
   const config = existsSync(codexConfigPath()) ? readFileSync(codexConfigPath(), 'utf-8') : '';
   const mcp = hasCairnMcpServer(config) ? 'MCP registered' : 'MCP NOT registered (run `cairn init`)';
-  const trust = countTrustedHooksIn(config, hooksPath);
+  const trust = countTrustedHooksIn(config, hooksPath, file);
+  // Deprecated-route note (D3 window): status stays as-is while the alias
+  // is served; this line escalates to a warn when a removal window opens.
+  const legacyRoute = cairnCommandSet(file).some((c) => c.endsWith(` ${LEGACY_POST_TOOL_ROUTE}`))
+    ? `; deprecated '${LEGACY_POST_TOOL_ROUTE}' route wiring — modernize with \`cairn init --migrate-routes\` (one re-trust)`
+    : '';
   if (trust.disabled > 0 && trust.trusted < total) {
-    return { status: 'warn', detail: `Codex wired but ${trust.disabled} hook(s) are DISABLED and ${total - trust.trusted - trust.disabled} untrusted (${trust.trusted}/${total} active; ${mcp}) — review with /hooks in codex` };
+    return { status: 'warn', detail: `Codex wired but ${trust.disabled} hook(s) are DISABLED and ${total - trust.trusted - trust.disabled} untrusted (${trust.trusted}/${total} active; ${mcp}) — review with /hooks in codex${legacyRoute}` };
   }
   if (trust.trusted >= total) {
-    return { status: 'ok', detail: `Codex wired and trusted (${trust.trusted}/${total} hooks; ${mcp})` };
+    return { status: 'ok', detail: `Codex wired and trusted (${trust.trusted}/${total} hooks; ${mcp})${legacyRoute}` };
   }
-  return { status: 'warn', detail: `Codex wired, awaiting one-time trust review (${trust.trusted}/${total} hooks trusted; ${mcp}) — start \`codex\` and accept the Cairn hooks` };
+  return { status: 'warn', detail: `Codex wired, awaiting one-time trust review (${trust.trusted}/${total} hooks trusted; ${mcp}) — start \`codex\` and accept the Cairn hooks${legacyRoute}` };
 }
 
 const CHECKS: Check[] = [

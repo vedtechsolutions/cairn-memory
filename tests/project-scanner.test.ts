@@ -1,5 +1,8 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { scanProject, getGitHash, formatProjectContext } from '../src/utils/project-scanner.js';
 import { gitSpawnSkipReason } from './spawn-probe.js';
 
@@ -103,11 +106,30 @@ describe('formatProjectContext', () => {
   });
 
   it('should keep total output under 100 tokens (rough estimate)', () => {
-    const ctx = scanProject(process.cwd());
-    const lines = formatProjectContext(ctx);
-    const text = lines.join('\n');
-    // Rough token estimate: ~4 chars per token
-    const roughTokens = Math.ceil(text.length / 4);
-    assert.ok(roughTokens < 100, `Should be under 100 tokens, got ~${roughTokens}`);
+    // A FIXTURE tree, not process.cwd(): the live repo's shape grows over
+    // time (adding packages/ broke the cap), and the compactness contract
+    // must be judged on a representative project, not on whatever this
+    // checkout looks like today.
+    const dir = mkdtempSync(join(tmpdir(), 'cairn-scan-fixture-'));
+    try {
+      writeFileSync(join(dir, 'package.json'), JSON.stringify({
+        name: 'fixture-app', version: '1.0.0', main: 'src/index.ts',
+        dependencies: { express: '4.0.0', zod: '3.0.0', pg: '8.0.0' },
+        devDependencies: { typescript: '5.0.0', vitest: '1.0.0' },
+      }));
+      for (const d of ['src', 'tests', 'docs', 'scripts', 'config']) {
+        mkdirSync(join(dir, d));
+      }
+      writeFileSync(join(dir, 'src', 'index.ts'), 'export {};\n');
+
+      const ctx = scanProject(dir);
+      const lines = formatProjectContext(ctx);
+      const text = lines.join('\n');
+      // Rough token estimate: ~4 chars per token
+      const roughTokens = Math.ceil(text.length / 4);
+      assert.ok(roughTokens < 100, `Should be under 100 tokens, got ~${roughTokens}`);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

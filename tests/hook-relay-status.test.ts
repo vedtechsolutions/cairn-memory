@@ -28,46 +28,52 @@ const GENEROUS_DAEMON_ENV = { CAIRN_DAEMON_TIMEOUT_MS: TEST_GENEROUS_TIMEOUT_MS 
 
 describe('hook-relay HTTP status + body integrity (H1/H2/M12)', () => {
   let tmpBinDir: string;
-  let fakeHome: string;
-  let sockPath: string;
   let server: Server | null = null;
   let skipReason: string | null = null;
+  const homes: string[] = [];
 
   before(async () => {
     tmpBinDir = prepareRelayDir('cairn-relay-status');
 
-    fakeHome = mkdtempSync(join(tmpdir(), 'cairn-relay-home-'));
-    mkdirSync(join(fakeHome, '.cairn'), { recursive: true });
-    sockPath = join(fakeHome, '.cairn', 'hook-daemon.sock');
-
     // Capability probe: sandboxed environments may deny Unix-socket listen
     // (EPERM). Skip the suite there instead of failing — the relay logic
     // itself is environment-independent.
+    const probeHome = mkdtempSync(join(tmpdir(), 'cairn-relay-home-'));
+    mkdirSync(join(probeHome, '.cairn'), { recursive: true });
+    homes.push(probeHome);
     try {
       await new Promise<void>((resolveProbe, rejectProbe) => {
         const probe = createServer(() => {});
         probe.once('error', rejectProbe);
-        probe.listen(sockPath, () => probe.close(() => resolveProbe()));
+        probe.listen(join(probeHome, '.cairn', 'hook-daemon.sock'), () => probe.close(() => resolveProbe()));
       });
-      rmSync(sockPath, { force: true });
     } catch (err) {
       skipReason = `unix-socket listen not permitted in this environment: ${(err as Error).message}`;
     }
   });
 
-  after(() => {
-    server?.close();
+  after(async () => {
+    if (server) await new Promise<void>((resolveClose) => server!.close(() => resolveClose()));
     rmSync(tmpBinDir, { recursive: true, force: true });
-    rmSync(fakeHome, { recursive: true, force: true });
+    for (const home of homes) rmSync(home, { recursive: true, force: true });
   });
 
-  function listen(handler: Parameters<typeof createServer>[1]): Promise<void> {
-    return new Promise((resolvePromise) => {
-      server?.close();
-      rmSync(sockPath, { force: true });
-      server = createServer(handler);
-      server.listen(sockPath, () => resolvePromise());
-    });
+  /** Start a mock daemon on a PER-TEST socket (fresh fake HOME — the
+   *  relay derives its socket path from $HOME/.cairn). The shared-path
+   *  version raced the previous server's ASYNC close against the next
+   *  unlink+listen under full-suite load (recorded flake, guarding the
+   *  silent-capture-loss fallback): a unique path per test removes the
+   *  shared resource instead of timing around it. Returns the home to
+   *  pass to runRelay. */
+  async function listen(handler: Parameters<typeof createServer>[1]): Promise<string> {
+    if (server) await new Promise<void>((resolveClose) => server!.close(() => resolveClose()));
+    const home = mkdtempSync(join(tmpdir(), 'cairn-relay-home-'));
+    mkdirSync(join(home, '.cairn'), { recursive: true });
+    homes.push(home);
+    server = createServer(handler);
+    await new Promise<void>((resolveListen) =>
+      server!.listen(join(home, '.cairn', 'hook-daemon.sock'), () => resolveListen()));
+    return home;
   }
 
   it('falls back to direct-node exec on daemon 404 instead of printing the error body', async (t) => {
@@ -76,7 +82,7 @@ describe('hook-relay HTTP status + body integrity (H1/H2/M12)', () => {
       join(tmpBinDir, 'unrouted-hook.js'),
       `const data = require('fs').readFileSync(0, 'utf8');\nprocess.stdout.write('FALLBACK:' + data.trim());\n`,
     );
-    await listen((_req, res) => {
+    const fakeHome = await listen((_req, res) => {
       res.writeHead(404);
       res.end('Unknown route: /unrouted-hook');
     });
@@ -90,7 +96,7 @@ describe('hook-relay HTTP status + body integrity (H1/H2/M12)', () => {
 
   it('sends the full Content-Length body even when input contains NUL bytes', async (t) => {
     if (skipReason) return t.skip(skipReason);
-    await listen((req, res) => {
+    const fakeHome = await listen((req, res) => {
       const chunks: Buffer[] = [];
       req.on('data', (c: Buffer) => chunks.push(c));
       req.on('end', () => {
@@ -109,7 +115,7 @@ describe('hook-relay HTTP status + body integrity (H1/H2/M12)', () => {
 
   it('prints the response body unchanged on 200', async (t) => {
     if (skipReason) return t.skip(skipReason);
-    await listen((_req, res) => {
+    const fakeHome = await listen((_req, res) => {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end('{"decision":"allow","note":"ok"}');
     });

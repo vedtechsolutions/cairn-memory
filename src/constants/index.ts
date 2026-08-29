@@ -2,44 +2,29 @@
 // Cairn Constants — Single source of truth for all enums, defaults, and limits
 // ============================================================================
 
-// --- Memory Kinds -----------------------------------------------------------
+// --- Memory vocabulary (contract) -------------------------------------------
+// The enumerations live in @cairn/contract (they are stored in rows, cross
+// the import/sync boundary, and are frozen additively). Re-exported here so
+// the codebase's import sites stay stable.
 
-export const MEMORY_KINDS = ['pitfall', 'decision', 'correction', 'fact', 'task_state', 'user_profile', 'reference', 'pattern', 'goal', 'rule'] as const;
-export type MemoryKind = (typeof MEMORY_KINDS)[number];
+export {
+  MEMORY_KINDS, LEARNABLE_KINDS, NON_DECAYING_KINDS,
+  MEMORY_SOURCES, SOURCE_AUTHORITY_ORDER,
+  PLAN_STATUSES, STEP_STATUSES,
+  type MemoryKind, type LearnableKind, type MemorySource,
+  type PlanStatus, type StepStatus,
+} from '@cairn/contract';
+import {
+  SOURCE_AUTHORITY_ORDER as _AUTHORITY_ORDER,
+  type MemorySource, type ContextMode,
+} from '@cairn/contract';
 
-/** Kinds accepted via cairn_learn (task_state is system-managed).
- *  'pattern' and 'goal' are learnable: patterns are mined from winning
- *  sessions (Phase 3) and can also be stored explicitly; goals are
- *  stored on plan creation and task-intent detection (Phase 4). */
-export const LEARNABLE_KINDS = ['pitfall', 'decision', 'correction', 'fact', 'user_profile', 'reference', 'pattern', 'goal'] as const;
-export type LearnableKind = (typeof LEARNABLE_KINDS)[number];
-
-/** Policy records have explicit lifecycle only; generic maintenance and
- * confidence feedback must never rewrite their authority metadata. */
-export const NON_DECAYING_KINDS = ['rule'] as const satisfies readonly MemoryKind[];
-
-// --- Memory Sources ---------------------------------------------------------
-
-export const MEMORY_SOURCES = ['user', 'learned', 'corrected', 'confirmed'] as const;
-export type MemorySource = (typeof MEMORY_SOURCES)[number];
-
-/** Authority ranking for source types — higher wins on dedup merge (never downgrade user → learned) */
-export const SOURCE_AUTHORITY: Record<MemorySource, number> = {
-  user: 3,
-  confirmed: 2,
-  corrected: 1,
-  learned: 0,
-} as const;
-
-// --- Plan Statuses ----------------------------------------------------------
-
-export const PLAN_STATUSES = ['active', 'completed', 'abandoned'] as const;
-export type PlanStatus = (typeof PLAN_STATUSES)[number];
-
-// --- Step Statuses ----------------------------------------------------------
-
-export const STEP_STATUSES = ['done', 'in_progress', 'pending', 'blocked'] as const;
-export type StepStatus = (typeof STEP_STATUSES)[number];
+/** Numeric authority ranking DERIVED from the contract's ordering (higher
+ *  wins on dedup merge) — the ordering is the contract; the numbers are an
+ *  internal encoding of it, kept in one place so they can never drift. */
+export const SOURCE_AUTHORITY: Record<MemorySource, number> = Object.fromEntries(
+  _AUTHORITY_ORDER.map((source, i) => [source, _AUTHORITY_ORDER.length - 1 - i]),
+) as Record<MemorySource, number>;
 
 // --- Confidence Defaults ----------------------------------------------------
 
@@ -375,8 +360,7 @@ export const RELEVANCE = {
 
 // --- Context Pressure Modes -------------------------------------------------
 
-export const CONTEXT_MODES = ['normal', 'compact', 'minimal', 'critical'] as const;
-export type ContextMode = (typeof CONTEXT_MODES)[number];
+export { CONTEXT_MODES, type ContextMode } from '@cairn/contract';
 
 export const CONTEXT_THRESHOLDS = {
   /** Above this % free → normal mode */
@@ -859,8 +843,7 @@ export const SCORING_PROFILES = {
 
 // --- Intent Classification --------------------------------------------------
 
-export const INTENTS = ['task', 'question', 'correction', 'status'] as const;
-export type UserIntent = (typeof INTENTS)[number];
+export { INTENTS, type UserIntent } from '@cairn/contract';
 
 // --- Error Classification ---------------------------------------------------
 

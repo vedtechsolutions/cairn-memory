@@ -35,7 +35,7 @@
   ],
   "scripts": {
     "clean": "rm -rf dist",
-    "build": "tsc && npm run build:relay",
+    "build": "tsc -b tsconfig.build.json && npm run build:relay",
     "build:relay": "cc -O2 -D_FORTIFY_SOURCE=2 -fstack-protector-strong -fPIE -pie -Wall -Wextra -Wformat -Werror=format-security -o dist/src/hooks/hook-relay src/hooks/hook-relay.c && cp src/hooks/hook-relay.sh dist/src/hooks/hook-relay.sh && chmod +x dist/src/hooks/hook-relay.sh",
     "start": "node dist/src/mcp/server.js",
     "daemon": "node dist/src/daemon/cairn-daemon.js",
@@ -43,7 +43,8 @@
     "test:build": "npm run build && npm test",
     "strip:publish": "find dist/src -name '*.map' -delete && find dist/src -name '*.d.ts' -delete && rm -rf dist/src/benchmark",
     "prepublishOnly": "npm run clean && npm run build && npm run strip:publish",
-    "dev": "tsc --watch"
+    "dev": "tsc -b tsconfig.build.json --watch",
+    "prepack": "node scripts/verify-pack.mjs"
   },
   "engines": {
     "node": ">=20.0.0"
@@ -63,12 +64,19 @@
     "@modelcontextprotocol/sdk": "^1.12.1",
     "better-sqlite3": "^12.11.1",
     "sqlite-vec": "^0.1.8",
-    "zod": "^3.25.56"
+    "zod": "^3.25.56",
+    "@cairn/contract": "1.0.0-dev.0"
   },
   "devDependencies": {
     "@anthropic-ai/sdk": "0.113.0",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.15.0",
     "typescript": "^5.8.3"
-  }
+  },
+  "workspaces": [
+    "packages/contract"
+  ],
+  "bundleDependencies": [
+    "@cairn/contract"
+  ]
 }

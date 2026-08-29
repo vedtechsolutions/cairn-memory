@@ -9,7 +9,7 @@
  */
 import type { SessionStartInput } from '../shared/hook-io.js';
 import type { CachedHookContext } from '../shared/db-client.js';
-import { isCodexClient, wrapContextOutput } from '../shared/client-adapter.js';
+import { capabilitiesOf, wrapContextOutput } from '../shared/client-adapter.js';
 import { compileBriefing, recoverDroppedPitfalls, buildBriefingQueryFp, type BriefingContext } from '../shared/briefing-compiler.js';
 import { projectId } from '../../utils/project-id.js';
 import { migrateProjectIdentity } from '../../db/project-identity-migration.js';
@@ -459,11 +459,11 @@ export function handleSessionStart(
     }
   } catch { /* best-effort */ }
 
-  // Non-Claude clients get an explicit framing line: a live Codex session
-  // once read the briefing's plan state and appointed itself the
-  // implementer — shared memory must inform, never task. The framing
-  // spends part of the budget so the emitted total stays inside it.
-  const framing = isCodexClient(input) ? CROSS_AGENT_CONTEXT_FRAMING : null;
+  // Cross-agent-framing clients get an explicit framing line: a live
+  // Codex session once read the briefing's plan state and appointed
+  // itself the implementer — shared memory must inform, never task. The
+  // framing spends part of the budget so the emitted total stays inside.
+  const framing = capabilitiesOf(input).crossAgentFraming ? CROSS_AGENT_CONTEXT_FRAMING : null;
   const effectiveBudget = framing
     ? Math.max(0, budget - estimateTokensFast(framing))
     : budget;

@@ -69,9 +69,18 @@ if [ -S "$SOCK" ]; then
   else
     # Async: fire and forget. The subshell owns the temp file's lifetime —
     # the EXIT trap would otherwise race the backgrounded curl's open().
+    # Fall back to direct node ONLY on definite non-processing failures:
+    # a refused connection (curl exit 7) or a 404/410 from a stale daemon
+    # that predates this route — a SILENT capture loss otherwise. A 5xx or
+    # a timeout does NOT fall back: the handler may have mutated state
+    # before failing, and a re-run could double-process (the demux handler
+    # also dedups on tool_use_id as a second line of defense).
     trap - EXIT
     (
-      curl -sf --max-time 3 --unix-socket "$SOCK" "http://localhost/$HOOK_TYPE" -H "Content-Type: application/json" "${CLIENT_HDR[@]}" --data-binary @"$INPUT_FILE" >/dev/null 2>&1
+      HTTP_CODE=$(curl -s --max-time 3 --unix-socket "$SOCK" "http://localhost/$HOOK_TYPE" -H "Content-Type: application/json" "${CLIENT_HDR[@]}" --data-binary @"$INPUT_FILE" -o /dev/null -w '%{http_code}' 2>/dev/null)
+      if [ "$?" = "7" ] || [ "$HTTP_CODE" = "404" ] || [ "$HTTP_CODE" = "410" ]; then
+        CAIRN_CLIENT="$CLIENT" node "$SCRIPT_DIR/$HOOK_TYPE.js" < "$INPUT_FILE" >/dev/null 2>&1
+      fi
       rm -f "$INPUT_FILE"
     ) &
     exit 0
@@ -80,7 +89,14 @@ fi
 
 # Socket missing — MCP server not yet started or restarting.
 # Don't spawn standalone daemon; the MCP server owns the socket now.
-# For sync hooks, fall back to direct Node.js as last resort.
+# Sync hooks fall back to direct Node.js; async hooks do the same in the
+# background (capture must not vanish just because the daemon is down).
 if is_sync "$HOOK_TYPE"; then
   [ "$HOOK_TYPE" != "governance-gate" ] && CAIRN_CLIENT="$CLIENT" node "$SCRIPT_DIR/$HOOK_TYPE.js" < "$INPUT_FILE"
+else
+  trap - EXIT
+  (
+    CAIRN_CLIENT="$CLIENT" node "$SCRIPT_DIR/$HOOK_TYPE.js" < "$INPUT_FILE" >/dev/null 2>&1
+    rm -f "$INPUT_FILE"
+  ) &
 fi

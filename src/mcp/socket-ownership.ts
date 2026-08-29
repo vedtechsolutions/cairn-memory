@@ -97,6 +97,10 @@ export function isOwnerOnly(path: string, opts?: { followSymlink?: boolean }): b
 export interface SocketProbeResult {
   /** PID reported by the live owner's /health payload (0 when unparseable). */
   pid: number;
+  /** Contract revision the owner serves (null on older daemons). */
+  contractRevision: number | null;
+  /** Route paths the owner serves, '/name' form (null on older daemons). */
+  routes: string[] | null;
 }
 
 export type SocketClaim =
@@ -121,9 +125,15 @@ export function probeHookSocket(): Promise<SocketProbeResult | null> {
             const health = JSON.parse(Buffer.concat(chunks).toString('utf-8')) as {
               status?: string;
               pid?: number;
+              contract_revision?: number;
+              routes?: string[];
             };
             if (res.statusCode === 200 && health.status === 'ok') {
-              resolve({ pid: Number(health.pid) || 0 });
+              resolve({
+                pid: Number(health.pid) || 0,
+                contractRevision: typeof health.contract_revision === 'number' ? health.contract_revision : null,
+                routes: Array.isArray(health.routes) ? health.routes.filter((r): r is string => typeof r === 'string') : null,
+              });
             } else {
               resolve(null);
             }

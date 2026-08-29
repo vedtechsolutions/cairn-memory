@@ -5,7 +5,7 @@
 import type { SubagentStartInput } from '../shared/hook-io.js';
 import type { HookDbClient } from '../shared/db-client.js';
 import { projectId } from '../../utils/project-id.js';
-import { isCodexClient } from '../shared/client-adapter.js';
+import { capabilitiesOf } from '../shared/client-adapter.js';
 import { CROSS_AGENT_CONTEXT_FRAMING } from '../../constants/index.js';
 import { neutralizeMemoryText } from '../../utils/validation.js';
 
@@ -60,7 +60,7 @@ export function handleSubagentContext(input: SubagentStartInput, client: HookDbC
     // Same framing as session-start: the plan line above is exactly the
     // shape that made a live Codex session adopt the plan as its own
     // tasking. Prepended only when there is real content to frame.
-    const text = isCodexClient(input)
+    const text = capabilitiesOf(input).crossAgentFraming
       ? `${CROSS_AGENT_CONTEXT_FRAMING}\n${lines.join('\n')}`
       : lines.join('\n');
     output = JSON.stringify({

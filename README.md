@@ -337,7 +337,8 @@ Or configure Claude Code automatically instead of editing `settings.json` by han
 
 ```bash
 cairn init              # merge Cairn's MCP + StatusLine + hooks into ~/.claude/settings.json
-cairn init --dry-run    # preview the changes without writing
+cairn init --dry-run          # preview the changes without writing
+cairn init --migrate-routes   # modernize deprecated hook routes (one re-trust in Codex)
 ```
 
 `cairn init` is idempotent and preserves your existing settings (it backs up

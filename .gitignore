@@ -7,3 +7,8 @@ dist/
 .env
 .claude/settings.local.json
 .claude/worktrees/
+*.tsbuildinfo
+
+# Private planning docs — never tracked in the public tree (golden baseline
+# regenerates via scripts/golden-hooks.mjs)
+docs/plans/

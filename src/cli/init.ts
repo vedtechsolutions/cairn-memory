@@ -131,7 +131,7 @@ function readSettings(path: string): Settings {
   return parsed as Settings;
 }
 
-export interface InitOptions { dryRun?: boolean }
+export interface InitOptions { dryRun?: boolean; migrateRoutes?: boolean }
 
 /** Run init; returns the process exit code. */
 export function runInit(options: InitOptions = {}): number {
@@ -179,7 +179,7 @@ export function runInit(options: InitOptions = {}): number {
     console.log(`  ✓ wrote ${path}`);
   }
 
-  runCodexInit(relay.command, SERVER, options.dryRun ?? false);
+  runCodexInit(relay.command, SERVER, options.dryRun ?? false, options.migrateRoutes ?? false);
 
   if (options.dryRun) console.log('\n  (dry run — no files were written)');
 

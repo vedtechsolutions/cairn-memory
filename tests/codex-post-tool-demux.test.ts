@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { findRolloutToolRecord } from '../src/hooks/shared/rollout-lookup.js';
 import { demuxOutcome, handleCodexPostTool, isToolSeen } from '../src/hooks/handlers/codex-post-tool-handler.js';
+import { registerClientAdapter } from '../src/hooks/shared/client-adapter.js';
 import { createHookDbClient, type HookDbClient } from '../src/hooks/shared/db-client.js';
 import { classifyError } from '../src/utils/error-classifier.js';
 
@@ -93,7 +94,7 @@ describe('findRolloutToolRecord', () => {
 describe('demuxOutcome', () => {
   it('routes a failed record to failure with exit code and output text', () => {
     const o = demuxOutcome({ tool_name: 'Bash', tool_response: 'boom-stderr\n' },
-      { kind: 'command', status: 'failed', exitCode: 3, outputText: 'boom-stderr\n' });
+      { status: 'failed', exitCode: 3, outputText: 'boom-stderr\n' });
     assert.equal(o.failed, true);
     assert.equal(o.exitCode, 3);
     assert.match(o.errorText, /boom-stderr/);
@@ -101,7 +102,7 @@ describe('demuxOutcome', () => {
 
   it('routes a completed record to success', () => {
     const o = demuxOutcome({ tool_name: 'Bash', tool_response: 'ok\n' },
-      { kind: 'command', status: 'completed', exitCode: 0, outputText: 'ok\n' });
+      { status: 'completed', exitCode: 0, outputText: 'ok\n' });
     assert.equal(o.failed, false);
   });
 
@@ -114,16 +115,16 @@ describe('demuxOutcome', () => {
   it('FAIL-SAFE: a novel status routes to unknown, and a non-zero exit code to failure regardless of status', () => {
     // Regression for review fix 1: `aborted` (exit 130) must never be success.
     const aborted = demuxOutcome({ tool_name: 'Bash', tool_response: 'interrupted' },
-      { kind: 'command', status: 'aborted', exitCode: 130, outputText: 'interrupted' });
+      { status: 'aborted', exitCode: 130, outputText: 'interrupted' });
     assert.equal(aborted.failed, true);
     assert.equal(aborted.exitCode, 130);
 
     const novel = demuxOutcome({ tool_name: 'Bash', tool_response: 'x' },
-      { kind: 'command', status: 'unknown', exitCode: null, outputText: 'x' });
+      { status: 'unknown', exitCode: null, outputText: 'x' });
     assert.equal(novel.failed, null);
 
     const completedNonZero = demuxOutcome({ tool_name: 'Bash', tool_response: 'x' },
-      { kind: 'command', status: 'completed', exitCode: 7, outputText: 'x' });
+      { status: 'completed', exitCode: 7, outputText: 'x' });
     assert.equal(completedNonZero.failed, true);
   });
 
@@ -257,6 +258,48 @@ describe('handleCodexPostTool (hook path, end to end)', () => {
       ).all(RUN) as Array<{ origin_client: string }>;
       assert.equal(rows.length, 1);
       assert.equal(rows[0].origin_client, 'codex');
+    } finally {
+      client.close();
+    }
+  });
+});
+
+describe('atomic tool_use_id claim (hook/tailer race)', () => {
+  it('two concurrent deliveries of one id route EXACTLY once', async () => {
+    const client: HookDbClient = createHookDbClient(':memory:');
+    try {
+      // A resolver that parks until released: both invocations pass the
+      // fast seen-check while unresolved, then race the atomic claim on
+      // resume — the check-then-mark version routed BOTH (reproduced by
+      // the Codex reviewer as two 'success-routed' for one id).
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => { release = resolve; });
+      registerClientAdapter({
+        name: 'race-test-agent',
+        capabilities: {
+          toolFailureSignal: 'lookup', contextOutput: 'envelope',
+          emitsPermissionDecision: false, crossAgentFraming: true, sigilNudges: false,
+        },
+        normalizeInput: () => { /* no dialect */ },
+        wrapContextOutput: (_event, output) => output,
+        resolveToolOutcome: async () => {
+          await gate;
+          return { status: 'completed', exitCode: 0, outputText: 'ok' };
+        },
+      });
+      const input = {
+        session_id: 'race-s1', transcript_path: null, cwd: '/tmp',
+        hook_event_name: 'PostToolUse', client_name: 'race-test-agent',
+        tool_name: 'Bash', tool_input: { command: 'true' },
+        tool_use_id: `race-${RUN}`, tool_response: '',
+      };
+      const first = handleCodexPostTool(input, { ...client, cache: undefined });
+      const second = handleCodexPostTool(input, { ...client, cache: undefined });
+      release();
+      const actions = (await Promise.all([first, second])).map((r) => r.action).sort();
+      assert.deepEqual(actions, ['skipped', 'success-routed'],
+        'exactly one delivery routes; the claim loser drops');
+      assert.equal(isToolSeen(client.db, `race-${RUN}`), true);
     } finally {
       client.close();
     }

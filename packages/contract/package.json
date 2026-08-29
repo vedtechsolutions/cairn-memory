@@ -1,0 +1,22 @@
+{
+  "name": "@cairn/contract",
+  "version": "1.0.0-dev.0",
+  "description": "Integration contract for Cairn — normalized hook event types, client identity, memory vocabulary, portable round-trip format, and hook-socket routes. Types and constants only; zero dependencies.",
+  "license": "MIT",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist/",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  }
+}

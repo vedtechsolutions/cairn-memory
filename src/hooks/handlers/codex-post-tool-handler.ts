@@ -1,18 +1,22 @@
 /**
- * Codex PostToolUse demux — one hook event, ground-truth routed.
+ * PostToolUse demux — one hook event, ground-truth routed. Serves the
+ * canonical /post-tool route and its deprecated /codex-post-tool alias.
  *
- * Codex fires PostToolUse for successes AND failures with no failure signal
- * in the payload, so this handler looks up the rollout record joined on
- * tool_use_id and routes: failed → error-learning (synthesized
- * PostToolUseFailureInput), completed → success-tracker, no match →
- * outcome-unknown tool event (success stays undefined — it can never count
- * as a success). Mirrors Claude's mutually-exclusive
- * PostToolUse/PostToolUseFailure split.
+ * Lookup-signal clients (Codex) fire PostToolUse for successes AND
+ * failures with no failure signal in the payload, so this handler asks
+ * the event's client ADAPTER for the ground-truth outcome
+ * (resolveToolOutcome — Codex: rollout record joined on tool_use_id) and
+ * routes: failed → error-learning (synthesized PostToolUseFailureInput),
+ * completed → success-tracker, no match → outcome-unknown tool event
+ * (success stays undefined — it can never count as a success). Mirrors
+ * Claude's mutually-exclusive PostToolUse/PostToolUseFailure split.
  */
 import type Database from 'better-sqlite3';
+import type { ToolOutcome } from '@cairn/contract';
 import type { PostToolUseInput, PostToolUseFailureInput } from '../shared/hook-io.js';
 import type { CachedHookContext } from '../shared/db-client.js';
-import { findRolloutToolRecord, type RolloutToolRecord } from '../shared/rollout-lookup.js';
+import { adapterFor } from '../shared/client-adapter.js';
+import { findRolloutToolRecord } from '../shared/rollout-lookup.js';
 import { handleErrorLearning } from './error-learning-handler.js';
 import { handleSuccessTracker } from './success-tracker-handler.js';
 import { loadTracker, saveTracker } from '../shared/edit-tracker.js';
@@ -45,7 +49,7 @@ export interface DemuxOutcome {
  *  the status says. */
 export function demuxOutcome(
   input: Pick<PostToolUseInput, 'tool_name' | 'tool_response'>,
-  record: RolloutToolRecord | null,
+  record: ToolOutcome | null,
 ): DemuxOutcome {
   if (record) {
     if (record.status === 'failed' || (record.exitCode !== null && record.exitCode !== 0)) {
@@ -81,38 +85,68 @@ export function isToolSeen(db: Database.Database, toolUseId: string): boolean {
   } catch { return false; }
 }
 
-function markToolSeen(db: Database.Database, toolUseId: string | undefined): void {
-  if (!toolUseId) return;
+/**
+ * ATOMIC claim of a tool_use_id. A check-then-mark pair is not enough:
+ * a hook invocation can pass the seen-check, await its resolver, and
+ * resume AFTER a concurrent tailer invocation marked and routed — both
+ * would route (reproduced live: two 'success-routed' for one id). The
+ * INSERT OR IGNORE makes exactly one caller win; only the winner may
+ * dispatch. No id (or a DB error) claims true — dedup is an optimization
+ * and its failure must never drop capture.
+ */
+function claimTool(db: Database.Database, toolUseId: string | undefined): boolean {
+  if (!toolUseId) return true;
   try {
-    db.prepare(
-      'INSERT OR REPLACE INTO maintenance_meta (key, value) VALUES (?, ?)',
+    const result = db.prepare(
+      'INSERT OR IGNORE INTO maintenance_meta (key, value) VALUES (?, ?)',
     ).run(`codex_seen:${toolUseId}`, new Date().toISOString());
-  } catch { /* best-effort */ }
+    return result.changes > 0;
+  } catch { return true; }
 }
 
 export async function handleCodexPostTool(
   input: PostToolUseInput,
   client: CachedHookContext,
-  /** Pre-resolved rollout record (the tailer already parsed the line it is
+  /** Pre-resolved outcome (the tailer already parsed the record it is
    *  routing — re-looking it up in a tail window the tailer may have
-   *  outrun would silently demote it to unknown). undefined = look up. */
-  preResolved?: RolloutToolRecord | null,
+   *  outrun would silently demote it to unknown). undefined = resolve
+   *  via the event's client adapter. */
+  preResolved?: ToolOutcome | null,
 ): Promise<CodexPostToolResult> {
   if (!DEMUX_TOOLS.includes(input.tool_name)) {
     return { output: null, action: 'skipped', exitCode: null };
   }
 
+  // IDEMPOTENCY: once an outcome has been routed for this tool_use_id,
+  // every further delivery is dropped — a relay status-fallback retry,
+  // the C relay's bad-status re-exec, or a tailer/hook race must never
+  // double-count an error (escalation, investigation chains) or success.
+  if (input.tool_use_id && isToolSeen(client.db, input.tool_use_id)) {
+    return { output: null, action: 'skipped', exitCode: null };
+  }
+
+  // Ground truth comes from the ADAPTER (the extension seam's promise):
+  // a lookup-signal client resolves from its own state. A caller with NO
+  // resolver (undeclared/legacy delivery straight to this route) gets the
+  // pre-seam behavior — direct rollout lookup — rather than a silent
+  // degradation to unknown: this route is lookup-based by definition.
+  const resolver = adapterFor(input).resolveToolOutcome;
   const record = preResolved !== undefined
     ? preResolved
-    : await findRolloutToolRecord(input.transcript_path, input.tool_use_id);
+    : resolver
+      ? await resolver(input)
+      : await findRolloutToolRecord(input.transcript_path, input.tool_use_id);
   const { failed, exitCode, errorText } = demuxOutcome(input, record);
 
   if (failed === true) {
-    // Claim the id BEFORE dispatching: a tailer tick landing mid-routing
-    // would otherwise double-count the error (escalation fires early, the
-    // investigation chain gets a duplicate attempt). A lost record on a
-    // throw is the better failure — routing is already best-effort.
-    markToolSeen(client.db, input.tool_use_id);
+    // Atomically claim BEFORE dispatching: the loser of a hook/tailer
+    // race exits here instead of double-counting the error (escalation
+    // firing early, a duplicate investigation attempt). A lost record on
+    // a throw after winning is the better failure — routing is already
+    // best-effort.
+    if (!claimTool(client.db, input.tool_use_id)) {
+      return { output: null, action: 'skipped', exitCode: null };
+    }
     // The REAL error text must be the first line: the classifier derives its
     // errorKey from it, and a fixed "Exit code N" preamble would collapse
     // every codex failure into one key — dedup would then suppress learning
@@ -134,7 +168,9 @@ export async function handleCodexPostTool(
   }
 
   if (failed === false) {
-    markToolSeen(client.db, input.tool_use_id);
+    if (!claimTool(client.db, input.tool_use_id)) {
+      return { output: null, action: 'skipped', exitCode: null };
+    }
     // DEMUX_TOOLS is a subset of success-tracker's gate (D8 landed), so
     // every confirmed success here is tracked.
     await handleSuccessTracker(input, client);

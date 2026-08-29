@@ -13,7 +13,7 @@
     ],
     "PostToolUse": [
       { "matcher": "Bash|apply_patch",
-        "hooks": [ { "type": "command", "command": "/opt/cairn/dist/src/hooks/hook-relay --client codex codex-post-tool", "timeout": 30, "async": true } ] }
+        "hooks": [ { "type": "command", "command": "/opt/cairn/dist/src/hooks/hook-relay --client codex post-tool", "timeout": 30, "async": true } ] }
     ],
     "Stop": [
       { "hooks": [ { "type": "command", "command": "/opt/cairn/dist/src/hooks/hook-relay --client codex stop", "timeout": 30, "async": true } ] }
