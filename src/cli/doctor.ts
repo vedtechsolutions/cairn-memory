@@ -206,6 +206,16 @@ export function checkCodexParity(): CheckResult {
   if (!wired || total === 0) {
     return { status: 'warn', detail: 'Codex hooks.json exists but carries no Cairn hooks — run `cairn init`' };
   }
+  // Stale-install detection: hook commands pin the ABSOLUTE install path
+  // of whichever install wrote them; a moved install (nvm node-version
+  // switch, reinstall elsewhere) leaves them pointing at nothing and
+  // every hook dies silently. INSTALL.md tells users doctor catches this.
+  const staleDir = cairnCommandSet(file)
+    .map((c) => /(\/[^ ]+\/dist\/src\/hooks)\//.exec(c)?.[1])
+    .find((d): d is string => d !== undefined && !existsSync(d));
+  if (staleDir !== undefined) {
+    return { status: 'warn', detail: `Codex hooks point at a moved or removed install (${staleDir}) — re-run \`cairn init\` (one re-trust)` };
+  }
   const config = existsSync(codexConfigPath()) ? readFileSync(codexConfigPath(), 'utf-8') : '';
   const mcp = hasCairnMcpServer(config) ? 'MCP registered' : 'MCP NOT registered (run `cairn init`)';
   const trust = countTrustedHooksIn(config, hooksPath, file);

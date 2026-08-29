@@ -15,6 +15,7 @@ Usage:
   cairn init        Write Cairn's client config (--dry-run to preview,
                     --migrate-routes to modernize deprecated hook routes)
   cairn build-relay Compile the fast C hook relay (optional; needs a C compiler)
+  cairn locate      Print install locations (JSON; "locate hook-dir" prints that path bare)
   cairn doctor      Run install health checks
   cairn --help      Show this help
 `);
@@ -119,6 +120,26 @@ switch (command) {
       console.error(`cairn init: failed to run — ${(err as Error).message}`);
       process.exit(1);
     }
+    break;
+  }
+  case 'locate': {
+    // Machine-readable install locations. The thin-plugin launcher uses
+    // `locate hook-dir` when the `cairn` bin is an executable SHIM
+    // (Volta, pnpm shim scripts) rather than a symlink chain — the CLI
+    // is the one thing that always knows where it lives.
+    const { fileURLToPath: toPath } = await import('node:url');
+    const { dirname: dirOf, join: joinPath } = await import('node:path');
+    const packageRoot = joinPath(dirOf(toPath(import.meta.url)), '..', '..', '..');
+    const locations = {
+      packageRoot,
+      hookDir: joinPath(packageRoot, 'dist', 'src', 'hooks'),
+      server: joinPath(packageRoot, 'dist', 'src', 'mcp', 'server.js'),
+    };
+    const which = process.argv[3];
+    if (which === undefined) console.log(JSON.stringify(locations, null, 2));
+    else if (which === 'hook-dir') console.log(locations.hookDir);
+    else if (which === 'package-root') console.log(locations.packageRoot);
+    else { console.error(`cairn locate: unknown location "${which}" (expected hook-dir | package-root)`); process.exit(1); }
     break;
   }
   case 'build-relay': {

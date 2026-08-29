@@ -45,18 +45,28 @@ preserved, with a backup written first).
 ### Codex CLI
 
 ```bash
-codex plugin marketplace add vedtechsolutions/cairn-memory
-codex plugin add cairn@cairn      # wires the MCP tools (recall/learn/plan)
-cairn init                        # wires the hook set into ~/.codex/hooks.json
+cairn init      # wires the MCP server AND the hook set into ~/.codex
 ```
 
-Then open `codex` once and approve Cairn's hooks when prompted — Codex
-reviews new hooks before they run. The approval survives package
-updates (hook commands are stable), so it is a one-time step.
+Then open `codex` and run `/hooks` to review and trust the Cairn
+entries — Codex holds new hooks until you approve them. The approval
+survives in-place package updates (the hook commands don't change);
+re-review triggers only when the resolved install path itself changes —
+e.g. switching Node versions under nvm, or moving the install — and
+`cairn doctor` tells you when that has happened.
+
+Marketplace alternative for the MCP tools:
+
+```bash
+codex plugin marketplace add vedtechsolutions/cairn-memory
+codex plugin add cairn@cairn
+```
 
 The plugin carries only the MCP tools on purpose: Codex re-reviews
 plugin-bundled hooks on every plugin update, while hooks wired by
-`cairn init` keep their one-time approval.
+`cairn init` keep their one-time approval. If you use both the plugin
+and `cairn init`, Codex sees the same MCP server from two sources and
+keeps one — harmless, but you only need one of the two.
 
 ## 3. Verify
 

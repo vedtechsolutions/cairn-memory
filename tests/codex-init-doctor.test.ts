@@ -30,8 +30,14 @@ import {
 } from '../src/cli/codex-init.js';
 import { checkCodexParity } from '../src/cli/doctor.js';
 
-const RELAY = '/install/dist/src/hooks/hook-relay';
-const SHELL_RELAY = 'bash /install/dist/src/hooks/hook-relay.sh';
+// A REAL directory: doctor now treats a nonexistent install dir in the
+// wired commands as a moved/removed install and short-circuits with a
+// stale-install warning, so a fabricated path never reaches the trust
+// states these fixtures exercise.
+const INSTALL = mkdtempSync(join(tmpdir(), 'cairn-fake-install-'));
+mkdirSync(join(INSTALL, 'dist', 'src', 'hooks'), { recursive: true });
+const RELAY = `${INSTALL}/dist/src/hooks/hook-relay`;
+const SHELL_RELAY = `bash ${INSTALL}/dist/src/hooks/hook-relay.sh`;
 
 beforeEach(() => {
   // Hard refusal, independent of the env layer above: this test must never
@@ -90,7 +96,7 @@ describe('codexHooks generator', () => {
 
   it('supports the shell-relay command form', () => {
     const file = codexHooks(SHELL_RELAY);
-    assert.ok(file.hooks.SessionStart[0].hooks[0].command.startsWith('bash /install/'));
+    assert.ok(file.hooks.SessionStart[0].hooks[0].command.startsWith(`bash ${INSTALL}/`));
   });
 
   it('can generate the deprecated post-tool route for wired installs', () => {
@@ -330,7 +336,7 @@ describe('runCodexInit (hermetic end to end)', () => {
   it('writes hooks.json, appends MCP, and repeat runs are byte-identical', () => {
     mkdirSync(codexDir(), { recursive: true });
     writeFileSync(codexConfigPath(), 'model = "gpt-x"'); // note: no trailing newline
-    runCodexInit(RELAY, '/install/dist/src/mcp/server.js', false);
+    runCodexInit(RELAY, `${INSTALL}/dist/src/mcp/server.js`, false);
 
     const written1 = readFileSync(codexHooksPath(), 'utf-8');
     assert.equal(codexHookCount(JSON.parse(written1) as CodexHooksFile), 10);
@@ -339,7 +345,7 @@ describe('runCodexInit (hermetic end to end)', () => {
     assert.equal(hasCairnMcpServer(config), true, 'MCP appended');
 
     // Byte-identical re-run: THE property that preserves hook trust.
-    runCodexInit(RELAY, '/install/dist/src/mcp/server.js', false);
+    runCodexInit(RELAY, `${INSTALL}/dist/src/mcp/server.js`, false);
     assert.equal(readFileSync(codexHooksPath(), 'utf-8'), written1);
     const config2 = readFileSync(codexConfigPath(), 'utf-8');
     assert.equal(config2.match(/\[mcp_servers\.cairn\]/g)?.length, 1, 'no duplicate declaration');
