@@ -3,11 +3,12 @@ import { RELEVANCE, FINGERPRINT } from '../../constants/index.js';
 import { type ContextFingerprint, fingerprintOverlap } from '../../utils/fingerprint.js';
 import type { Memory, MemoryRow } from './types.js';
 import { rowToMemory } from './reads.js';
+import { isMemoryEligibleForInjection } from '../../utils/memory-injection.js';
 
 /** Find top pitfalls for briefing. When queryFp is provided, uses context-aware ranking. */
 export function topPitfalls(db: Database.Database, project: string | null, limit: number, queryFp?: ContextFingerprint): Memory[] {
   // Fetch extra candidates when doing fingerprint re-ranking
-  const fetchLimit = queryFp ? limit * FINGERPRINT.CANDIDATE_MULTIPLIER : limit;
+  const fetchLimit = limit * FINGERPRINT.CANDIDATE_MULTIPLIER;
   const rows = db.prepare(`
     SELECT * FROM memories
     WHERE invalidated = 0 AND superseded_by IS NULL
@@ -17,7 +18,7 @@ export function topPitfalls(db: Database.Database, project: string | null, limit
     LIMIT ?
   `).all(project, fetchLimit) as MemoryRow[];
 
-  const memories = rows.map(r => rowToMemory(r));
+  const memories = rows.map(r => rowToMemory(r)).filter(isMemoryEligibleForInjection);
 
   if (!queryFp) return memories.slice(0, limit);
 
@@ -119,9 +120,12 @@ export function highImpactPitfalls(
     project,
     minImpact,
     ...excludeIds,
-    limit,
+    limit * FINGERPRINT.CANDIDATE_MULTIPLIER,
   ) as MemoryRow[];
-  return rows.map(r => rowToMemory(r));
+  return rows
+    .map(r => rowToMemory(r))
+    .filter(isMemoryEligibleForInjection)
+    .slice(0, limit);
 }
 
 /** Find top user profiles for briefing (global scope only) */

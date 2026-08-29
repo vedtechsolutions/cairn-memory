@@ -80,6 +80,12 @@ export interface EditTracker {
    * every subsequent edit of the same file within WARNING_COOLDOWN_MS.
    */
   recentWarningFired: Record<string, number>;
+  /** Turn-correlated proactive warning budget. Optional so tracker files
+   *  written by older releases remain valid without migration. */
+  warningBudgetTurnKey?: string | null;
+  warningBudgetSequence?: number;
+  warningTokensInjectedThisTurn?: number;
+  warningCountInjectedThisTurn?: number;
   /** Whether a pre-flight workflow reminder has been shown this session */
   preflightFired: boolean;
   /** Whether a compliance nudge has been shown this session (Layer 2a) */
@@ -141,6 +147,10 @@ function defaultTracker(): EditTracker {
     sessionId: null,
     recentlySurfaced: {},
     recentWarningFired: {},
+    warningBudgetTurnKey: null,
+    warningBudgetSequence: 0,
+    warningTokensInjectedThisTurn: 0,
+    warningCountInjectedThisTurn: 0,
     preflightFired: false,
     complianceNudgeFired: false,
     decisionReminderFired: false,

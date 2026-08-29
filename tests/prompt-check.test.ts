@@ -40,6 +40,20 @@ describe('extractDecision (real implementation)', () => {
     assert.equal(extractDecision('it crashed because the file was missing'), null);
   });
 
+  it('rejects conversational and tasking prompts about asking, reviewing, or evaluating', () => {
+    const taskingPrompts = [
+      'I decided to ask Codex for a review because I want a second opinion',
+      'We decided to review the implementation because the first pass may have gaps',
+      'I chose to evaluate these changes because the memory behavior has improved',
+      'Please review this; we decided to use SQLite because atomic writes matter',
+      'Can you evaluate why we decided to use SQLite because the old store was unsafe?',
+    ];
+
+    for (const prompt of taskingPrompts) {
+      assert.equal(extractDecision(prompt), null, `tasking prompt must not become a decision: ${prompt}`);
+    }
+  });
+
   it('normalizes whitespace in the extracted decision', () => {
     const decision = extractDecision("let's   use\n\nSQLite because   we need atomic writes");
     assert.equal(decision, "let's use SQLite because we need atomic writes");

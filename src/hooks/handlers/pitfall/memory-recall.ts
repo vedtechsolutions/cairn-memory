@@ -12,6 +12,7 @@ import type { ContextFingerprint } from '../../../utils/fingerprint.js';
 import { passesCrossProjectGuard, passesSameProjectRelevance } from '../../../utils/cross-project-guard.js';
 import { FINGERPRINT, PROACTIVE, SCORING_PROFILES, type ContextMode } from '../../../constants/index.js';
 import { cachedRecallByFingerprint } from './recall-cache.js';
+import { isMemoryEligibleForInjection } from '../../../utils/memory-injection.js';
 
 /** Shared per-call state threaded through the recall + signal passes. */
 export interface PitfallPassCtx {
@@ -40,8 +41,9 @@ export interface PitfallPassCtx {
 export function runFingerprintPitfallRecall(ctx: PitfallPassCtx): void {
   const { client, tracker, warnings, surfacedPitfallIds, fingerprintSurfacedIds,
     project, queryFp, queryText, filePath, isDocFile, minConfidence, now, probationCutoff, identityTokens } = ctx;
-  if (!isDocFile && (queryFp.lang.length > 0 || queryFp.module.length > 0 || queryText)) {
-    const maxPitfalls = 2;
+  if (warnings.length < PROACTIVE.MAX_WARNINGS_PER_CALL
+    && !isDocFile && (queryFp.lang.length > 0 || queryFp.module.length > 0 || queryText)) {
+    const maxPitfalls = PROACTIVE.MAX_WARNINGS_PER_CALL - warnings.length;
     const probationFloor = Math.min(minConfidence, PROACTIVE.PROBATION_CONFIDENCE_FLOOR);
     const results = cachedRecallByFingerprint(client, queryFp, queryText, {
       project,
@@ -94,6 +96,7 @@ export function runAnchorPitfallRecall(ctx: PitfallPassCtx): void {
       minConfidence,
     });
     for (const m of anchoredMemories) {
+      if (!isMemoryEligibleForInjection(m)) continue;
       if (fingerprintSurfacedIds.has(m.id)) continue;
       if (!passesCrossProjectGuard(m, project, queryFp)) continue;
       const lastSurfaced = tracker.recentlySurfaced?.[m.id];
@@ -122,6 +125,7 @@ export function runAnchorDecisionRecall(ctx: PitfallPassCtx): void {
       minConfidence: PROACTIVE.MIN_DECISION_CONFIDENCE,
     });
     for (const m of anchoredDecisions) {
+      if (!isMemoryEligibleForInjection(m)) continue;
       if (!passesCrossProjectGuard(m, project, queryFp)) continue;
       const lastSurfaced = tracker.recentlySurfaced?.[m.id];
       if (lastSurfaced && (now - lastSurfaced) < PROACTIVE.SURFACE_COOLDOWN_MS) continue;
@@ -150,6 +154,7 @@ export function runFingerprintDecisionRecall(ctx: PitfallPassCtx): void {
     });
 
     const relevantDecisions = decisions
+      .filter(r => isMemoryEligibleForInjection(r.memory))
       .filter(r => r.score >= SCORING_PROFILES.SURFACING.MULTI_SIGNAL.MIN_SCORE)
       .filter(r => passesCrossProjectGuard(r.memory, project, queryFp))
       .filter(r => passesSameProjectRelevance(r.memory, queryFp, filePath, identityTokens))

@@ -11,6 +11,7 @@ import type { PromptCtx } from './types.js';
 import { originClientOf } from '../../shared/client-adapter.js';
 import { extractDecision, isGoalMemoryStale } from './extractors.js';
 import { extractCorrectionLesson } from './helpers.js';
+import { isMemoryEligibleForInjection } from '../../../utils/memory-injection.js';
 
 export function routeIntent(ctx: PromptCtx): void {
   const { client, input, prompt, project, fp, mode, intent, previouslyInjected, newlyInjected, budgetAvailable, budgetPush } = ctx;
@@ -60,6 +61,7 @@ export function routeIntent(ctx: PromptCtx): void {
         });
 
         const relevant = results
+          .filter(r => isMemoryEligibleForInjection(r.memory))
           .filter(r => r.score >= RELEVANCE.MIN_SCORE_FOR_INJECTION)
           .filter(r => passesCrossProjectGuard(r.memory, project, fp))
           .filter(r => !previouslyInjected.has(r.memory.id));

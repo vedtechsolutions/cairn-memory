@@ -27,6 +27,7 @@ import { isSystemMessage } from './prompt/helpers.js';
 import { applyWorkflowNudges, applyAutoCapture } from './prompt/nudges.js';
 import { routeIntent } from './prompt/intent-router.js';
 import { runRecallLayers } from './prompt/recall-layers.js';
+import { startWarningTurn } from '../shared/warning-budget.js';
 
 // Re-exports preserving the pre-split public surface.
 export type { PromptCheckResult } from './prompt/types.js';
@@ -93,6 +94,7 @@ export function handlePromptCheck(input: UserPromptSubmitInput, client: CachedHo
     tracker.decisionReminderFired = false;
     tracker.injectedMemoryIds = [];
   }
+  startWarningTurn(tracker, input.turn_id);
 
   // --- Skip-gate cache lookup (null-only) ---
   // Conservative policy: only null outputs are ever served from cache. The

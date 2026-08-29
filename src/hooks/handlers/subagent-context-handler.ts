@@ -11,6 +11,7 @@ import { projectId } from '../../utils/project-id.js';
 import { capabilitiesOf } from '../shared/client-adapter.js';
 import { CROSS_AGENT_CONTEXT_FRAMING } from '../../constants/index.js';
 import { neutralizeMemoryText } from '../../utils/validation.js';
+import { isMemoryEligibleForInjection } from '../../utils/memory-injection.js';
 
 export interface SubagentContextResult {
   /** Context to inject, or null */
@@ -42,7 +43,8 @@ export function handleSubagentContext(input: SubagentStartInput, client: HookDbC
   // Render-time neutralization is the actual defense against stored
   // content impersonating the system voice (a forged "[WAYKEEP] …" prefix
   // would sit directly under the genuine framing line above).
-  const pitfalls = client.memoryRepo.topPitfalls(project, 2);
+  const pitfalls = client.memoryRepo.topPitfalls(project, 2)
+    .filter(isMemoryEligibleForInjection);
   if (pitfalls.length > 0) {
     lines.push('Pitfalls:');
     for (const p of pitfalls) {

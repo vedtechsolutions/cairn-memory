@@ -24,6 +24,8 @@ export function rowToMemory(row: MemoryRow): Memory {
     fingerprint: row.fingerprint ? JSON.parse(row.fingerprint) : null,
     context: row.context ? JSON.parse(row.context) : null,
     anchor: row.anchor,
+    superseded_by: row.superseded_by ?? null,
+    superseded_at: row.superseded_at ?? null,
     // No fallback: v27 guarantees the column — a missing value means an
     // incomplete SELECT or schema drift, which must surface, not be masked
     // (a manufactured revision would silently defeat the CAS contract).
