@@ -313,8 +313,10 @@ export const CREATE_EXACT_SCOPE_INDEX =
  *  stopword-only content builds no query at all), and without an index
  *  the plain equality read scans every active row in scope on EVERY
  *  gateway write (measured: 1000 writes into a single-scope 10k-row
- *  store took ~48s). Content is capped at 2000 chars, so index entries
- *  are bounded. */
+ *  store took ~48s). Storage cost is real, not just "bounded": measured
+ *  ~4.4MB per 20k rows of ~180-char content (~36% of the store, and at
+ *  worst-case 2000-char content the index would rival the table) —
+ *  accepted for O(log n) exactness on every gateway write. */
 export const CREATE_EXACT_DEDUP_INDEX =
   'CREATE INDEX IF NOT EXISTS idx_memories_exact_dedup ON memories(kind, project, content) WHERE invalidated = 0 AND superseded_by IS NULL';
 

@@ -225,7 +225,11 @@ export function findSimilar(db: Database.Database, content: string, project: str
     `).get(...(project === null ? [kind, content] : [kind, project, content])) as MemoryRow | undefined;
     if (exact) return rowToMemory(exact);
   } catch {
-    return null;
+    // Fall THROUGH, never return: a missing index (impossible while
+    // ensureSchema guarantees v31, but this is defense-in-depth) must
+    // degrade to slower-but-correct near-candidate matching below —
+    // returning null here silently disabled ALL dedup (review O1,
+    // demonstrated: exact and near re-imports each inserted new rows).
   }
 
   // Scope-exact: merging across project/global scope would erase the
