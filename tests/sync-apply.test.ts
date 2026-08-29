@@ -487,6 +487,81 @@ describe('sync apply — §6 M1 transitions', () => {
     assert.ok(getByEntityId(db, 'EL'), 'its binding survives too');
   });
 
+  it('Y1: conflict sets respect the project boundary — foreign members and foreign sets are refused', () => {
+    const idB = randomUUID();
+    applyEventBatch(db, 'other-proj', [upsertEvent(1, envelope(record({ id: idB, project: 'other-proj' }), { entityId: 'EB', version: 1 }))]);
+    const idA = randomUUID();
+    applyEventBatch(db, PROJECT, [upsertEvent(1, envelope(record({ id: idA }), { entityId: 'EA', version: 1 }))]);
+
+    // conflict-open naming a foreign member: refused.
+    assert.throws(() => applyEventBatch(db, PROJECT, [{
+      type: 'conflict-open', seq: 2, conflict_set_id: 'cs-x', member_entity_ids: ['EA', 'EB'], reason: 'near-duplicate', opened_by: 'srv',
+    }]), /belongs to project/);
+    // conflict-open naming an unknown member: refused.
+    assert.throws(() => applyEventBatch(db, PROJECT, [{
+      type: 'conflict-open', seq: 2, conflict_set_id: 'cs-y', member_entity_ids: ['EA', 'E-ghost'], reason: 'near-duplicate', opened_by: 'srv',
+    }]), /unknown/);
+    // resolve-commit naming an unknown set: refused; tombstoning a non-member: refused.
+    assert.throws(() => applyEventBatch(db, PROJECT, [{
+      type: 'resolve-commit', seq: 2, conflict_set_id: 'cs-ghost',
+      canonical: envelope(record({ id: idA }), { entityId: 'EA', version: 2 }),
+      tombstoned_entity_ids: [], contributors: ['acct-alice'],
+    }]), /unknown conflict set/);
+    assert.equal((db.prepare('SELECT COUNT(*) n FROM sync_conflict_sets').get() as { n: number }).n, 0, 'nothing committed');
+  });
+
+  it('Y1: a tombstone without deleted_by/deleted_at is refused as malformed', () => {
+    assert.throws(() => applyEventBatch(db, PROJECT, [
+      { type: 'tombstone', seq: 1, entity_id: 'E1', entity_version: 2 } as unknown as SyncEvent,
+    ]), /deleted_by/);
+  });
+
+  it('Y2: a rebind to a locally-retired row is refused — an entity never maps to invisible bytes', () => {
+    const id = randomUUID();
+    const ev = upsertEvent(1, envelope(record({ id }), { entityId: 'E1', version: 1 }));
+    applyEventBatch(db, PROJECT, [ev]);
+    db.prepare('UPDATE memories SET invalidated = 1 WHERE id = ?').run(id);
+    db.prepare('DELETE FROM sync_entity_map').run();
+    db.prepare("DELETE FROM sync_state WHERE ns = 'apply'").run();
+
+    assert.throws(() => applyEventBatch(db, PROJECT, [ev]), /retired locally/);
+    assert.equal(getByEntityId(db, 'E1'), undefined, 'no binding to retrieval-invisible bytes');
+  });
+
+  it('Y3: a stale alias (as_of_version below the bound version) is replay history — no destructive work', () => {
+    const local = repo.create({ content: 'stale alias survivor', kind: 'fact', project: PROJECT, skipDedup: true, skipConflictDetection: true }).id;
+    const remoteId = randomUUID();
+    applyEventBatch(db, PROJECT, [upsertEvent(1, envelope(record({ id: remoteId, content: 'stale alias survivor' }), { entityId: 'EA', version: 1 }))]);
+    applyEventBatch(db, PROJECT, [
+      upsertEvent(2, envelope(record({ id: local, content: 'stale alias survivor' }), { entityId: 'EL', version: 1 })),
+      upsertEvent(3, envelope(record({ id: local, content: 'stale alias survivor but newer' }), { entityId: 'EL', version: 3 })),
+    ]);
+
+    const result = applyEventBatch(db, PROJECT, [{ type: 'alias', seq: 4, from_entity_id: 'EL', to_entity_id: 'EA', as_of_version: 2 }]);
+    assert.deepEqual(result.outcomes.map((o) => o.outcome), ['replay-noop']);
+    assert.ok(db.prepare('SELECT 1 FROM memories WHERE id = ?').get(local), "the loser's row survives a stale alias");
+    assert.ok(getByEntityId(db, 'EL'), 'its binding survives');
+  });
+
+  it('Y4: the generation reflects actual WRITES, not outcome labels — a lost-map rebind bumps it', () => {
+    const id = randomUUID();
+    const ev = upsertEvent(1, envelope(record({ id }), { entityId: 'E1', version: 1 }));
+    applyEventBatch(db, PROJECT, [ev]);
+    const genAfterApply = readGeneration(db);
+    db.prepare('DELETE FROM sync_entity_map WHERE entity_id = ?').run('E1');
+    db.prepare("DELETE FROM sync_state WHERE ns = 'apply'").run();
+
+    const rebind = applyEventBatch(db, PROJECT, [ev]);
+    assert.deepEqual(rebind.outcomes.map((o) => o.outcome), ['replay-noop'], 'the label says replay');
+    assert.ok(readGeneration(db) > genAfterApply, 'but the map was rewritten, so peers must learn');
+
+    const pure = applyEventBatch(db, PROJECT, [ev]);
+    assert.equal(pure.generation, readGeneration(db));
+    const genBefore = readGeneration(db);
+    applyEventBatch(db, PROJECT, [ev]);
+    assert.equal(readGeneration(db), genBefore, 'a genuinely write-free replay still bumps nothing');
+  });
+
   it('inbound predicate: project mismatch, unknown kinds, rule kind, and unknown event types are refused whole-batch', () => {
     const wrongProject = record({ id: randomUUID(), project: 'other-proj' });
     assert.throws(() => applyEventBatch(db, PROJECT, [upsertEvent(1, envelope(wrongProject, { entityId: 'E1', version: 1 }))]), ApplyValidationError);

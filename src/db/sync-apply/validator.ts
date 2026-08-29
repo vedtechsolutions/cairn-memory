@@ -102,6 +102,10 @@ function validateEventShape(ev: SyncEvent): void {
     case 'tombstone':
       assertBoundedId(raw.entity_id, `seq ${seq}: tombstone entity_id`);
       if (!isSafePositiveInt(raw.entity_version)) throw new ApplyValidationError(`seq ${seq}: tombstone entity_version must be a positive safe integer`);
+      assertBoundedId(raw.deleted_by, `seq ${seq}: tombstone deleted_by`);
+      if (typeof raw.deleted_at !== 'string' || raw.deleted_at.length === 0 || raw.deleted_at.length > SYNC_APPLY.MAX_ID_LENGTH) {
+        throw new ApplyValidationError(`seq ${seq}: tombstone deleted_at must be a bounded string`);
+      }
       break;
     case 'alias':
       assertBoundedId(raw.from_entity_id, `seq ${seq}: alias from_entity_id`);
@@ -126,8 +130,9 @@ function validateEventShape(ev: SyncEvent): void {
         || !raw.tombstoned_entity_ids.every((m) => typeof m === 'string' && m.length > 0 && m.length <= SYNC_APPLY.MAX_ID_LENGTH)) {
         throw new ApplyValidationError(`seq ${seq}: tombstoned_entity_ids must be a bounded id array`);
       }
-      if (!Array.isArray(raw.contributors) || raw.contributors.length > SYNC_APPLY.MAX_CONTRIBUTORS) {
-        throw new ApplyValidationError(`seq ${seq}: resolve contributors must be a bounded array`);
+      if (!Array.isArray(raw.contributors) || raw.contributors.length > SYNC_APPLY.MAX_CONTRIBUTORS
+        || !raw.contributors.every((c) => typeof c === 'string' && c.length > 0 && c.length <= SYNC_APPLY.MAX_ID_LENGTH)) {
+        throw new ApplyValidationError(`seq ${seq}: resolve contributors must be a bounded array of account ids`);
       }
       break;
   }

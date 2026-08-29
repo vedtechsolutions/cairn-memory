@@ -86,10 +86,17 @@ export function hasUnpushedLocalIntent(db: Database.Database, memoryId: string, 
  *  closed (slice-4 Codex gate #2 — a cross-project same-id probe
  *  corrupted the map and the R22 hash). */
 function assertRebindLegal(db: Database.Database, id: string, project: string, pHash: string): void {
-  const row = db.prepare('SELECT project FROM memories WHERE id = ?').get(id) as { project: string | null } | undefined;
+  const row = db.prepare('SELECT project, invalidated, superseded_by FROM memories WHERE id = ?').get(id) as
+    | { project: string | null; invalidated: number; superseded_by: string | null } | undefined;
   if (!row) return;
   if (row.project !== project || projectionHashOfRow(db, id) !== pHash) {
     throw new ApplyValidationError(`id ${id} exists with different project or bytes — refusing collision rebind`);
+  }
+  // ACTIVE state is part of the proof: binding an entity to a locally
+  // invalidated/superseded row would map it to retrieval-invisible
+  // bytes (slice-4b Codex gate #2).
+  if (row.invalidated === 1 || row.superseded_by !== null) {
+    throw new ApplyValidationError(`id ${id} exists but is retired locally — refusing rebind to invisible bytes`);
   }
 }
 

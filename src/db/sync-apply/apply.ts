@@ -98,6 +98,12 @@ function applyTombstone(db: Database.Database, targetProject: string, ev: SyncTo
 
 function applyAlias(db: Database.Database, project: string, ev: SyncAliasEvent): EventOutcome {
   const fromEntry = getByEntityId(db, ev.from_entity_id);
+  if (fromEntry && ev.as_of_version < fromEntry.canonical_version) {
+    // Stale alias: the local binding has already advanced past the
+    // alias's basis version — stream history, never destructive work
+    // (slice-4b Codex gate #3, mirroring the tombstone guard).
+    return 'replay-noop';
+  }
   recordAlias(db, ev.from_entity_id, ev.to_entity_id, ev.as_of_version, ev.seq);
   if (!fromEntry) return 'replay-noop';
 
@@ -146,6 +152,17 @@ function applyAlias(db: Database.Database, project: string, ev: SyncAliasEvent):
 }
 
 function applyConflictOpen(db: Database.Database, project: string, ev: SyncConflictOpenEvent): EventOutcome {
+  // Every named member must be a known entity of the CALLER'S project
+  // (slice-4b Codex gate #1): a project-A set naming project-B members
+  // previously committed. Ordered streams deliver member upserts first,
+  // so an unknown member is a stream-order violation, not a skip.
+  for (const memberId of ev.member_entity_ids) {
+    const member = getByEntityId(db, memberId);
+    if (!member) throw new ApplyValidationError(`conflict-open ${ev.conflict_set_id}: member entity ${memberId} is unknown`);
+    if (member.project !== project) {
+      throw new ApplyValidationError(`conflict-open ${ev.conflict_set_id}: member entity ${memberId} belongs to project '${member.project}'`);
+    }
+  }
   openConflictSet(db, {
     conflictSetId: ev.conflict_set_id, project,
     memberEntityIds: ev.member_entity_ids, reason: ev.reason,
@@ -156,6 +173,19 @@ function applyConflictOpen(db: Database.Database, project: string, ev: SyncConfl
 
 function applyResolveCommit(db: Database.Database, project: string, ev: SyncResolveCommitEvent): EventOutcome {
   const record = validatePayload(ev.canonical, project);
+  // The named set must exist in the CALLER'S project, and the resolve's
+  // tombstones must be members of exactly that set (slice-4b Codex gate
+  // #1 — a project-A resolve previously mutated a project-B set).
+  const set = db.prepare('SELECT project, member_entity_ids, status FROM sync_conflict_sets WHERE conflict_set_id = ?')
+    .get(ev.conflict_set_id) as { project: string; member_entity_ids: string; status: string } | undefined;
+  if (!set) throw new ApplyValidationError(`resolve-commit names unknown conflict set ${ev.conflict_set_id}`);
+  if (set.project !== project) {
+    throw new ApplyValidationError(`resolve-commit targets conflict set of project '${set.project}', not the caller's binding`);
+  }
+  const members = new Set(JSON.parse(set.member_entity_ids) as string[]);
+  for (const t of ev.tombstoned_entity_ids) {
+    if (!members.has(t)) throw new ApplyValidationError(`resolve-commit tombstones ${t}, which is not a member of set ${ev.conflict_set_id}`);
+  }
   // D1 (frozen): within composed applications, TOMBSTONES BEFORE
   // UPSERTS. The reverse order let the canonical's exact-match see a
   // still-live member — minting a spurious near-dup set, or, when the
@@ -189,6 +219,7 @@ export function applyEventBatch(db: Database.Database, targetProject: string, ev
     // runs: closed vocabulary, per-event runtime shape, bounds, unique
     // sequences (validator.ts). Nothing malformed advances the cursor.
     validateBatch(events);
+    const changesBefore = (db.prepare('SELECT total_changes() n').get() as { n: number }).n;
     const ordered = [...events].sort((a, b) => a.seq - b.seq);
     for (const ev of ordered) {
       if (ev.seq <= startCursor) {
@@ -210,12 +241,16 @@ export function applyEventBatch(db: Database.Database, targetProject: string, ev
       outcomes.push({ seq: ev.seq, type: ev.type, outcome });
       cursor = Math.max(cursor, ev.seq);
     }
-    writeCursor(db, targetProject, cursor);
     // The generation invalidates every peer's memory-derived caches —
-    // bump only when some event actually changed state (review C7): an
-    // empty or pure-replay batch must not flush caches fleet-wide.
-    const changed = outcomes.some((o) => o.outcome !== 'replay-noop');
-    const generation = changed ? bumpGeneration(db) : readGeneration(db);
+    // bump only when some event actually WROTE state, measured by the
+    // connection's total_changes delta across the handlers (before the
+    // cursor write). Outcome labels are not evidence: a lost-map replay
+    // rebinds while reporting replay-noop, and peers must learn
+    // (slice-4b Codex gate #4). Empty and byte-for-byte replay batches
+    // write nothing and flush nothing.
+    const wrote = (db.prepare('SELECT total_changes() n').get() as { n: number }).n > changesBefore;
+    writeCursor(db, targetProject, cursor);
+    const generation = wrote ? bumpGeneration(db) : readGeneration(db);
     return { outcomes, generation, cursor };
   }).immediate();
 }
