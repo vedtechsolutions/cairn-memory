@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Published `cairn-contract@1.0.0-dev.0` to npm under MIT (LICENSE, README, and repository metadata added) — the standalone integration contract for adapter authors; the `cairn-memory` runtime is unaffected and keeps bundling its own copy.
+
 ## [5.4.0] - 2026-08-29
 
 ### Added
