@@ -4,7 +4,8 @@
 
 ### Added
 
-- Added the sync-envelope module to `waykeep-contract`: the Phase 2 replication wire vocabulary — client commands, canonical server log events, conflict reasons, share states, stable error codes, the op-status results, and the entity envelope with reserved encryption fields. Types and constants only; additive.
+- Added the sync-envelope module to `waykeep-contract`: the Phase 2 replication wire vocabulary — client commands, canonical server log events, conflict reasons, share states, stable error codes, the op-status query/response, and the entity envelope with versioned hashing and reserved encryption fields. Types and constants only; additive.
+- Added schema v32 (team-sync foundations): `author`, `updated_at` (trigger-maintained), and tri-state `share_state` on memories; a tombstone log written whenever a memory is deleted or invalidated (forget audit today, retraction propagation later); and the neutral sync replica tables (entity map, alias log, conflict sets, contributor projection, state store, semantic journal). `migrate-project` now carries all project-keyed sync state through renames.
 
 ### Fixed
 
