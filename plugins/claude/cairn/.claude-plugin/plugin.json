@@ -2,9 +2,9 @@
   "name": "cairn",
   "version": "5.3.1",
   "description": "Local-first shared memory for AI coding agents — briefings, pitfall warnings, decision capture, and cross-session recall. Thin plugin: requires the cairn-memory npm package (npm install -g cairn-memory).",
-  "author": { "name": "VedTech Solutions" },
+  "author": {
+    "name": "VedTech Solutions"
+  },
   "homepage": "https://github.com/vedtechsolutions/cairn-memory",
-  "license": "Elastic-2.0",
-  "hooks": "./hooks/hooks.json",
-  "mcpServers": "./.mcp.json"
+  "license": "Elastic-2.0"
 }

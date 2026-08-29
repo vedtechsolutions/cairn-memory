@@ -84,6 +84,19 @@ describe('thin-plugin packaging', () => {
     }
   });
 
+  it('claude plugin manifest relies on CONVENTION auto-load — no hooks/mcpServers keys', () => {
+    // Claude Code 2.1.250 auto-loads hooks/hooks.json and .mcp.json; an
+    // explicit `hooks` key naming the same file makes the plugin report
+    // "failed to load" (duplicate hooks file; review B1, reproduced on a
+    // real install). The conventional files exist; the manifest must not
+    // double-declare them.
+    const manifest = readJson('plugins/claude/cairn/.claude-plugin/plugin.json');
+    assert.equal(manifest.hooks, undefined, 'an explicit hooks key duplicates the auto-loaded path');
+    assert.equal(manifest.mcpServers, undefined, '.mcp.json is auto-loaded too');
+    assert.ok(read('plugins/claude/cairn/hooks/hooks.json').length > 0);
+    assert.ok(read('plugins/claude/cairn/.mcp.json').length > 0);
+  });
+
   it('codex plugin manifest carries the validator-required objects', () => {
     const manifest = readJson('plugins/codex/cairn/.codex-plugin/plugin.json') as unknown as {
       author?: { name?: string }; interface?: { displayName?: string; defaultPrompt?: string };

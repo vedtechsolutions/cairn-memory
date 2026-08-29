@@ -131,3 +131,52 @@ describe('cairn init CLI', () => {
     assert.equal(readFileSync(path, 'utf-8'), 'null', 'malformed file left untouched');
   });
 });
+
+// --- Step-6 review round: plugin coexistence + orphan sweep --------------------
+
+describe('init review round (step 6)', () => {
+  it('--statusline-only writes ONLY the StatusLine (plugin-managed hooks untouched)', () => {
+    const settingsPath = tempSettingsPath();
+    writeFileSync(settingsPath, JSON.stringify({ hooks: { SessionStart: [{ matcher: '', hooks: [{ type: 'command', command: 'my-own-hook' }] }] } }));
+    const r = init(settingsPath, ['--statusline-only']);
+    assert.equal(r.status, 0, r.stderr);
+    const written = JSON.parse(readFileSync(settingsPath, 'utf8')) as Settings;
+    assert.ok(written.statusLine?.command?.includes('statusline'), 'StatusLine is wired');
+    assert.equal(written.mcpServers, undefined, 'no MCP server — the plugin provides it');
+    assert.equal(written.hooks?.SessionStart?.[0]?.hooks?.[0]?.command, 'my-own-hook', 'hooks untouched');
+    assert.equal(Object.keys(written.hooks ?? {}).length, 1, 'no Cairn hooks added — a full init here would double-fire every event');
+    // And the codex side is untouched too.
+    assert.ok(!existsSync(`${settingsPath}.codex-hermetic/hooks.json`), 'codex wiring skipped under --statusline-only');
+  });
+
+  it('re-init sweeps stale Cairn entries under retired events, preserving foreign ones', () => {
+    const settingsPath = tempSettingsPath();
+    // A previous install wired FileChanged (retired) — Cairn entry plus a
+    // user's own entry under the same event.
+    writeFileSync(settingsPath, JSON.stringify({
+      hooks: {
+        FileChanged: [
+          { matcher: '', hooks: [{ type: 'command', command: '/old/install/dist/src/hooks/hook-relay file-changed', async: true }] },
+          { matcher: '', hooks: [{ type: 'command', command: 'users-own-watcher' }] },
+        ],
+      },
+    }));
+    const r = init(settingsPath);
+    assert.equal(r.status, 0, r.stderr);
+    const written = JSON.parse(readFileSync(settingsPath, 'utf8')) as Settings;
+    const fileChanged = written.hooks?.FileChanged ?? [];
+    assert.equal(fileChanged.length, 1, 'the stale Cairn entry is swept — it would otherwise survive every upgrade');
+    assert.equal(fileChanged[0]?.hooks?.[0]?.command, 'users-own-watcher', 'the foreign entry under the retired event survives');
+  });
+
+  it('a retired event with ONLY Cairn entries is removed entirely', () => {
+    const settingsPath = tempSettingsPath();
+    writeFileSync(settingsPath, JSON.stringify({
+      hooks: { FileChanged: [{ matcher: '', hooks: [{ type: 'command', command: '/old/dist/src/hooks/hook-relay file-changed' }] }] },
+    }));
+    const r = init(settingsPath);
+    assert.equal(r.status, 0, r.stderr);
+    const written = JSON.parse(readFileSync(settingsPath, 'utf8')) as Settings;
+    assert.equal(written.hooks?.FileChanged, undefined);
+  });
+});

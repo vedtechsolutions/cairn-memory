@@ -13,7 +13,8 @@ Usage:
   cairn report      Tokens-saved report (--days=N, default 30)
   cairn import      Migrate memories in (--from codex-memories|memory-md|claude-mem)
   cairn init        Write Cairn's client config (--dry-run to preview,
-                    --migrate-routes to modernize deprecated hook routes)
+                    --migrate-routes to modernize deprecated hook routes,
+                    --statusline-only when hooks+MCP come from the plugin)
   cairn build-relay Compile the fast C hook relay (optional; needs a C compiler)
   cairn locate      Print install locations (JSON; "locate hook-dir" prints that path bare)
   cairn doctor      Run install health checks
@@ -115,6 +116,7 @@ switch (command) {
       process.exit(runInit({
         dryRun: process.argv.includes('--dry-run'),
         migrateRoutes: process.argv.includes('--migrate-routes'),
+        statuslineOnly: process.argv.includes('--statusline-only'),
       }));
     } catch (err) {
       console.error(`cairn init: failed to run — ${(err as Error).message}`);

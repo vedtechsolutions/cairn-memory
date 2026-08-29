@@ -26,11 +26,17 @@ pitfall warnings, auto-capture). It is a thin plugin: it finds the
 `cairn-memory` package you installed in step 1 and runs that — updating
 the package updates the behavior, no plugin reinstall needed.
 
-Optional (StatusLine + anything the plugin can't reach):
+For the StatusLine (context-pressure tracking, dynamic briefing
+budgets — not a plugin surface):
 
 ```bash
-cairn init
+cairn init --statusline-only
 ```
+
+Do NOT run a full `cairn init` alongside the plugin — it wires the
+same hooks into `~/.claude/settings.json` and every event would fire
+twice (two briefings per session, two recalls per prompt). Pick one:
+plugin, or `cairn init`.
 
 ### Claude Code — no plugin
 

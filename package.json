@@ -31,7 +31,8 @@
     "dist/src/",
     "src/hooks/hook-relay.c",
     "src/hooks/hook-relay.sh",
-    "CHANGELOG.md"
+    "CHANGELOG.md",
+    "docs/INSTALL.md"
   ],
   "scripts": {
     "clean": "rm -rf dist",
@@ -44,7 +45,8 @@
     "strip:publish": "find dist/src -name '*.map' -delete && find dist/src -name '*.d.ts' -delete && rm -rf dist/src/benchmark",
     "prepublishOnly": "npm run clean && npm run build && npm run strip:publish",
     "dev": "tsc -b tsconfig.build.json --watch",
-    "prepack": "node scripts/verify-pack.mjs"
+    "prepack": "node scripts/verify-pack.mjs",
+    "version": "node scripts/sync-plugin-versions.mjs && git add plugins"
   },
   "engines": {
     "node": ">=20.0.0"

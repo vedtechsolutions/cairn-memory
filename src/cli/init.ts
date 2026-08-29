@@ -84,15 +84,10 @@ interface MergePlan { changed: string[]; skipped: string[]; result: Settings }
  * Cairn's entries with any prior Cairn entries replaced and non-Cairn entries
  * preserved; StatusLine is set only when absent or already Cairn's.
  */
-function mergeSettings(existing: Settings, relayCmd: string): MergePlan {
+function mergeSettings(existing: Settings, relayCmd: string, statuslineOnly = false): MergePlan {
   const changed: string[] = [];
   const skipped: string[] = [];
   const result: Settings = { ...existing };
-
-  const servers = { ...(existing.mcpServers ?? {}) };
-  servers.cairn = cairnMcpServer();
-  result.mcpServers = servers;
-  changed.push('mcpServers.cairn');
 
   const statusIsCairn = typeof existing.statusLine === 'object' && existing.statusLine !== null
     && String((existing.statusLine as { command?: string }).command ?? '').includes('dist/src/hooks/statusline');
@@ -102,12 +97,34 @@ function mergeSettings(existing: Settings, relayCmd: string): MergePlan {
   } else {
     skipped.push('statusLine (a non-Cairn StatusLine is already set — left untouched)');
   }
+  if (statuslineOnly) {
+    skipped.push('hooks + MCP (plugin-managed — --statusline-only)');
+    return { changed, skipped, result };
+  }
+
+  const servers = { ...(existing.mcpServers ?? {}) };
+  servers.cairn = cairnMcpServer();
+  result.mcpServers = servers;
+  changed.push('mcpServers.cairn');
 
   const hooks: HookMap = { ...(existing.hooks ?? {}) };
   const desired = cairnHooks(relayCmd);
   for (const [event, cairnEntries] of Object.entries(desired)) {
     const preserved = (hooks[event] ?? []).filter(entry => !isCairnEntry(entry));
     hooks[event] = [...preserved, ...cairnEntries];
+  }
+  // Orphan sweep: Cairn entries under events the CURRENT hook set no
+  // longer wires (e.g. FileChanged after its removal) would otherwise
+  // survive every upgrade forever, pointing at whatever install wrote
+  // them (review). Foreign entries under those events are untouched.
+  for (const [event, entries] of Object.entries(hooks)) {
+    if (event in desired) continue;
+    const foreign = entries.filter(entry => !isCairnEntry(entry));
+    if (foreign.length < entries.length) {
+      if (foreign.length > 0) hooks[event] = foreign;
+      else delete hooks[event];
+      changed.push(`hooks.${event} (stale Cairn entries removed)`);
+    }
   }
   result.hooks = hooks;
   changed.push(`hooks (${Object.keys(desired).length} events)`);
@@ -136,7 +153,14 @@ function readSettings(path: string): Settings {
   return parsed as Settings;
 }
 
-export interface InitOptions { dryRun?: boolean; migrateRoutes?: boolean }
+export interface InitOptions {
+  dryRun?: boolean;
+  migrateRoutes?: boolean;
+  /** Write ONLY the StatusLine into settings.json — for users whose
+   *  hooks + MCP come from the marketplace plugin (a full init would
+   *  double-wire every event: two briefings per session; review B2). */
+  statuslineOnly?: boolean;
+}
 
 /** Run init; returns the process exit code. */
 export function runInit(options: InitOptions = {}): number {
@@ -152,7 +176,7 @@ export function runInit(options: InitOptions = {}): number {
   const path = claudeSettingsPath();
   let plan: MergePlan;
   try {
-    plan = mergeSettings(readSettings(path), relay.command);
+    plan = mergeSettings(readSettings(path), relay.command, options.statuslineOnly ?? false);
   } catch (err) {
     console.error(`  ✗ could not read ${path}: ${(err as Error).message}`);
     return 1;
@@ -184,7 +208,11 @@ export function runInit(options: InitOptions = {}): number {
     console.log(`  ✓ wrote ${path}`);
   }
 
-  runCodexInit(relay.command, SERVER, options.dryRun ?? false, options.migrateRoutes ?? false);
+  // --statusline-only touches ONLY the StatusLine — Codex wiring is a
+  // separate concern the flag's user did not ask about.
+  if (!options.statuslineOnly) {
+    runCodexInit(relay.command, SERVER, options.dryRun ?? false, options.migrateRoutes ?? false);
+  }
 
   if (options.dryRun) console.log('\n  (dry run — no files were written)');
 
