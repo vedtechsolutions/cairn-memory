@@ -3,7 +3,6 @@ import type Database from 'better-sqlite3';
 import {
   CREATE_MEMORY_TOMBSTONES_TABLE,
   CREATE_MEMORY_TOMBSTONES_INDEX,
-  CREATE_MEMORY_UPDATED_AT_INIT_TRIGGER,
   CREATE_SYNC_ENTITY_MAP_TABLE,
   CREATE_SYNC_ALIAS_LOG_TABLE,
   CREATE_SYNC_CONFLICT_SETS_TABLE,
@@ -50,6 +49,12 @@ export function migrateToV32(db: Database.Database): void {
     db.exec('DROP TRIGGER IF EXISTS memories_revision_au');
     db.exec(CREATE_MEMORY_REVISION_TRIGGER);
 
+    // Heal: a pre-release v32 iteration briefly shipped an AFTER INSERT
+    // updated_at trigger that corrupted external-content FTS under broad
+    // update triggers (see schema.ts note). Initialization is explicit at
+    // the repository insert sites now.
+    db.exec('DROP TRIGGER IF EXISTS memories_updated_at_ai');
+
     // Pre-release v32 shape heal: the tombstone log briefly shipped with a
     // composite (memory_id, action, deleted_at) PK whose second-resolution
     // key silently suppressed a delete/restore/delete cycle's second entry
@@ -66,7 +71,6 @@ export function migrateToV32(db: Database.Database): void {
     for (const ddl of [
       CREATE_MEMORY_TOMBSTONES_TABLE,
       CREATE_MEMORY_TOMBSTONES_INDEX,
-      CREATE_MEMORY_UPDATED_AT_INIT_TRIGGER,
       CREATE_SYNC_ENTITY_MAP_TABLE,
       CREATE_SYNC_ALIAS_LOG_TABLE,
       CREATE_SYNC_CONFLICT_SETS_TABLE,

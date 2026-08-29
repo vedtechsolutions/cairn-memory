@@ -169,9 +169,9 @@ export function storeMemory(db: Database.Database, input: StoreMemoryInput): Cre
   const anchorJson = input.anchor ?? null;
 
   db.prepare(`
-    INSERT INTO memories (id, content, kind, project, tags, confidence, source, origin_client, created_at, recall_count, invalidated, expires_at, fingerprint, context, embedding, embedding_model, anchor)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, NULL, ?, ?, ?, ?, ?)
-  `).run(id, content, kind, project, JSON.stringify(tags), confidence, source, input.originClient ?? CLIENT_CLAUDE, timestamp, fpJson, ctxJson, input.embedding ?? null, input.embedding ? getEmbeddingModelConfig().key : null, anchorJson);
+    INSERT INTO memories (id, content, kind, project, tags, confidence, source, origin_client, created_at, updated_at, recall_count, invalidated, expires_at, fingerprint, context, embedding, embedding_model, anchor)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, NULL, ?, ?, ?, ?, ?)
+  `).run(id, content, kind, project, JSON.stringify(tags), confidence, source, input.originClient ?? CLIENT_CLAUDE, timestamp, timestamp, fpJson, ctxJson, input.embedding ?? null, input.embedding ? getEmbeddingModelConfig().key : null, anchorJson);
 
   return { id, deduplicated: false, ...detectConflicts(db, id) };
 }

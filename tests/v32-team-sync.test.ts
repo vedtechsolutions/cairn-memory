@@ -111,16 +111,19 @@ describe('v32 team-sync schema', () => {
     const db = openDatabase({ dbPath: ':memory:' });
     try {
       const repo = new MemoryRepository(db);
-      const viaGateway = repo.storeDecision('gateway-path decision content', 'p');
+      const viaGateway = repo.storeDecision({ content: 'gateway-path decision content', project: 'p' });
       const g = db.prepare('SELECT created_at, updated_at FROM memories WHERE id = ?').get(viaGateway.id) as
         { created_at: string; updated_at: string | null };
       assert.equal(g.updated_at, g.created_at);
 
-      // The trigger covers any path that omits the column entirely
-      // (id-preserving restore, future call sites).
+      // Initialization is an explicit repository-site convention (an
+      // insert trigger corrupted FTS under broad update triggers and was
+      // reverted): raw SQL outside the repository legitimately leaves
+      // NULL, which the v32 backfill and recency readers treat as
+      // created_at.
       db.prepare("INSERT INTO memories (id, content, kind, project, created_at) VALUES ('raw1', 'raw path', 'fact', 'p', '2026-01-01 00:00:00')").run();
       const r = db.prepare("SELECT updated_at FROM memories WHERE id = 'raw1'").get() as { updated_at: string | null };
-      assert.equal(r.updated_at, '2026-01-01 00:00:00');
+      assert.equal(r.updated_at, null);
     } finally {
       db.close();
     }

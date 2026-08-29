@@ -158,11 +158,23 @@ function ensureSchema(db: Database.Database): void {
     db.exec(CREATE_EXACT_DEDUP_INDEX);
     db.prepare('UPDATE schema_version SET version = ?').run(31);
   }
-  // <= 32 on purpose (the v30 precedent): v32's shape changed while
-  // unreleased (tombstone rowid PK, updated_at init trigger), so an
-  // already-at-32 database still needs the idempotent heal pass.
-  if (currentVersion <= 32 && SCHEMA_VERSION >= 32) {
+  // v32's shape changed while unreleased (tombstone rowid PK, updated_at
+  // init trigger), so an already-at-32 database may still need one heal
+  // pass — but the v30-precedent `<= 32` gate alone would re-run a WRITE
+  // transaction on EVERY open forever (nothing ever closes the window;
+  // it throttled the whole suite via lock contention). Decide with cheap
+  // read-only probes instead; the write pass runs only when needed.
+  if (currentVersion < 32 && SCHEMA_VERSION >= 32) {
     migrateToV32(db);
+  } else if (currentVersion === 32) {
+    const tombCols = db.prepare('PRAGMA table_info(memory_tombstones)').all() as Array<{ name: string }>;
+    const oldTombstoneShape = tombCols.length > 0 && !tombCols.some((c) => c.name === 'id');
+    const hasRevertedTrigger = db.prepare(
+      "SELECT 1 FROM sqlite_master WHERE type = 'trigger' AND name = 'memories_updated_at_ai'",
+    ).get() !== undefined;
+    if (oldTombstoneShape || hasRevertedTrigger) {
+      migrateToV32(db);
+    }
   }
 
   ensureFtsIntegrity(db);

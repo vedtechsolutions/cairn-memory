@@ -167,10 +167,10 @@ export function restoreRecord(
   }
   db.prepare(`
     INSERT INTO memories (id, content, kind, project, tags, confidence, source, created_at,
-                          expires_at, fingerprint, context, anchor,
+                          updated_at, expires_at, fingerprint, context, anchor,
                           recall_count, invalidated, surface_count, impact_count)
     VALUES (@id, @content, @kind, @project, @tags, @confidence, @source, @created_at,
-            @expires_at, @fingerprint, @context, @anchor, 0, 0, 0, 0)
+            @created_at, @expires_at, @fingerprint, @context, @anchor, 0, 0, 0, 0)
     ON CONFLICT(id) DO UPDATE SET
       content = excluded.content, kind = excluded.kind, project = excluded.project,
       tags = excluded.tags, confidence = excluded.confidence, source = excluded.source,

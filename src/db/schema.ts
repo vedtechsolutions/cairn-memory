@@ -414,16 +414,13 @@ CREATE TABLE IF NOT EXISTS memory_tombstones (
 export const CREATE_MEMORY_TOMBSTONES_INDEX =
   'CREATE INDEX IF NOT EXISTS idx_memory_tombstones_memory ON memory_tombstones(memory_id)';
 
-/** Universal fresh-row initialization: updated_at = created_at on EVERY
- *  insert path (create, smart-merge gateway, id-preserving restore,
- *  future paths) — a per-call-site convention proved incomplete (review).
- *  The inner UPDATE sets only updated_at, which appears in no trigger's
- *  UPDATE OF list: no recursion, no revision bump, no FTS refire. */
-export const CREATE_MEMORY_UPDATED_AT_INIT_TRIGGER = `
-CREATE TRIGGER IF NOT EXISTS memories_updated_at_ai AFTER INSERT ON memories
-WHEN new.updated_at IS NULL BEGIN
-  UPDATE memories SET updated_at = new.created_at WHERE id = new.id;
-END`;
+/* updated_at initialization is EXPLICIT at every repository insert site
+ * (create, smart-merge gateway, id-preserving restore) — an AFTER INSERT
+ * trigger was tried and reverted: its inner UPDATE cascades into any
+ * broad update trigger (the pre-v27 shape, arbitrary user DBs) and fires
+ * FTS delete/insert inside the inserting statement, corrupting the
+ * external-content index (SQLITE_CORRUPT_VTAB, reproduced). The v32
+ * migration backfills legacy rows; tests/v32 guards the convention. */
 
 /** Local row ↔ cloud entity. Cardinality is the brief's rule: one entity
  *  maps to at most one local row and vice versa; `shadow-assoc` rows carry
@@ -536,7 +533,6 @@ export const ALL_DDL: string[] = [
   CREATE_MEMORY_VERSIONS_INDEX,
   CREATE_MEMORY_TOMBSTONES_TABLE,
   CREATE_MEMORY_TOMBSTONES_INDEX,
-  CREATE_MEMORY_UPDATED_AT_INIT_TRIGGER,
   CREATE_SYNC_ENTITY_MAP_TABLE,
   CREATE_SYNC_ALIAS_LOG_TABLE,
   CREATE_SYNC_CONFLICT_SETS_TABLE,
