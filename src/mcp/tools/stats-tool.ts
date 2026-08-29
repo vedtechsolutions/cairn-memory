@@ -1,4 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { canReadPrivate } from '../../config/cairn-config.js';
+import { sessionProjectId } from '../../utils/session-project.js';
 import * as z from 'zod/v4';
 import type { MemoryRepository } from '../../db/memory-repository.js';
 import type { PlanRepository } from '../../db/plan-repository.js';
@@ -68,11 +70,19 @@ export function registerStatsTools(
           `Decay candidates (30d+ no recall): ${health.decayCandidates}`,
           `Never recalled: ${health.neverRecalled}`,
         ];
+        // Session-bound private reads: health is an UNSCOPED surface, so
+        // its content previews are the lowest-effort read of a private
+        // row from anywhere — redact, keep the metadata.
+        const healthPid = sessionProjectId();
         if (health.oldestMemory) {
-          lines.push(`Oldest: "${health.oldestMemory.content.slice(0, 60)}" (${formatTimestamp(health.oldestMemory.created_at)})`);
+          const preview = canReadPrivate(health.oldestMemory.project ?? null, healthPid)
+            ? `"${health.oldestMemory.content.slice(0, 60)}"` : '[private project — content hidden]';
+          lines.push(`Oldest: ${preview} (${formatTimestamp(health.oldestMemory.created_at)})`);
         }
         if (health.mostRecalled) {
-          lines.push(`Most recalled: "${health.mostRecalled.content.slice(0, 60)}" (${health.mostRecalled.recall_count}x)`);
+          const preview = canReadPrivate(health.mostRecalled.project ?? null, healthPid)
+            ? `"${health.mostRecalled.content.slice(0, 60)}"` : '[private project — content hidden]';
+          lines.push(`Most recalled: ${preview} (${health.mostRecalled.recall_count}x)`);
         }
 
         // Memory impact tracking

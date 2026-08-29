@@ -7,6 +7,9 @@
  * handlePitfallCheck entry point and re-exports the public surface.
  */
 import type { PreToolUseInput } from '../shared/hook-io.js';
+import { recordRollup } from '../../db/telemetry-rollup.js';
+import { ROLLUP_METRICS } from '../../constants/index.js';
+import { estimateTokensFast } from '../../utils/tokens.js';
 import type { CachedHookContext } from '../shared/db-client.js';
 import { capabilitiesOf } from '../shared/client-adapter.js';
 import { readState } from '../shared/state-io.js';
@@ -174,9 +177,11 @@ export function handlePitfallCheck(input: PreToolUseInput, client: CachedHookCon
   const capped = warnings.slice(0, PROACTIVE.MAX_WARNINGS_PER_CALL);
 
   let outputStr: string | null = null;
+  let injectedContext: string | null = null;
   if (capped.length > 0) {
     const formatted = capped.map(w => `  - ${w}`).join('\n');
     const context = `[CAIRN] Pitfalls for ${fileLabel}:\n${formatted}`;
+    injectedContext = context;
     // Warnings are advisory: clients whose engines reject an explicit
     // "allow" (capability emitsPermissionDecision=false) get context alone.
     outputStr = JSON.stringify({
@@ -205,5 +210,11 @@ export function handlePitfallCheck(input: PreToolUseInput, client: CachedHookCon
     client.cache.setSkipGate(skipGateKey, null);
   }
 
+  if (injectedContext) {
+    // Cost = what the MODEL receives (additionalContext), not the JSON
+    // transport envelope around it (review: envelope inflated a short
+    // warning from 18 to 44 recorded tokens).
+    recordRollup(client.db, input.session_id, ROLLUP_METRICS.INJECTED, 'pitfall-check', estimateTokensFast(injectedContext));
+  }
   return { output: outputStr, pitfallsSurfaced: capped.length };
 }

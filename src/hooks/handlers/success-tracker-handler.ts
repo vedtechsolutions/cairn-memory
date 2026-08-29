@@ -4,6 +4,8 @@
  * Pure business logic: no stdin/stdout/process.exit.
  */
 import type { PostToolUseInput } from '../shared/hook-io.js';
+import { recordRollup } from '../../db/telemetry-rollup.js';
+import { ROLLUP, ROLLUP_METRICS } from '../../constants/index.js';
 import type { CachedHookContext } from '../shared/db-client.js';
 import { basename } from 'node:path';
 import { existsSync, readFileSync, statSync } from 'node:fs';
@@ -124,17 +126,23 @@ function handleSuccessTrackerBusiness(input: PostToolUseInput, client: CachedHoo
     }
 
     if (needsBoost) {
+      let verifiedImpacts = 0;
       for (const fp of filePaths) {
         const surfacedForFile = tracker.surfacedPitfalls[fp];
         if (surfacedForFile && surfacedForFile.length > 0) {
           for (const memId of surfacedForFile) {
             client.memoryRepo.boostConfidence(memId, CONFIDENCE.PREDICTION_VERIFIED_BOOST);
             client.memoryRepo.incrementImpact(memId);
+            verifiedImpacts++;
             try { markRecallSuccess(client.db, input.session_id, memId); } catch { /* best-effort */ }
           }
           delete tracker.surfacedPitfalls[fp];
         }
       }
+      // Tokens-saved report: each verified impact (surfaced lesson +
+      // confirmed success) counts as one PROXY unit — the report labels
+      // these as estimates, never as measurements.
+      recordRollup(client.db, input.session_id, ROLLUP_METRICS.IMPACT_PROXY, 'success-tracker', verifiedImpacts * ROLLUP.IMPACT_PROXY_TOKENS, verifiedImpacts);
     }
 
     tracker.lastEditPath = filePath ?? null;

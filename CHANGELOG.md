@@ -4,6 +4,32 @@
 
 ### Added
 
+- Added `cairn import --from codex-memories|claude-mem|memory-md`: one-way, idempotent migration of existing memories through the standard scrubbing/dedup pipeline, with dry-run preview and a reported exclusion list.
+- Added marketplace plugins: the repository now serves as a plugin marketplace for both Claude Code (`/plugin marketplace add vedtechsolutions/cairn-memory`) and Codex CLI (`codex plugin marketplace add vedtechsolutions/cairn-memory`). Thin plugins — the `cairn-memory` npm package remains the one runtime; the Claude plugin wires hooks + MCP, the Codex plugin wires MCP (hooks stay with `cairn init` so their one-time trust approval survives updates).
+- Added `docs/INSTALL.md` — one install guide covering npm, both plugins, hook trust, and migration imports.
+
+### Removed
+
+- Removed the never-functional `FileChanged` hook from `cairn init`'s wiring: the event's matcher is a literal filename watch list where empty means watch nothing, so the entry had never fired; `cairn init` now also removes the stale entry from existing settings on re-run.
+
+### Changed
+
+- Changed `cairn init` to support `--statusline-only` for marketplace-plugin users (a full init alongside the plugin would fire every hook twice).
+
+- Changed memory dedup to always merge into an exact-content row when one exists (a dedicated indexed lookup, independent of full-text search) — identical content is never merged into a near-duplicate row again.
+- Changed merge tag unions to cap growth at the 5-tag limit without ever shrinking a row that already carries more.
+
+- Added `cairn report` — an honest tokens-saved report: gross (client-reported compaction savings + a clearly-labeled estimated impact proxy), injection cost per surface, and net; `--days=N` selects the window.
+- Added durable telemetry rollup (schema v30): per-session token aggregates persist past the 7-day telemetry prune (own 1-year retention); disable recording with `{"report":{"rollup":false}}` in the config file or `CAIRN_ROLLUP=0`.
+
+- Added scope controls: projects marked private in `~/.cairn/config.json` (env override `CAIRN_CONFIG_PATH`) never surface in other projects on any surface — briefings, prompt/pitfall injections, subagent context, and recall including graph enrichment.
+- Added `from_private` acknowledgment requirement to `cairn_promote` when promoting a memory out of a private project.
+- Added `scope: "project"` parameter to `cairn_recall` for project-only results (globals excluded).
+- Added session binding for explicit reads of private projects: `cairn_recall`, `cairn_export`, `cairn_expand`, `cairn_plan`, `cairn_reminder_list`, cleanup/stats previews, and the plan/briefing resources return private content only from a session inside that project.
+- Added mutation binding for private projects: forget/correct/strengthen/weaken, cleanup execution, and reminder management refuse private targets from other sessions; promote and restore scope changes require running inside the project as well as `from_private: true`.
+- Added a warning when the config file is present but invalid or wrong-shaped (a broken privacy setting no longer fails open silently).
+- Added `from_private` acknowledgment requirement to restore-mode `cairn_ingest` when a record would change a private memory's project scope.
+
 - Added `@cairn/contract`: the integration contract (client identity, hook events, route classification, memory-path grammar, portable round-trip format, client-adapter interfaces) as a zero-dependency types package, bundled into the npm tarball.
 - Added a client-neutral `/post-tool` hook route; `/codex-post-tool` remains served as a deprecated alias so existing trusted wiring keeps working.
 - Added `cairn init --migrate-routes` to modernize deprecated hook routes explicitly (one re-trust in Codex; unrelated hook trust is preserved).

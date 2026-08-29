@@ -8,6 +8,8 @@
  * file-I/O overhead.
  */
 import type { SessionStartInput } from '../shared/hook-io.js';
+import { recordRollup } from '../../db/telemetry-rollup.js';
+import { ROLLUP_METRICS } from '../../constants/index.js';
 import type { CachedHookContext } from '../shared/db-client.js';
 import { capabilitiesOf, wrapContextOutput } from '../shared/client-adapter.js';
 import { compileBriefing, recoverDroppedPitfalls, buildBriefingQueryFp, type BriefingContext } from '../shared/briefing-compiler.js';
@@ -470,6 +472,11 @@ export function handleSessionStart(
   // Final safety net: hard truncation (rarely triggers after tier reduction)
   const truncated = truncateToTokenBudget(outputText, effectiveBudget);
   const output = framing ? `${framing}\n${truncated}` : truncated;
+
+  // Tokens-saved report: what Cairn injects is a COST — recorded from the
+  // emitted text so the report's cost column is the same thing the agent
+  // actually paid for.
+  recordRollup(client.db, sessionId, ROLLUP_METRICS.INJECTED, 'session-start', estimateTokensFast(output));
 
   return {
     // Codex only injects the JSON hookSpecificOutput contract; Claude

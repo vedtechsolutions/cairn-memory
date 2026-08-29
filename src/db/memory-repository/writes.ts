@@ -5,6 +5,7 @@ import {
   DEDUP,
   type LearnableKind,
   type MemorySource,
+  LIMITS
 } from '../../constants/index.js';
 import { CLIENT_CLAUDE } from '../../constants/clients.js';
 import { generateId, now, sanitize, scrubSecrets, tokenOverlap, buildFtsQuery } from '../../utils/index.js';
@@ -67,7 +68,13 @@ export function create(db: Database.Database, input: CreateMemoryInput): CreateR
     db.prepare(`
       UPDATE memories SET content = ?, confidence = ?, tags = ?, source = ?
       WHERE id = ?
-    `).run(newContent, newConfidence, JSON.stringify([...new Set([...existing.tags, ...tags])]), source, existing.id);
+    `).run(newContent, newConfidence,
+      // Union BOUNDED, never shrunk: cap growth at MAX_TAGS, but a
+      // pre-existing row already carrying more keeps everything it has —
+      // a flat slice destroyed two tags of an unrelated 7-tag row on any
+      // merge (review). Existing tags order first, so they survive.
+      JSON.stringify([...new Set([...existing.tags, ...tags])].slice(0, Math.max(LIMITS.MAX_TAGS, existing.tags.length))),
+      source, existing.id);
 
     return { id: existing.id, deduplicated: true };
   }
@@ -118,8 +125,9 @@ export function storeMemory(db: Database.Database, input: StoreMemoryInput): Cre
     // Content: keep the longer version
     const newContent = content.length > existing.content.length ? content : existing.content;
 
-    // Tags: union
-    const newTags = [...new Set([...existing.tags, ...tags])];
+    // Tags: union, bounded like create's — growth capped at MAX_TAGS,
+    // pre-existing rows never shrunk (review).
+    const newTags = [...new Set([...existing.tags, ...tags])].slice(0, Math.max(LIMITS.MAX_TAGS, existing.tags.length));
 
     // Context: incoming fills gaps, doesn't overwrite
     const existingCtx = existing.context ?? {};
@@ -175,8 +183,55 @@ function defaultConfidence(kind: LearnableKind): number {
   return CONFIDENCE.LEARNED;
 }
 
+/** Import-probe: the row create() would merge this content into, after
+ *  the same canonicalization create() applies. */
+export function probeSimilar(db: Database.Database, content: string, project: string | null, kind: string): Memory | null {
+  return findSimilar(db, scrubSecrets(sanitize(content)).text, project, kind);
+}
+
 export function findSimilar(db: Database.Database, content: string, project: string | null, kind: string, inputEmbedding?: Buffer): Memory | null {
   if (kind === 'rule') return null;
+  // An EXACT row always wins over a near match: with both present
+  // (restored/legacy stores have them), merging into the near-dup
+  // overwrites the WRONG row and leaves two identical copies (closing
+  // review, reproduced). The near-candidate query below stays UNORDERED:
+  // ORDER BY rank forces bm25 scoring of every matching row before the
+  // LIMIT (measured 22ms vs 0.15ms per query on a common-token 10k-row
+  // store) on every gateway write, and with exactness guaranteed here it
+  // bought only speculative merge-target quality.
+  // Exact by CONSTRUCTION means NO FTS gate:
+  // buildFtsQuery's tokenization is not the index's (unicode61 —
+  // non-ASCII terms diverge), and all-stopword content produces no
+  // query at all, so an FTS-gated "exact" lookup can miss byte-identical
+  // rows and insert duplicates (delta review). The (project, kind)
+  // partial active index narrows the scan before the content compare —
+  // this is NOT the unindexed full-table probe removed in round 2.
+  try {
+    // Two statements, not an OR disjunction: the OR form defeats the
+    // v31 partial index and full-scans every write (measured ~48ms per
+    // write on a 10k-row single-scope store).
+    const scopeClause = project === null ? 'project IS NULL' : 'project = ?';
+    // INDEXED BY pins the v31 partial index (guaranteed by ensureSchema
+    // at open): without stats the planner picked the one-column
+    // invalidated index and scanned every active row per write —
+    // measured ~5ms/probe on a 10k-row store with the target row last.
+    const exact = db.prepare(`
+      SELECT * FROM memories INDEXED BY idx_memories_exact_dedup
+      WHERE kind = ? AND ${scopeClause}
+        AND invalidated = 0
+        AND superseded_by IS NULL
+        AND content = ?
+      LIMIT 1
+    `).get(...(project === null ? [kind, content] : [kind, project, content])) as MemoryRow | undefined;
+    if (exact) return rowToMemory(exact);
+  } catch {
+    // Fall THROUGH, never return: a missing index (impossible while
+    // ensureSchema guarantees v31, but this is defense-in-depth) must
+    // degrade to slower-but-correct near-candidate matching below —
+    // returning null here silently disabled ALL dedup (review O1,
+    // demonstrated: exact and near re-imports each inserted new rows).
+  }
+
   // Scope-exact: merging across project/global scope would erase the
   // distinction (and the merge path overwrites content on the wrong row).
   // Quick FTS search for candidates
@@ -191,6 +246,7 @@ export function findSimilar(db: Database.Database, content: string, project: str
       JOIN memories m ON m.rowid = fts.rowid
       WHERE memories_fts MATCH ?
         AND m.invalidated = 0
+        AND m.superseded_by IS NULL
         AND m.kind = ?
         AND ((? IS NULL AND m.project IS NULL) OR m.project = ?)
       LIMIT 10

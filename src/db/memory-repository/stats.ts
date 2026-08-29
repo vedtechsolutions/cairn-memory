@@ -29,8 +29,8 @@ export function getHealthMetrics(db: Database.Database): {
   decayCandidates: number;
   neverRecalled: number;
   avgConfidence: number;
-  oldestMemory: { id: string; content: string; created_at: string } | null;
-  mostRecalled: { id: string; content: string; recall_count: number } | null;
+  oldestMemory: { id: string; content: string; created_at: string; project: string | null } | null;
+  mostRecalled: { id: string; content: string; recall_count: number; project: string | null } | null;
 } {
   const dist = db.prepare(`
     SELECT
@@ -57,14 +57,14 @@ export function getHealthMetrics(db: Database.Database): {
   ).get() as { avg: number | null };
 
   const oldest = db.prepare(`
-    SELECT id, content, created_at FROM memories
+    SELECT id, content, created_at, project FROM memories
     WHERE invalidated = 0 AND kind != 'rule' ORDER BY created_at ASC LIMIT 1
-  `).get() as { id: string; content: string; created_at: string } | undefined;
+  `).get() as { id: string; content: string; created_at: string; project: string | null } | undefined;
 
   const mostRecalledRow = db.prepare(`
-    SELECT id, content, recall_count FROM memories
+    SELECT id, content, recall_count, project FROM memories
     WHERE invalidated = 0 AND kind != 'rule' ORDER BY recall_count DESC LIMIT 1
-  `).get() as { id: string; content: string; recall_count: number } | undefined;
+  `).get() as { id: string; content: string; recall_count: number; project: string | null } | undefined;
 
   return {
     confidenceDistribution: { high: dist.high ?? 0, medium: dist.medium ?? 0, low: dist.low ?? 0 },
@@ -175,9 +175,14 @@ export function findByFilter(db: Database.Database, filter: CleanupFilter, limit
 /** Delete memories matching a cleanup filter */
 export function deleteByFilter(db: Database.Database, filter: CleanupFilter, limit = 100): number {
   const memories = findByFilter(db, filter, limit);
-  if (memories.length === 0) return 0;
+  return deleteByIds(db, memories.map(m => m.id));
+}
 
-  const ids = memories.map(m => m.id);
+/** Delete exactly these ids in ONE statement — callers that pre-filter a
+ *  candidate set (cleanup's private-row exclusion) must not degrade to a
+ *  per-row autocommit loop that an interruption leaves half-applied. */
+export function deleteByIds(db: Database.Database, ids: readonly string[]): number {
+  if (ids.length === 0) return 0;
   const placeholders = ids.map(() => '?').join(',');
   const result = db.prepare(`DELETE FROM memories WHERE id IN (${placeholders})`).run(...ids);
   return result.changes;

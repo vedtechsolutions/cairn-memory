@@ -1,0 +1,17 @@
+{
+  "name": "cairn",
+  "plugins": [
+    {
+      "name": "cairn",
+      "source": "./plugins/codex/cairn",
+      "description": "Local-first shared memory for AI coding agents (MCP tools; hooks wired via cairn init). Requires the cairn-memory npm package.",
+      "category": "development",
+      "interface": {
+        "displayName": "Cairn"
+      },
+      "policy": {
+        "installation": "AVAILABLE"
+      }
+    }
+  ]
+}

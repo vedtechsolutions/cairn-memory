@@ -47,6 +47,11 @@ export function runRecallLayers(ctx: PromptCtx): void {
         if (allInjected.has(predId)) continue;
         const mem = client.memoryRepo.findById(predId);
         if (!mem || mem.invalidated || mem.confidence < RELEVANCE.MIN_CONFIDENCE_FOR_FACT) continue;
+        // Co-recall pairs are recorded WITHOUT a project dimension, so a
+        // prediction can dereference another project's row — the one hook
+        // path where a cross-project (or private) memory arrives by raw
+        // id. Same guard as every other layer in this file.
+        if (!passesCrossProjectGuard(mem, project, fp)) continue;
         if (isGoalMemoryStale(mem)) continue;
         if (surfaced === 0 || preferredKinds.includes(mem.kind)) {
           budgetPush(`[CAIRN] ${mem.kind}: ${mem.content}${client.memoryRepo.stalenessMarker(mem)}`);

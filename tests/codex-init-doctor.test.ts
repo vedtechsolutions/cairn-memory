@@ -6,7 +6,8 @@ import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, mkdtempSync } from 'node:fs';
 import { tmpdir, homedir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join, resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 // SELF-HERMETICIZE BEFORE ANYTHING ELSE — and UNCONDITIONALLY. Two reasons:
 // a direct `node --test <file>` run has no hermetic-env preload, and this
@@ -30,8 +31,13 @@ import {
 } from '../src/cli/codex-init.js';
 import { checkCodexParity } from '../src/cli/doctor.js';
 
-const RELAY = '/install/dist/src/hooks/hook-relay';
-const SHELL_RELAY = 'bash /install/dist/src/hooks/hook-relay.sh';
+// THE RUNNING INSTALL's paths: doctor now short-circuits when the wired
+// install dir is missing (moved/removed) OR is a different install than
+// the one running doctor (stale nvm tree), so fixtures wire the real
+// repo dist — exactly what a healthy install looks like.
+const INSTALL = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
+const RELAY = `${INSTALL}/dist/src/hooks/hook-relay`;
+const SHELL_RELAY = `bash ${INSTALL}/dist/src/hooks/hook-relay.sh`;
 
 beforeEach(() => {
   // Hard refusal, independent of the env layer above: this test must never
@@ -90,7 +96,7 @@ describe('codexHooks generator', () => {
 
   it('supports the shell-relay command form', () => {
     const file = codexHooks(SHELL_RELAY);
-    assert.ok(file.hooks.SessionStart[0].hooks[0].command.startsWith('bash /install/'));
+    assert.ok(file.hooks.SessionStart[0].hooks[0].command.startsWith(`bash ${INSTALL}/`));
   });
 
   it('can generate the deprecated post-tool route for wired installs', () => {
@@ -330,7 +336,7 @@ describe('runCodexInit (hermetic end to end)', () => {
   it('writes hooks.json, appends MCP, and repeat runs are byte-identical', () => {
     mkdirSync(codexDir(), { recursive: true });
     writeFileSync(codexConfigPath(), 'model = "gpt-x"'); // note: no trailing newline
-    runCodexInit(RELAY, '/install/dist/src/mcp/server.js', false);
+    runCodexInit(RELAY, `${INSTALL}/dist/src/mcp/server.js`, false);
 
     const written1 = readFileSync(codexHooksPath(), 'utf-8');
     assert.equal(codexHookCount(JSON.parse(written1) as CodexHooksFile), 10);
@@ -339,7 +345,7 @@ describe('runCodexInit (hermetic end to end)', () => {
     assert.equal(hasCairnMcpServer(config), true, 'MCP appended');
 
     // Byte-identical re-run: THE property that preserves hook trust.
-    runCodexInit(RELAY, '/install/dist/src/mcp/server.js', false);
+    runCodexInit(RELAY, `${INSTALL}/dist/src/mcp/server.js`, false);
     assert.equal(readFileSync(codexHooksPath(), 'utf-8'), written1);
     const config2 = readFileSync(codexConfigPath(), 'utf-8');
     assert.equal(config2.match(/\[mcp_servers\.cairn\]/g)?.length, 1, 'no duplicate declaration');
@@ -450,7 +456,7 @@ describe('doctor checkCodexParity', () => {
     writeFileSync(codexConfigPath(), readFileSync(codexConfigPath(), 'utf-8') + trustAll(codexHooksPath(), file));
     const ok = checkCodexParity();
     assert.equal(ok.status, 'ok');
-    assert.match(ok.detail, /trusted \(10\/10 hooks; MCP registered\)/);
+    assert.match(ok.detail, /trusted \(10\/10 hooks; MCP registered; governance advisory is Claude Code-only/);
 
     // One hook disabled → warn naming the disabled count.
     const config = readFileSync(codexConfigPath(), 'utf-8')
@@ -473,5 +479,61 @@ describe('doctor checkCodexParity', () => {
     // Canonical wiring carries no note.
     runCodexInit(RELAY, '/srv/server.js', false, true);
     assert.ok(!checkCodexParity().detail.includes('deprecated'), 'no note after migration');
+  });
+});
+
+describe('doctor stale-install detection (step-6 review)', () => {
+  it('warns when the wired install dir no longer exists', () => {
+    mkdirSync(codexDir(), { recursive: true });
+    writeFileSync(codexHooksPath(), JSON.stringify({
+      description: 'x',
+      hooks: { SessionStart: [{ hooks: [{ type: 'command', command: '/gone-xyz/dist/src/hooks/hook-relay --client codex session-start', timeout: 10 }] }] },
+    }));
+    const r = checkCodexParity();
+    assert.equal(r.status, 'warn');
+    assert.match(r.detail, /moved or removed install/);
+  });
+
+  it('warns when the wired dir EXISTS but is a different install than the one running doctor', () => {
+    // The stale-nvm-tree shape: the old package dir survives the
+    // switch, so hooks keep running outdated code while an
+    // existence-only check reports healthy (review).
+    const other = mkdtempSync(join(tmpdir(), 'cairn-other-install-'));
+    mkdirSync(join(other, 'dist', 'src', 'hooks'), { recursive: true });
+    writeFileSync(join(other, 'dist', 'src', 'hooks', 'hook-relay.sh'), '#!/bin/sh\n');
+    mkdirSync(codexDir(), { recursive: true });
+    writeFileSync(codexHooksPath(), JSON.stringify({
+      description: 'x',
+      hooks: { SessionStart: [{ hooks: [{ type: 'command', command: `${other}/dist/src/hooks/hook-relay --client codex session-start`, timeout: 10 }] }] },
+    }));
+    const r = checkCodexParity();
+    assert.equal(r.status, 'warn');
+    assert.match(r.detail, /DIFFERENT install/);
+    rmSync(other, { recursive: true, force: true });
+  });
+
+  it('a foreign command merely containing dist/src/hooks/ cannot false-positive', () => {
+    mkdirSync(codexDir(), { recursive: true });
+    writeFileSync(codexHooksPath(), JSON.stringify({
+      description: 'x',
+      hooks: { SessionStart: [
+        { hooks: [{ type: 'command', command: 'node /gone-app/dist/src/hooks/custom.js', timeout: 10 }] },
+        { hooks: [{ type: 'command', command: `${RELAY} --client codex session-start`, timeout: 10 }] },
+      ] },
+    }));
+    const r = checkCodexParity();
+    // The foreign /gone-app path is NOT hook-relay-anchored, so the
+    // stale check ignores it; the real wiring is healthy (review).
+    assert.ok(!/moved or removed/.test(r.detail), r.detail);
+  });
+});
+
+describe('doctor malformed-shape resilience (claude round-2 low)', () => {
+  it('a group without a hooks array warns instead of throwing', () => {
+    mkdirSync(codexDir(), { recursive: true });
+    writeFileSync(codexHooksPath(), JSON.stringify({ hooks: { SessionStart: [{}] } }));
+    const r = checkCodexParity();
+    assert.equal(r.status, 'warn');
+    assert.match(r.detail, /not a valid hooks file/);
   });
 });

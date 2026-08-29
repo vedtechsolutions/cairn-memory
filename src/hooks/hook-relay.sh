@@ -55,7 +55,14 @@ if [ -S "$SOCK" ]; then
     MAX_TIME=3
     [ "$HOOK_TYPE" = "governance-gate" ] && MAX_TIME=0.4
     RESULT=$(curl -sf --max-time "$MAX_TIME" --unix-socket "$SOCK" "http://localhost/$HOOK_TYPE" -H "Content-Type: application/json" "${CLIENT_HDR[@]}" --data-binary @"$INPUT_FILE" 2>/dev/null)
-    if [ $? -eq 0 ]; then
+    CURL_RC=$?
+    # Timeout (28) must NOT fall through to the direct-node rerun below:
+    # the daemon may have processed the event (side effects landed) and a
+    # rerun double-counts everything — same policy as the C relay's
+    # empty-response case and this file's own async branch. The response
+    # is lost either way; losing it once is the honest outcome.
+    [ "$CURL_RC" = "28" ] && exit 0
+    if [ "$CURL_RC" -eq 0 ]; then
       if [ "$HOOK_TYPE" = "governance-gate" ]; then
         case "$RESULT" in
           *'"decision"'*) ;;

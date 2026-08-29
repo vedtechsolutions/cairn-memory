@@ -197,8 +197,45 @@ export const LEARNABLE_SUCCESS_PATTERNS = [
 
 // --- Limits -----------------------------------------------------------------
 
+/** Tokens-saved report (Phase 1 step 4). Numbers are INTERNAL tuning,
+ *  never contract. */
+export const ROLLUP = {
+  /** Estimated tokens to re-derive one VERIFIED-useful memory (an impact
+   *  event: a surfaced lesson followed by a confirmed success). This is a
+   *  deliberate, conservative stand-in — re-deriving a pitfall typically
+   *  means re-reading files and re-hitting the error — and the report
+   *  labels every number built from it as an estimate. */
+  IMPACT_PROXY_TOKENS: 150,
+  /** Rollup rows outlive the 7-day telemetry prune by design; a year
+   *  bounds growth (~a few rows per session event). */
+  RETENTION_DAYS: 365,
+  /** Default report window. */
+  REPORT_DAYS: 30,
+} as const;
+
+/** Rollup metric names (internal vocabulary, not contract). */
+export const ROLLUP_METRICS = {
+  /** COST: context Cairn injected (briefings, warnings, subagent context). */
+  INJECTED: 'injected',
+  /** GROSS, client-reported: PostCompact tokens_saved. */
+  COMPACT_SAVED: 'compact_saved',
+  /** GROSS, estimated: verified impact events x IMPACT_PROXY_TOKENS. */
+  IMPACT_PROXY: 'impact_proxy',
+} as const;
+
+/** Importer tuning (internal). */
+export const IMPORT = {
+  /** Keyword tags carried per imported task group (retrieval, not noise). */
+  MAX_KEYWORD_TAGS: 3,
+  /** Sections shorter than this are headers/noise, not lessons. */
+  MIN_SECTION_CHARS: 20,
+  /** A heading with at least this many bullets splits per-bullet. */
+  MIN_BULLETS_FOR_SPLIT: 2,
+} as const;
+
 export const LIMITS = {
   MAX_TAGS: 5,
+  MAX_TAG_CHARS: 50,
   MAX_CONTENT_CHARS: 2000,
   MAX_STRING_PARAM: 200,
   MAX_PLANS_PER_PROJECT: 50,
@@ -388,8 +425,11 @@ export type SessionStartMatcher = (typeof SESSION_START_MATCHERS)[number];
 
 // --- Version ----------------------------------------------------------------
 
-/** Single source of truth for Cairn version — keep in sync with package.json */
-export const VERSION = '5.1.0';
+/** Kept in lockstep with package.json by scripts/sync-plugin-versions.mjs
+ *  (npm `version` lifecycle) and pinned by a test — a "keep in sync"
+ *  comment alone let the MCP handshake advertise 5.1.0 on a 5.3.1
+ *  install (step-6 validation finding). */
+export const VERSION = '5.3.1';
 
 // --- DB Config --------------------------------------------------------------
 

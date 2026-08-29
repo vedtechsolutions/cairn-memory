@@ -4,7 +4,7 @@ import { dirname } from 'node:path';
 import { createRequire } from 'node:module';
 import { FS_PERMS } from '../constants/index.js';
 import { resolveDbPath } from './db-path.js';
-import { ALL_DDL, SCHEMA_VERSION } from './schema.js';
+import { ALL_DDL, SCHEMA_VERSION, CREATE_EXACT_DEDUP_INDEX } from './schema.js';
 import {
   CREATE_REMINDERS_TABLE, CREATE_REMINDERS_FTS, CREATE_REMINDERS_FTS_TRIGGERS,
   CREATE_HOOK_TELEMETRY_TABLE,
@@ -32,6 +32,7 @@ import {
 import { DB } from '../constants/index.js';
 import { migrateToV28 } from './migrations/v28-governance.js';
 import { migrateToV29 } from './migrations/v29-origin-client.js';
+import { migrateToV30 } from './migrations/v30-telemetry-rollup.js';
 
 const LAST_LEGACY_SCHEMA_VERSION = 27;
 
@@ -144,6 +145,17 @@ function ensureSchema(db: Database.Database): void {
   }
   if (currentVersion < 29 && SCHEMA_VERSION >= 29) {
     migrateToV29(db);
+  }
+  // <= 30 on purpose: v30's shape changed while unreleased (events
+  // column), so an already-at-30 database still needs the column pass.
+  // Idempotent and one PRAGMA when nothing is missing.
+  if (currentVersion <= 30 && SCHEMA_VERSION >= 30) {
+    migrateToV30(db);
+  }
+  if (currentVersion < 31 && SCHEMA_VERSION >= 31) {
+    // Single idempotent statement — no migration module needed.
+    db.exec(CREATE_EXACT_DEDUP_INDEX);
+    db.prepare('UPDATE schema_version SET version = ?').run(31);
   }
 
   ensureFtsIntegrity(db);

@@ -8,9 +8,9 @@
  * `cairn doctor` can gate CI and setup scripts. Diagnostic only — it never
  * creates or migrates the database.
  */
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync , realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { SCHEMA_VERSION } from '../db/schema.js';
 import { resolveDbPath } from '../db/db-path.js';
 import { CAIRN_HOOK_DIR_MARKER } from '../constants/index.js';
@@ -188,6 +188,7 @@ export function checkCodexParity(): CheckResult {
     return { status: 'warn', detail: 'Codex CLI detected but Cairn hooks are not installed — run `cairn init`' };
   }
   let file: CodexHooksFile;
+  let total: number;
   try {
     const parsed = JSON.parse(readFileSync(hooksPath, 'utf-8')) as unknown;
     // A wrong-shape file is a config problem, not a doctor crash: the cast
@@ -198,13 +199,34 @@ export function checkCodexParity(): CheckResult {
       throw new Error('not a hooks file');
     }
     file = parsed as CodexHooksFile;
+    // Counting walks the full nested shape — a group without a hooks
+    // array surfaced a raw TypeError instead of this warn (review).
+    total = codexHookCount(file);
   } catch {
     return { status: 'warn', detail: `${hooksPath} is not a valid hooks file (bad JSON or shape) — re-run \`cairn init\`` };
   }
-  const total = codexHookCount(file);
   const wired = JSON.stringify(file).includes(CAIRN_HOOK_DIR_MARKER);
   if (!wired || total === 0) {
     return { status: 'warn', detail: 'Codex hooks.json exists but carries no Cairn hooks — run `cairn init`' };
+  }
+  // Stale-install detection: hook commands pin the ABSOLUTE install path
+  // of whichever install wrote them. Two failure shapes (review): the
+  // wired dir no longer exists (moved/removed install — hooks die
+  // silently), or it exists but is NOT the install running doctor (an
+  // old nvm tree left behind — hooks silently run outdated code while
+  // everything looks healthy). Anchored on hook-relay so a foreign
+  // command that merely contains dist/src/hooks/ cannot false-positive.
+  const wiredDir = cairnCommandSet(file)
+    .map((c) => /(\/[^ ]+\/dist\/src\/hooks)\/hook-relay/.exec(c)?.[1])
+    .find((d): d is string => d !== undefined);
+  if (wiredDir !== undefined && !existsSync(wiredDir)) {
+    return { status: 'warn', detail: `Codex hooks point at a moved or removed install (${wiredDir}) — re-run \`cairn init\` (one re-trust)` };
+  }
+  // realpath BOTH sides: the same install reached through a symlink must
+  // not read as different (review) — that prompted needless re-trust.
+  const canonical = (d: string): string => { try { return realpathSync(d); } catch { return resolve(d); } };
+  if (wiredDir !== undefined && canonical(wiredDir) !== canonical(HOOK_DIR)) {
+    return { status: 'warn', detail: `Codex hooks run a DIFFERENT install (${wiredDir}) than this one (${HOOK_DIR}) — re-run \`cairn init\` from the install you want (one re-trust)` };
   }
   const config = existsSync(codexConfigPath()) ? readFileSync(codexConfigPath(), 'utf-8') : '';
   const mcp = hasCairnMcpServer(config) ? 'MCP registered' : 'MCP NOT registered (run `cairn init`)';
@@ -218,7 +240,7 @@ export function checkCodexParity(): CheckResult {
     return { status: 'warn', detail: `Codex wired but ${trust.disabled} hook(s) are DISABLED and ${total - trust.trusted - trust.disabled} untrusted (${trust.trusted}/${total} active; ${mcp}) — review with /hooks in codex${legacyRoute}` };
   }
   if (trust.trusted >= total) {
-    return { status: 'ok', detail: `Codex wired and trusted (${trust.trusted}/${total} hooks; ${mcp})${legacyRoute}` };
+    return { status: 'ok', detail: `Codex wired and trusted (${trust.trusted}/${total} hooks; ${mcp}; governance advisory is Claude Code-only — expected)${legacyRoute}` };
   }
   return { status: 'warn', detail: `Codex wired, awaiting one-time trust review (${trust.trusted}/${total} hooks trusted; ${mcp}) — start \`codex\` and accept the Cairn hooks${legacyRoute}` };
 }

@@ -227,6 +227,12 @@ export class ReminderRepository {
   }
 
   /** Deactivate a reminder */
+  /** Single reminder by id (scope checks before delete/deactivate). */
+  findById(id: string): Reminder | null {
+    const row = this.db.prepare('SELECT * FROM reminders WHERE id = ?').get(id) as ReminderRow | undefined;
+    return row ? this.rowToReminder(row) : null;
+  }
+
   deactivate(id: string): boolean {
     const result = this.db.prepare(
       'UPDATE reminders SET active = 0 WHERE id = ? AND active = 1'

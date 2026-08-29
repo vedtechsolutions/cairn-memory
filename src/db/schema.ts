@@ -4,7 +4,7 @@
 
 import { GOVERNANCE_DDL } from './governance-schema.js';
 
-export const SCHEMA_VERSION = 29;
+export const SCHEMA_VERSION = 31;
 
 export const CREATE_MEMORIES_TABLE = `
 CREATE TABLE IF NOT EXISTS memories (
@@ -230,6 +230,21 @@ CREATE TABLE IF NOT EXISTS hook_telemetry (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 )`;
 
+/** v30 — durable tokens-saved aggregates. hook_telemetry is pruned at 7
+ *  days; the report needs months, so aggregates persist here (own long
+ *  retention in maintenance). One row per (session, surface) event. */
+export const CREATE_TELEMETRY_ROLLUP_TABLE = `
+CREATE TABLE IF NOT EXISTS telemetry_rollup (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id TEXT NOT NULL,
+  day TEXT NOT NULL,
+  metric TEXT NOT NULL,
+  surface TEXT NOT NULL DEFAULT '',
+  tokens INTEGER NOT NULL,
+  events INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+)`;
+
 export const CREATE_PROJECT_CONTEXT_TABLE = `
 CREATE TABLE IF NOT EXISTS project_context (
   project TEXT NOT NULL,
@@ -291,6 +306,19 @@ END`;
  *  covers retired records). */
 export const CREATE_EXACT_SCOPE_INDEX =
   'CREATE INDEX IF NOT EXISTS idx_memories_project_kind_active ON memories(project, kind) WHERE invalidated = 0 AND superseded_by IS NULL';
+
+/** v31: exact-content dedup lookup (kind, project, content) over ACTIVE
+ *  records. findSimilar's exact check must be independent of FTS (its
+ *  query tokenization diverges from unicode61 on non-ASCII, and
+ *  stopword-only content builds no query at all), and without an index
+ *  the plain equality read scans every active row in scope on EVERY
+ *  gateway write (measured: 1000 writes into a single-scope 10k-row
+ *  store took ~48s). Storage cost is real, not just "bounded": measured
+ *  ~4.4MB per 20k rows of ~180-char content (~36% of the store, and at
+ *  worst-case 2000-char content the index would rival the table) —
+ *  accepted for O(log n) exactness on every gateway write. */
+export const CREATE_EXACT_DEDUP_INDEX =
+  'CREATE INDEX IF NOT EXISTS idx_memories_exact_dedup ON memories(kind, project, content) WHERE invalidated = 0 AND superseded_by IS NULL';
 
 /** Version history for corrected/updated memories — preserves decision evolution. */
 export const CREATE_MEMORY_VERSIONS_TABLE = `
@@ -355,6 +383,7 @@ export const CREATE_INDEXES = [
   'CREATE INDEX IF NOT EXISTS idx_plan_decisions_plan ON plan_decisions(plan_id)',
   'CREATE INDEX IF NOT EXISTS idx_reminders_active ON reminders(active, project)',
   'CREATE INDEX IF NOT EXISTS idx_telemetry_hook ON hook_telemetry(hook_name, created_at DESC)',
+  'CREATE INDEX IF NOT EXISTS idx_rollup_day ON telemetry_rollup(day, metric)',
 ];
 
 // --- All DDL in order -------------------------------------------------------
@@ -371,6 +400,7 @@ export const ALL_DDL: string[] = [
   CREATE_PLAN_DECISIONS_TABLE,
   CREATE_COMPACTION_SNAPSHOTS_TABLE,
   CREATE_HOOK_TELEMETRY_TABLE,
+  CREATE_TELEMETRY_ROLLUP_TABLE,
   CREATE_REMINDERS_TABLE,
   CREATE_REMINDERS_FTS,
   ...CREATE_REMINDERS_FTS_TRIGGERS,
@@ -385,6 +415,7 @@ export const ALL_DDL: string[] = [
   CREATE_MEMORY_FILES_TABLE,
   CREATE_MEMORY_FILES_REVISION_TRIGGER,
   CREATE_EXACT_SCOPE_INDEX,
+  CREATE_EXACT_DEDUP_INDEX,
   CREATE_MEMORY_VERSIONS_TABLE,
   CREATE_MEMORY_VERSIONS_INDEX,
   CREATE_INVESTIGATION_CHAINS_TABLE,

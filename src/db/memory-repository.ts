@@ -224,6 +224,16 @@ export class MemoryRepository {
     return briefing.topDecisionsRanked(this.db, project, limit);
   }
 
+  /** The row the gateway's dedup WOULD merge an incoming memory into —
+   *  probed by bulk importers BEFORE create so an exact repeat can be a
+   *  true no-op and a merge can name the real pre-existing text (create
+   *  overwrites it with the longer version, so post-hoc reads lie). Same
+   *  query the gateway itself runs — one representation, one cost. */
+  findSimilarTo(content: string, project: string | null, kind: string): { id: string; content: string } | null {
+    const existing = writes.probeSimilar(this.db, content, project, kind);
+    return existing ? { id: existing.id, content: existing.content } : null;
+  }
+
   /** Filter out memories that have been superseded by newer ones (via memory_edges). */
   filterSuperseded(memories: Memory[]): Memory[] {
     return graph.filterSuperseded(this.db, memories);
@@ -270,8 +280,8 @@ export class MemoryRepository {
   }
 
   /** Strict restore-by-id: no merge, no boosts, no conflict detection */
-  restore(record: PortableRecord & { id: string }): 'inserted' | 'updated' {
-    return portability.restoreRecord(this.db, record);
+  restore(record: PortableRecord & { id: string }, opts: { allowPrivateScopeChange?: boolean; sessionProjectId?: string | null } = {}): 'inserted' | 'updated' {
+    return portability.restoreRecord(this.db, record, opts);
   }
 
   /** Upsert one free-form memory file — VFS path gate, then adapter caps */
@@ -280,8 +290,8 @@ export class MemoryRepository {
   }
 
   /** Strict-restore a whole document in ONE immediate transaction */
-  restoreAll(records: ReadonlyArray<PortableRecord & { id: string }>, files: readonly PortableFile[]): portability.RestoreCounts {
-    return portability.restoreDocument(this.db, records, files);
+  restoreAll(records: ReadonlyArray<PortableRecord & { id: string }>, files: readonly PortableFile[], opts: { allowPrivateScopeChange?: boolean; sessionProjectId?: string | null } = {}): portability.RestoreCounts {
+    return portability.restoreDocument(this.db, records, files, opts);
   }
 
   /** Promote a project-scoped memory to global scope */
@@ -310,8 +320,8 @@ export class MemoryRepository {
     decayCandidates: number;
     neverRecalled: number;
     avgConfidence: number;
-    oldestMemory: { id: string; content: string; created_at: string } | null;
-    mostRecalled: { id: string; content: string; recall_count: number } | null;
+    oldestMemory: { id: string; content: string; created_at: string; project: string | null } | null;
+    mostRecalled: { id: string; content: string; recall_count: number; project: string | null } | null;
   } {
     return stats.getHealthMetrics(this.db);
   }
@@ -332,6 +342,11 @@ export class MemoryRepository {
   }
 
   /** Delete memories matching a cleanup filter */
+  /** Single-statement delete of exactly these ids (atomic). */
+  deleteByIds(ids: readonly string[]): number {
+    return stats.deleteByIds(this.db, ids);
+  }
+
   deleteByFilter(filter: CleanupFilter, limit = 100): number {
     return stats.deleteByFilter(this.db, filter, limit);
   }

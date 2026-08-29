@@ -7,6 +7,7 @@ import { PROACTIVE } from '../../../constants/index.js';
 import { getGitWorkingState } from '../../../utils/project-scanner.js';
 import { predictRelated } from '../../../utils/prediction.js';
 import { emptyConditionContext, type ConditionContext } from '../../../utils/condition-evaluator.js';
+import { passesCrossProjectGuard } from '../../../utils/cross-project-guard.js';
 import type { PitfallPassCtx } from './memory-recall.js';
 
 /** File-triggered reminders */
@@ -64,7 +65,11 @@ export function applyPredictivePrefetch(ctx: PitfallPassCtx): void {
       for (const predId of predicted) {
         if (warnings.length >= PROACTIVE.MAX_WARNINGS_PER_CALL) break;
         const mem = client.memoryRepo.findById(predId);
-        if (mem && !mem.invalidated && mem.kind === 'pitfall') {
+        // Co-recall pairs carry no project dimension: guard the raw-id
+        // dereference like every fetched candidate (a private project's
+        // pitfall must never ride a co-recall edge into another project).
+        if (mem && !mem.invalidated && mem.kind === 'pitfall'
+          && passesCrossProjectGuard(mem, ctx.project, ctx.queryFp)) {
           warnings.push(mem.content);
           tracker.injectedMemoryIds = tracker.injectedMemoryIds ?? [];
           if (!tracker.injectedMemoryIds.includes(predId)) {

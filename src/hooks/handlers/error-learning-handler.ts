@@ -15,6 +15,8 @@
  * updates.
  */
 import type { PostToolUseFailureInput } from '../shared/hook-io.js';
+import { recordRollup } from '../../db/telemetry-rollup.js';
+import { ROLLUP, ROLLUP_METRICS } from '../../constants/index.js';
 import type { CachedHookContext } from '../shared/db-client.js';
 import { capabilitiesOf, originClientOf } from '../shared/client-adapter.js';
 import { extractPatchFilePaths, patchTextOf } from '../shared/patch-paths.js';
@@ -184,6 +186,10 @@ function handleErrorLearningBusiness(input: PostToolUseFailureInput, client: Cac
               // Correct prediction ignored — double impact credit, no weaken
               client.memoryRepo.incrementImpact(id);
               client.memoryRepo.incrementImpact(id);
+              // Report proxy: the warning was RIGHT (the error proves it),
+              // so it still counts — once, not twice: double credit is a
+              // confidence policy, not evidence of double value.
+              recordRollup(client.db, input.session_id, ROLLUP_METRICS.IMPACT_PROXY, 'error-learning', ROLLUP.IMPACT_PROXY_TOKENS, 1);
               continue;
             }
           }
@@ -345,6 +351,14 @@ function handleErrorLearningBusiness(input: PostToolUseFailureInput, client: Cac
 
 // --- Helpers ---
 
+/** NOT a report cost surface, deliberately: this handler's output is
+ *  UNDELIVERABLE under the current wiring — error-learning is registered
+ *  async on every client (init.ts relayAsync; the Codex demux discards
+ *  the return), and async hook responses are never injected. Recording
+ *  these strings as cost billed the user for context no model received
+ *  (review round 2, reproduced). If the wiring ever turns sync, add the
+ *  recording AT THE DELIVERY SITE, not here. Latent product gap filed:
+ *  these four outputs are currently dead letters everywhere. */
 function buildOutputJson(hookEventName: string, context: string): string {
   return JSON.stringify({
     hookSpecificOutput: {

@@ -8,6 +8,22 @@ export interface GovernanceTier {
   tokens: number;
 }
 
+/** An out-of-scope client is a DESIGN boundary, not a breakage: the
+ *  advisory layer supports Claude Code sessions only today, and raw
+ *  codes next to doctor's "wired and trusted 10/10" read as a health
+ *  contradiction (field review). Branch on the SESSION's client
+ *  identity, never on the unsupported_client code: a claude-code
+ *  session reading a foreign-stamped state row carries that code too,
+ *  and code-based inference would swallow its real degradations
+ *  (review round 2 of this fix). */
+function renderCapabilityLine(clientInScope: boolean, reasons: readonly string[]): string {
+  if (!clientInScope) {
+    return 'Capability: governance advisory is Claude Code-only today (informational for this client)';
+  }
+  if (reasons.length === 0) return 'Capability: shadow observation available';
+  return `Capability: degraded (${reasons.join(', ')})`;
+}
+
 function renderLines(section: GovernanceBriefingSection): string[] {
   const lines = ['[Cairn Governance — advisory; not enforced]'];
   if (section.rules.length > 0) {
@@ -16,9 +32,7 @@ function renderLines(section: GovernanceBriefingSection): string[] {
   } else {
     lines.push('Applicable pre-exit rules: none');
   }
-  lines.push(section.capabilityReasons.length > 0
-    ? `Capability: degraded (${section.capabilityReasons.join(', ')})`
-    : 'Capability: shadow observation available');
+  lines.push(renderCapabilityLine(section.clientInScope, section.capabilityReasons));
   if (section.lastVerdict !== null) {
     const verdict = section.lastVerdict;
     lines.push(

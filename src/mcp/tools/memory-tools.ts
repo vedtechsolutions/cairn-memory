@@ -9,6 +9,8 @@ import { LEARNABLE_KINDS, LIMITS, BRIEFING_MODE, RELEVANCE, FINGERPRINT, type Co
 import { RERANK } from '../../constants/reranker-models.js';
 import { generateFingerprint } from '../../utils/fingerprint.js';
 import { surfacesInScopedRecall } from '../../utils/cross-project-guard.js';
+import { canReadPrivate } from '../../config/cairn-config.js';
+import { sessionProjectId } from '../../utils/session-project.js';
 import { projectId } from '../../utils/project-id.js';
 import type { ContextRepository } from '../../db/context-repository.js';
 import { isRerankEnabled, rerank } from '../../utils/reranker.js';
@@ -70,15 +72,19 @@ export function registerMemoryTools(
         query: z.string().max(LIMITS.MAX_STRING_PARAM).describe('What you are about to do — used to find relevant memories'),
         project: z.string().max(LIMITS.MAX_STRING_PARAM).optional().describe('Scope to a specific project ID'),
         max_results: z.number().int().positive().optional().describe('Max results (default: 5)'),
+        scope: z.enum(['all', 'project']).optional().describe("Result scope: 'all' (default) includes relevant globals; 'project' returns ONLY the given project's own memories"),
       }),
     },
-    async ({ query, project, max_results: maxResults }) => {
+    async ({ query, project, max_results: maxResults, scope }) => {
       const mode = getMode();
       const critical = isCritical(mode);
       if (critical) return critical;
 
       // Resolve a bare project name (e.g. "cairn") to its full id for scoping.
       const resolvedProject = repo.resolveProject(project) ?? null;
+      if (scope === 'project' && !resolvedProject) {
+        return { content: [{ type: 'text' as const, text: "error: scope: 'project' requires a resolvable `project` argument" }], isError: true };
+      }
 
       const limit = modeAdjustedLimit(mode, maxResults);
 
@@ -108,6 +114,18 @@ export function registerMemoryTools(
       let results = queryEmbedding
         ? repo.recallHybrid(query, queryEmbedding, recallOptions)
         : repo.recall(query, recallOptions);
+
+      // Scope policy, applied UNCONDITIONALLY (unlike the fingerprint
+      // guard below, which needs a project context): a private project's
+      // rows are readable only when THIS SESSION runs inside that project
+      // — naming the project from elsewhere, or a bare recall, gets
+      // nothing. The `project` argument selects scope; it is not consent.
+      const sessionPid = sessionProjectId();
+      results = results.filter(r => canReadPrivate(r.memory.project, sessionPid));
+      // scope: 'project' — only the project's own rows, no globals.
+      if (scope === 'project') {
+        results = results.filter(r => r.memory.project === resolvedProject);
+      }
 
       // Cross-project guard (same filter the hook/briefing paths apply): a
       // global memory surfaces in a project-scoped recall only when its
@@ -156,7 +174,12 @@ export function registerMemoryTools(
       if (results.length > 0 && mode === 'normal') {
         results = repo.enrichWithGraphNeighbors(results, 2);
         // Guard the supplemental neighbors too — a 1-hop edge must not smuggle
-        // a mis-scoped global past the cross-project filter above.
+        // a mis-scoped global (or a private project's memory, or an
+        // out-of-scope row under scope:'project') past the filters above.
+        results = results.filter(r => directIds.has(r.memory.id) || canReadPrivate(r.memory.project, sessionPid));
+        if (scope === 'project') {
+          results = results.filter(r => directIds.has(r.memory.id) || r.memory.project === resolvedProject);
+        }
         if (queryFp) {
           results = results.filter(r => directIds.has(r.memory.id) || surfacesInScopedRecall(r.memory, resolvedProject, queryFp));
         }
@@ -334,6 +357,18 @@ export function registerMemoryTools(
     },
   );
 
+  /** N5 decision: mutation follows readability — a session can neither
+   *  read nor MODIFY another project's private memories (integrity and
+   *  availability protected alongside confidentiality). Applied to every
+   *  by-id mutation; 'not found' is deliberately NOT the answer here —
+   *  an honest refusal beats pretending the row does not exist, since
+   *  ids are no longer obtainable cross-project anyway. */
+  const privateMutationBlock = (id: string): { content: [{ type: 'text'; text: string }]; isError: true } | null => {
+    const memory = repo.findById(id);
+    if (!memory || canReadPrivate(memory.project, sessionProjectId())) return null;
+    return { content: [{ type: 'text', text: 'error: this memory belongs to a private project — modify it from a session inside that project' }], isError: true };
+  };
+
   // --- cairn_correct ---------------------------------------------------------
 
   server.registerTool(
@@ -348,6 +383,8 @@ export function registerMemoryTools(
       }),
     },
     async ({ id, action, new_content: newContent }) => {
+      const blocked = privateMutationBlock(id);
+      if (blocked) return blocked;
       if (action === 'update') {
         if (!newContent) {
           return { content: [{ type: 'text', text: 'error: new_content required for update' }], isError: true };
@@ -388,6 +425,8 @@ export function registerMemoryTools(
       }),
     },
     async ({ id }) => {
+      const blocked = privateMutationBlock(id);
+      if (blocked) return blocked;
       const ok = repo.delete(id);
       if (ok) bumpCache(sessionCache);
       return { content: [{ type: 'text', text: ok ? 'ok' : 'not found' }] };
@@ -406,6 +445,8 @@ export function registerMemoryTools(
       }),
     },
     async ({ id }) => {
+      const blocked = privateMutationBlock(id);
+      if (blocked) return blocked;
       const ok = repo.strengthenConfidence(id);
       if (ok) bumpCache(sessionCache);
       return { content: [{ type: 'text', text: ok ? 'ok' : 'not found' }] };
@@ -424,6 +465,8 @@ export function registerMemoryTools(
       }),
     },
     async ({ id }) => {
+      const blocked = privateMutationBlock(id);
+      if (blocked) return blocked;
       const result = repo.weakenConfidence(id);
       if (!result.weakened) {
         return { content: [{ type: 'text', text: 'not found' }] };
@@ -456,6 +499,7 @@ export function registerMemoryTools(
       const critical = isCritical(mode);
       if (critical) return critical;
 
+      const expandPid = sessionProjectId();
       const lines: string[] = [];
       for (const rawId of ids) {
         // Parse the type prefix: "pit:xxxxxxxx" → kind=pitfall, shortId=xxxxxxxx
@@ -470,6 +514,14 @@ export function registerMemoryTools(
         const memory = repo.findByShortId(shortId);
         if (!memory || memory.invalidated) {
           lines.push(`[not found] ${rawId}`);
+          continue;
+        }
+        // Session-bound private reads: expand is the progressive-disclosure
+        // continuation of the briefing, and findByShortId accepts any
+        // unique prefix — without this check a 4-char prefix walk reads
+        // every private row's content from anywhere.
+        if (!canReadPrivate(memory.project, expandPid)) {
+          lines.push(`[private] ${rawId}: belongs to a private project — open it from within that project`);
           continue;
         }
 
@@ -523,8 +575,11 @@ export function registerMemoryTools(
         if (matches.length === 0) {
           return { content: [{ type: 'text', text: 'No memories match this filter.' }] };
         }
+        const previewPid = sessionProjectId();
         const sample = matches.slice(0, 5).map(m =>
-          `  • [${m.kind}] "${m.content.slice(0, 80)}" (conf: ${m.confidence.toFixed(2)})`
+          canReadPrivate(m.project, previewPid)
+            ? `  • [${m.kind}] "${m.content.slice(0, 80)}" (conf: ${m.confidence.toFixed(2)})`
+            : `  • [${m.kind}] [private project — content hidden] (conf: ${m.confidence.toFixed(2)})`
         );
         const lines = [
           `Would delete ${matches.length} memories (max ${LIMITS.CLEANUP_MAX_DELETE}).`,
@@ -564,9 +619,21 @@ export function registerMemoryTools(
         }
       }
 
-      const deleted = repo.deleteByFilter(cleanupFilter, LIMITS.CLEANUP_MAX_DELETE);
+      // N5: destruction follows readability — an agent that cannot read a
+      // private project's rows must not be able to delete them either
+      // (the preview redacts their content; deleting them anyway would
+      // protect confidentiality while surrendering integrity).
+      const candidates = repo.findByFilter(cleanupFilter, LIMITS.CLEANUP_MAX_DELETE);
+      const executePid = sessionProjectId();
+      const deletable = candidates.filter(m => canReadPrivate(m.project, executePid));
+      const skippedPrivate = candidates.length - deletable.length;
+      // One statement — a per-row loop an interruption leaves half-applied
+      // would trade cleanup's atomicity for the private-row exclusion.
+      const deleted = repo.deleteByIds(deletable.map(m => m.id));
       if (deleted > 0) bumpCache(sessionCache);
-      return { content: [{ type: 'text', text: `deleted ${deleted}` }] };
+      const note = skippedPrivate > 0
+        ? ` (${skippedPrivate} in private project(s) skipped — run from a session inside the project)` : '';
+      return { content: [{ type: 'text', text: `deleted ${deleted}${note}` }] };
     },
   );
 }

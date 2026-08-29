@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type Database from 'better-sqlite3';
@@ -96,5 +97,84 @@ describe('bounded advisory governance briefing', () => {
     });
     assert.match(output.text, /advisory; not enforced/u);
     assert.ok(output.tokenEstimate <= 400, `${output.tokenEstimate} exceeds index budget`);
+  });
+});
+
+describe('capability line wording (field review)', () => {
+  let db2: Database.Database;
+  let root2: string;
+  beforeEach(() => {
+    db2 = openDatabase({ dbPath: ':memory:' });
+    root2 = mkdtempSync(join(tmpdir(), 'cairn-gov-brief-'));
+  });
+  afterEach(() => { db2.close(); rmSync(root2, { recursive: true, force: true }); });
+
+  it('an unsupported client reads as a design boundary, never raw degradation codes', () => {
+    new GovernanceRuleRepository(db2).create({
+      ruleId: 'verify-core', content: 'Verify tests before exit',
+      project: 'proj-x', phases: ['pre_exit'], level: 'warn', gateIds: ['test'], paths: ['**'],
+      confirmation: { userConfirmed: true },
+    });
+    const section = loadGovernanceBriefing(db2, {
+      project: 'proj-x', projectRoot: root2, sessionId: 's-codex', clientName: 'codex',
+      clientInstallationId: 'i-codex', nowMs: Date.parse('2026-08-26T12:00:00.000Z'),
+    });
+    assert.ok(section, 'a rule exists, so the section renders');
+    const output = compileBriefing(new MemoryRepository(db2), new PlanRepository(db2), {
+      project: 'proj-x', sessionType: 'startup', interrupted: false, briefingMode: 'full',
+      budgetOverride: 600, governance: section,
+    });
+    // Raw codes next to doctor's "wired and trusted 10/10" read as a
+    // health contradiction (field review) — the line must say what it
+    // means and drop meaningless secondary reasons.
+    assert.match(output.text, /governance advisory is Claude Code-only today/u);
+    assert.ok(!output.text.includes('unsupported_client'), 'no raw code in user-facing text');
+    assert.ok(!output.text.includes('stale_heartbeat'), 'secondary reasons suppressed for out-of-scope clients');
+  });
+});
+
+describe('capability line branches on client identity, not the code (review)', () => {
+  it('a claude-code session with a foreign-stamped row keeps its raw degradations visible', () => {
+    const db3 = openDatabase({ dbPath: ':memory:' });
+    const root3 = mkdtempSync(join(tmpdir(), 'cairn-gov-foreign-'));
+    try {
+      new GovernanceRuleRepository(db3).create({
+        ruleId: 'verify-core', content: 'Verify tests before exit',
+        project: 'proj-y', phases: ['pre_exit'], level: 'warn', gateIds: ['test'], paths: ['**'],
+        confirmation: { userConfirmed: true },
+      });
+      // A state row stamped by ANOTHER client under the id this session
+      // derives — the second conjunct of capability-status.ts's
+      // supportedClient. Real claude-code degradations must not be
+      // swallowed by the out-of-scope sentence (review: code-based
+      // inference did exactly that).
+      const sessionId = 's-claude-foreign';
+      const derivedId = `session-${createHash('sha256').update(sessionId).digest('hex').slice(0, 16)}`;
+      db3.prepare(`
+        INSERT INTO governance_client_state (
+          project, client_installation_id, client_name, client_version,
+          supports_post_tool_use, supports_post_tool_failure, supports_file_changed,
+          supports_structured_output, supports_stop, supports_blocking, adapter_version,
+          settings_source, last_session_id, last_heartbeat_at, last_probe_result
+        ) VALUES (?, ?, 'other-agent', '1', 0, 0, 0, 1, 0, 0, 1,
+          'managed', ?, '2026-08-26T12:00:00.000Z', 'ok')
+      `).run('proj-y', derivedId, sessionId);
+      const section = loadGovernanceBriefing(db3, {
+        project: 'proj-y', projectRoot: root3, sessionId, clientName: 'claude-code',
+        clientInstallationId: null, nowMs: Date.parse('2026-08-26T12:00:00.000Z'),
+      });
+      assert.ok(section);
+      assert.equal(section!.clientInScope, true, 'the SESSION is claude-code');
+      assert.ok(section!.capabilityReasons.includes('unsupported_client'), 'fixture proof: the foreign row produced the code');
+      const output = compileBriefing(new MemoryRepository(db3), new PlanRepository(db3), {
+        project: 'proj-y', sessionType: 'startup', interrupted: false, briefingMode: 'full',
+        budgetOverride: 600, governance: section,
+      });
+      assert.match(output.text, /Capability: degraded \(/u, 'raw degradations stay visible for an in-scope client');
+      assert.ok(!output.text.includes('Claude Code-only today'), 'the out-of-scope sentence is reserved for out-of-scope SESSIONS');
+    } finally {
+      db3.close();
+      rmSync(root3, { recursive: true, force: true });
+    }
   });
 });

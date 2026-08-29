@@ -1,4 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { canReadPrivate } from '../../config/cairn-config.js';
+import { sessionProjectId } from '../../utils/session-project.js';
 import * as z from 'zod/v4';
 import type { PlanRepository, Plan, PlanStep } from '../../db/plan-repository.js';
 import type { MemoryRepository } from '../../db/memory-repository.js';
@@ -55,10 +57,23 @@ export function registerPlanTool(
       // Resolve a bare name (e.g. "cairn") to its full id for get/list reads;
       // create keeps params.project (an explicit new scope is the user's call).
       const project = planRepo.resolveProject(params.project) ?? undefined;
+      // Session-bound private projects: plans carry richer content than
+      // most memory rows (step descriptions, decisions with rationale) —
+      // neither readable nor modifiable from another session. One gate
+      // covers every action; create's raw target is checked too.
+      for (const target of new Set([project, params.project])) {
+        if (target && !canReadPrivate(target, sessionProjectId())) {
+          return text(`error: project "${target}" is marked private — its plans are accessible only from a session inside that project`, true);
+        }
+      }
 
       switch (params.action) {
         case 'create':
-          return handleCreate(planRepo, memoryRepo, params, sessionCache);
+          // Store under the RESOLVED id: an alias ('cairn' for
+          // 'cairn-abc123') creating under the raw string would park the
+          // plan at an id the privacy guard never matches (reproduced by
+          // review). Genuinely new names resolve to themselves.
+          return handleCreate(planRepo, memoryRepo, { ...params, project: project ?? params.project }, sessionCache);
 
         case 'get':
           return handleGet(planRepo, project, params.filter, mode);

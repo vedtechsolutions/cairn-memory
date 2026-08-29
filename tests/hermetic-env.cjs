@@ -31,6 +31,11 @@ if (!process.env.CAIRN_QUERY_CWD) process.env.CAIRN_QUERY_CWD = '/x';
 // point it at the hermetic temp dir so a test can never touch ~/.codex.
 if (!process.env.CAIRN_CODEX_DIR) process.env.CAIRN_CODEX_DIR = join(dir, '.codex');
 
+// Phase 1 step 3: scope policy reads ~/.cairn/config.json — point it at a
+// (nonexistent) hermetic path so a developer's real scope config can never
+// shape test behavior; tests that need a config write this file themselves.
+if (!process.env.CAIRN_CONFIG_PATH) process.env.CAIRN_CONFIG_PATH = join(dir, 'cairn-config.json');
+
 // M3: production only trusts transcripts under ~/.claude/; tests write
 // fixtures via mkdtemp, so opt the OS tmpdir into the allowlist here.
 process.env.CAIRN_ALLOW_TMP_TRANSCRIPTS = '1';

@@ -54,7 +54,12 @@ export function cairnHooks(relayCmd: string): HookMap {
     Stop: one('', relay('governance-gate'), relayAsync('stop')),
     SubagentStop: one('', relayAsync('subagent-stop')),
     StopFailure: one('rate_limit|max_output_tokens|server_error', relayAsync('stop-failure')),
-    FileChanged: one('', relayAsync('file-changed')),
+    // FileChanged is deliberately NOT wired: its matcher is a literal
+    // filename watch list ('' watches NO files — unlike every other
+    // event), so this entry never fired; its async additionalContext is
+    // undeliverable anyway, and governance already degrades gracefully
+    // (missing_file_changed). The daemon route stays for a future
+    // targeted watch list. (Plugin validation finding, 2026-08-29.)
   };
 }
 
@@ -66,9 +71,29 @@ function cairnStatusLine(): Record<string, unknown> {
   return { type: 'command', command: `node ${join(HOOK_DIR, 'statusline.js')}` };
 }
 
-/** True when any command in the entry references a Cairn hook. */
+/** True when any command in the entry references a Cairn hook. A
+ *  malformed entry (no hooks array — user-authored settings are
+ *  arbitrary JSON) is NOT ours: treating it as foreign preserves it,
+ *  where `.some` on undefined aborted the whole init (review). */
 function isCairnEntry(entry: HookMatcher): boolean {
-  return entry.hooks.some(h => CAIRN_HOOK_MARKERS.some(marker => h.command.includes(marker)));
+  return Array.isArray(entry.hooks)
+    && entry.hooks.some(h => CAIRN_HOOK_MARKERS.some(marker => typeof h?.command === 'string' && h.command.includes(marker)));
+}
+
+/** Remove Cairn HANDLERS from entries, at handler granularity: a MIXED
+ *  entry (a Cairn handler beside the user's own) keeps its foreign
+ *  handlers — entry-level removal deleted them (review). Entries left
+ *  empty drop; returns null when nothing remains for the event. */
+function sweepCairnHandlers(entries: HookMatcher[]): { kept: HookMatcher[] | null; swept: boolean } {
+  let swept = false;
+  const kept: HookMatcher[] = [];
+  for (const entry of entries) {
+    if (!isCairnEntry(entry)) { kept.push(entry); continue; }
+    swept = true;
+    const foreign = entry.hooks.filter(h => !CAIRN_HOOK_MARKERS.some(marker => typeof h?.command === 'string' && h.command.includes(marker)));
+    if (foreign.length > 0) kept.push({ ...entry, hooks: foreign });
+  }
+  return { kept: kept.length > 0 ? kept : null, swept };
 }
 
 interface MergePlan { changed: string[]; skipped: string[]; result: Settings }
@@ -79,15 +104,10 @@ interface MergePlan { changed: string[]; skipped: string[]; result: Settings }
  * Cairn's entries with any prior Cairn entries replaced and non-Cairn entries
  * preserved; StatusLine is set only when absent or already Cairn's.
  */
-function mergeSettings(existing: Settings, relayCmd: string): MergePlan {
+function mergeSettings(existing: Settings, relayCmd: string, statuslineOnly = false): MergePlan {
   const changed: string[] = [];
   const skipped: string[] = [];
   const result: Settings = { ...existing };
-
-  const servers = { ...(existing.mcpServers ?? {}) };
-  servers.cairn = cairnMcpServer();
-  result.mcpServers = servers;
-  changed.push('mcpServers.cairn');
 
   const statusIsCairn = typeof existing.statusLine === 'object' && existing.statusLine !== null
     && String((existing.statusLine as { command?: string }).command ?? '').includes('dist/src/hooks/statusline');
@@ -97,12 +117,60 @@ function mergeSettings(existing: Settings, relayCmd: string): MergePlan {
   } else {
     skipped.push('statusLine (a non-Cairn StatusLine is already set — left untouched)');
   }
+  if (statuslineOnly) {
+    // The flag MEANS "the plugin manages hooks + MCP", so settings.json
+    // must not keep a parallel set: an existing user who ran a full
+    // init under the old docs and then installed the plugin stayed
+    // double-wired (two briefings per session) with nothing to remove
+    // it (review N4). Sweep Cairn's entries; foreign ones untouched.
+    const hooks: HookMap = { ...(existing.hooks ?? {}) };
+    let sweptEvents = 0;
+    for (const [event, entries] of Object.entries(hooks)) {
+      const { kept, swept } = sweepCairnHandlers(entries);
+      if (swept) {
+        if (kept) hooks[event] = kept;
+        else delete hooks[event];
+        sweptEvents++;
+      }
+    }
+    if (sweptEvents > 0) {
+      result.hooks = hooks;
+      changed.push(`hooks (${sweptEvents} event(s) of settings-wired Cairn hooks removed — the plugin provides them)`);
+    }
+    const existingServer = (existing.mcpServers ?? {}).cairn as { args?: unknown[] } | undefined;
+    if (existingServer && JSON.stringify(existingServer).includes('dist/src/mcp/server.js')) {
+      const servers = { ...(existing.mcpServers ?? {}) };
+      delete servers.cairn;
+      result.mcpServers = servers;
+      changed.push('mcpServers.cairn removed (the plugin provides it)');
+    }
+    skipped.push('hooks + MCP wiring (plugin-managed — --statusline-only)');
+    return { changed, skipped, result };
+  }
+
+  const servers = { ...(existing.mcpServers ?? {}) };
+  servers.cairn = cairnMcpServer();
+  result.mcpServers = servers;
+  changed.push('mcpServers.cairn');
 
   const hooks: HookMap = { ...(existing.hooks ?? {}) };
   const desired = cairnHooks(relayCmd);
   for (const [event, cairnEntries] of Object.entries(desired)) {
     const preserved = (hooks[event] ?? []).filter(entry => !isCairnEntry(entry));
     hooks[event] = [...preserved, ...cairnEntries];
+  }
+  // Orphan sweep: Cairn entries under events the CURRENT hook set no
+  // longer wires (e.g. FileChanged after its removal) would otherwise
+  // survive every upgrade forever, pointing at whatever install wrote
+  // them (review). Foreign entries under those events are untouched.
+  for (const [event, entries] of Object.entries(hooks)) {
+    if (Object.hasOwn(desired, event)) continue;
+    const { kept, swept } = sweepCairnHandlers(entries);
+    if (swept) {
+      if (kept) hooks[event] = kept;
+      else delete hooks[event];
+      changed.push(`hooks.${event} (stale Cairn entries removed)`);
+    }
   }
   result.hooks = hooks;
   changed.push(`hooks (${Object.keys(desired).length} events)`);
@@ -131,7 +199,14 @@ function readSettings(path: string): Settings {
   return parsed as Settings;
 }
 
-export interface InitOptions { dryRun?: boolean; migrateRoutes?: boolean }
+export interface InitOptions {
+  dryRun?: boolean;
+  migrateRoutes?: boolean;
+  /** Write ONLY the StatusLine into settings.json — for users whose
+   *  hooks + MCP come from the marketplace plugin (a full init would
+   *  double-wire every event: two briefings per session; review B2). */
+  statuslineOnly?: boolean;
+}
 
 /** Run init; returns the process exit code. */
 export function runInit(options: InitOptions = {}): number {
@@ -147,7 +222,7 @@ export function runInit(options: InitOptions = {}): number {
   const path = claudeSettingsPath();
   let plan: MergePlan;
   try {
-    plan = mergeSettings(readSettings(path), relay.command);
+    plan = mergeSettings(readSettings(path), relay.command, options.statuslineOnly ?? false);
   } catch (err) {
     console.error(`  ✗ could not read ${path}: ${(err as Error).message}`);
     return 1;
@@ -179,7 +254,11 @@ export function runInit(options: InitOptions = {}): number {
     console.log(`  ✓ wrote ${path}`);
   }
 
-  runCodexInit(relay.command, SERVER, options.dryRun ?? false, options.migrateRoutes ?? false);
+  // --statusline-only touches ONLY the StatusLine — Codex wiring is a
+  // separate concern the flag's user did not ask about.
+  if (!options.statuslineOnly) {
+    runCodexInit(relay.command, SERVER, options.dryRun ?? false, options.migrateRoutes ?? false);
+  }
 
   if (options.dryRun) console.log('\n  (dry run — no files were written)');
 

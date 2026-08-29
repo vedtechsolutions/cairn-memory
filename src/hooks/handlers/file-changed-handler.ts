@@ -35,6 +35,10 @@ function handleFileChangedBusiness(input: FileChangedInput, client: HookDbClient
 
   if (reminders.length > 0) {
     const lines = reminders.map(r => `[CAIRN] Reminder: ${r.action}`);
+    // NOT a report cost surface: file-changed is an ASYNC route, so this
+    // additionalContext is never injected (async responses are discarded)
+    // — recording it billed for undelivered text (review round 2). Same
+    // latent delivery gap as error-learning; recorded in the backlog.
     const output = JSON.stringify({
       hookSpecificOutput: {
         hookEventName: 'FileChanged',
