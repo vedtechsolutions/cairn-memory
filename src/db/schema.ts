@@ -4,7 +4,7 @@
 
 import { GOVERNANCE_DDL } from './governance-schema.js';
 
-export const SCHEMA_VERSION = 31;
+export const SCHEMA_VERSION = 32;
 
 export const CREATE_MEMORIES_TABLE = `
 CREATE TABLE IF NOT EXISTS memories (
@@ -31,7 +31,10 @@ CREATE TABLE IF NOT EXISTS memories (
   superseded_at TEXT DEFAULT NULL,
   last_decayed_at TEXT DEFAULT NULL,
   revision INTEGER NOT NULL DEFAULT 1,
-  origin_client TEXT NOT NULL DEFAULT 'claude'
+  origin_client TEXT NOT NULL DEFAULT 'claude',
+  author TEXT DEFAULT NULL,
+  updated_at TEXT DEFAULT NULL,
+  share_state TEXT DEFAULT NULL CHECK (share_state IN ('local','team') OR share_state IS NULL)
 )`;
 
 /** Maintenance bookkeeping (rate-gate timestamps etc.) — key/value rows. */
@@ -281,7 +284,7 @@ CREATE TRIGGER IF NOT EXISTS memories_revision_au AFTER UPDATE OF
   content, kind, project, tags, confidence, source, context, anchor,
   invalidated, expires_at, superseded_by, superseded_at
 ON memories BEGIN
-  UPDATE memories SET revision = revision + 1 WHERE id = new.id;
+  UPDATE memories SET revision = revision + 1, updated_at = datetime('now') WHERE id = new.id;
 END`;
 
 /** v27: free-form memory-tool files (roadmap W4). The CHECK is a BYTE cap —
@@ -388,6 +391,103 @@ export const CREATE_INDEXES = [
 
 // --- All DDL in order -------------------------------------------------------
 
+/** v32 — Phase 2 team-sync neutral replica state (free core; see the
+ *  gate-passed brief's ownership map). Standalone value without any sync
+ *  worker: tombstones = audit/undo of forgets; the journal = local audit
+ *  of semantic changes; the rest is inert until a consumer registers. */
+
+/** Retraction log written by deleteById/invalidate — tombstone propagation
+ *  for sync, forget-audit standalone. */
+export const CREATE_MEMORY_TOMBSTONES_TABLE = `
+CREATE TABLE IF NOT EXISTS memory_tombstones (
+  memory_id TEXT NOT NULL,
+  action TEXT NOT NULL CHECK (action IN ('delete','invalidate')),
+  project TEXT,
+  kind TEXT NOT NULL,
+  content TEXT NOT NULL,
+  deleted_at TEXT NOT NULL,
+  PRIMARY KEY (memory_id, action, deleted_at)
+)`;
+
+/** Local row ↔ cloud entity. Cardinality is the brief's rule: one entity
+ *  maps to at most one local row and vice versa; `shadow-assoc` rows carry
+ *  the inert projection + contributor snapshot so materialization is
+ *  offline-executable. */
+export const CREATE_SYNC_ENTITY_MAP_TABLE = `
+CREATE TABLE IF NOT EXISTS sync_entity_map (
+  entity_id TEXT PRIMARY KEY,
+  local_memory_id TEXT NOT NULL UNIQUE,
+  project TEXT NOT NULL,
+  state TEXT NOT NULL CHECK (state IN ('bound','shadow-assoc')),
+  canonical_version INTEGER NOT NULL,
+  canonical_hash TEXT NOT NULL,
+  projection_hash TEXT NOT NULL,
+  inert_projection TEXT DEFAULT NULL,
+  contributors TEXT DEFAULT NULL,
+  updated_at TEXT NOT NULL
+)`;
+
+export const CREATE_SYNC_ALIAS_LOG_TABLE = `
+CREATE TABLE IF NOT EXISTS sync_alias_log (
+  from_entity_id TEXT PRIMARY KEY,
+  to_entity_id TEXT NOT NULL,
+  as_of_version INTEGER NOT NULL,
+  seq INTEGER NOT NULL,
+  applied_at TEXT NOT NULL
+)`;
+
+export const CREATE_SYNC_CONFLICT_SETS_TABLE = `
+CREATE TABLE IF NOT EXISTS sync_conflict_sets (
+  conflict_set_id TEXT PRIMARY KEY,
+  project TEXT NOT NULL,
+  member_entity_ids TEXT NOT NULL,
+  reason TEXT NOT NULL CHECK (reason IN ('near-duplicate','divergence')),
+  opened_by TEXT NOT NULL,
+  opened_seq INTEGER NOT NULL,
+  status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','resolved')),
+  resolved_seq INTEGER DEFAULT NULL
+)`;
+
+/** Append-only contributor projection (server-stamped provenance mirror). */
+export const CREATE_SYNC_CONTRIBUTORS_TABLE = `
+CREATE TABLE IF NOT EXISTS sync_contributors (
+  entity_id TEXT NOT NULL,
+  account_id TEXT NOT NULL,
+  first_seq INTEGER NOT NULL,
+  PRIMARY KEY (entity_id, account_id)
+)`;
+
+/** Opaque namespaced kv: cursors, durable memory generation, rename
+ *  intents, consent fences. Written only inside owner transactions. */
+export const CREATE_SYNC_STATE_TABLE = `
+CREATE TABLE IF NOT EXISTS sync_state (
+  ns TEXT NOT NULL,
+  k TEXT NOT NULL,
+  v TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (ns, k)
+)`;
+
+/** Semantic-change journal: written by repository code in the memory
+ *  transaction (shareable mutations only, rescopes suppressed); the
+ *  worker classifies entries durably. Admission uses only row-local,
+ *  frozen-protocol predicates — the journal is never authorization to
+ *  upload. */
+export const CREATE_SYNC_JOURNAL_TABLE = `
+CREATE TABLE IF NOT EXISTS sync_journal (
+  entry_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  project TEXT NOT NULL,
+  memory_id TEXT NOT NULL,
+  op TEXT NOT NULL CHECK (op IN ('upsert','tombstone')),
+  row_revision INTEGER NOT NULL,
+  created_at TEXT NOT NULL,
+  classification TEXT DEFAULT NULL CHECK (classification IN ('enqueued','permanently-ineligible','deferred-pending-eligibility') OR classification IS NULL),
+  classified_at TEXT DEFAULT NULL
+)`;
+
+export const CREATE_SYNC_JOURNAL_INDEX =
+  'CREATE INDEX IF NOT EXISTS idx_sync_journal_pending ON sync_journal(project, classification)';
+
 export const ALL_DDL: string[] = [
   CREATE_SCHEMA_VERSION_TABLE,
   CREATE_MAINTENANCE_META_TABLE,
@@ -418,6 +518,14 @@ export const ALL_DDL: string[] = [
   CREATE_EXACT_DEDUP_INDEX,
   CREATE_MEMORY_VERSIONS_TABLE,
   CREATE_MEMORY_VERSIONS_INDEX,
+  CREATE_MEMORY_TOMBSTONES_TABLE,
+  CREATE_SYNC_ENTITY_MAP_TABLE,
+  CREATE_SYNC_ALIAS_LOG_TABLE,
+  CREATE_SYNC_CONFLICT_SETS_TABLE,
+  CREATE_SYNC_CONTRIBUTORS_TABLE,
+  CREATE_SYNC_STATE_TABLE,
+  CREATE_SYNC_JOURNAL_TABLE,
+  CREATE_SYNC_JOURNAL_INDEX,
   CREATE_INVESTIGATION_CHAINS_TABLE,
   ...CREATE_INVESTIGATION_CHAINS_INDEXES,
   CREATE_USER_MODEL_TABLE,

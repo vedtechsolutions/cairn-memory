@@ -90,9 +90,9 @@ export function create(db: Database.Database, input: CreateMemoryInput): CreateR
   const anchorJson = input.anchor ?? null;
 
   db.prepare(`
-    INSERT INTO memories (id, content, kind, project, tags, confidence, source, origin_client, created_at, recall_count, invalidated, expires_at, fingerprint, context, embedding, embedding_model, anchor)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?, ?)
-  `).run(id, content, input.kind, project, tagsJson, confidence, source, input.originClient ?? CLIENT_CLAUDE, timestamp, input.expiresAt ?? null, fpJson, ctxJson, embeddingBlob, embeddingModel, anchorJson);
+    INSERT INTO memories (id, content, kind, project, tags, confidence, source, origin_client, created_at, updated_at, recall_count, invalidated, expires_at, fingerprint, context, embedding, embedding_model, anchor)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?, ?)
+  `).run(id, content, input.kind, project, tagsJson, confidence, source, input.originClient ?? CLIENT_CLAUDE, timestamp, timestamp, input.expiresAt ?? null, fpJson, ctxJson, embeddingBlob, embeddingModel, anchorJson);
 
   if (input.skipConflictDetection) {
     return { id, deduplicated: false };
@@ -325,16 +325,32 @@ export function getVersionHistory(db: Database.Database, memoryId: string): Arra
   }
 }
 
+/** Retractions must travel (v32): every effective invalidate/delete also
+ *  writes the tombstone log in the same transaction — sync propagation
+ *  later, forget-audit today. A refused mutation (rule kind, missing id)
+ *  logs nothing. */
+function retractWithTombstone(db: Database.Database, id: string, action: 'delete' | 'invalidate'): boolean {
+  return db.transaction(() => {
+    const row = db.prepare("SELECT project, kind, content FROM memories WHERE id = ? AND kind != 'rule'").get(id) as
+      | { project: string | null; kind: string; content: string } | undefined;
+    if (!row) return false;
+    db.prepare(`
+      INSERT OR IGNORE INTO memory_tombstones (memory_id, action, project, kind, content, deleted_at)
+      VALUES (?, ?, ?, ?, ?, datetime('now'))
+    `).run(id, action, row.project, row.kind, row.content);
+    const stmt = action === 'delete'
+      ? "DELETE FROM memories WHERE id = ? AND kind != 'rule'"
+      : "UPDATE memories SET invalidated = 1 WHERE id = ? AND kind != 'rule'";
+    return db.prepare(stmt).run(id).changes > 0;
+  })();
+}
+
 export function invalidate(db: Database.Database, id: string): boolean {
-  const result = db.prepare(
-    "UPDATE memories SET invalidated = 1 WHERE id = ? AND kind != 'rule'"
-  ).run(id);
-  return result.changes > 0;
+  return retractWithTombstone(db, id, 'invalidate');
 }
 
 export function deleteById(db: Database.Database, id: string): boolean {
-  const result = db.prepare("DELETE FROM memories WHERE id = ? AND kind != 'rule'").run(id);
-  return result.changes > 0;
+  return retractWithTombstone(db, id, 'delete');
 }
 
 /** Promote a project-scoped memory to global scope */

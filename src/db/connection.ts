@@ -33,6 +33,7 @@ import { DB } from '../constants/index.js';
 import { migrateToV28 } from './migrations/v28-governance.js';
 import { migrateToV29 } from './migrations/v29-origin-client.js';
 import { migrateToV30 } from './migrations/v30-telemetry-rollup.js';
+import { migrateToV32 } from './migrations/v32-team-sync.js';
 
 const LAST_LEGACY_SCHEMA_VERSION = 27;
 
@@ -156,6 +157,9 @@ function ensureSchema(db: Database.Database): void {
     // Single idempotent statement — no migration module needed.
     db.exec(CREATE_EXACT_DEDUP_INDEX);
     db.prepare('UPDATE schema_version SET version = ?').run(31);
+  }
+  if (currentVersion < 32 && SCHEMA_VERSION >= 32) {
+    migrateToV32(db);
   }
 
   ensureFtsIntegrity(db);
