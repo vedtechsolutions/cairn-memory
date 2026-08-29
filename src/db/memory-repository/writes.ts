@@ -14,6 +14,7 @@ import { cosineSimilarity } from '../../utils/similarity.js';
 import type { Memory, MemoryRow, CreateMemoryInput, CreateResult, StoreMemoryInput } from './types.js';
 import { rowToMemory, bufferToFloat32, hasEmbedding, findById } from './reads.js';
 import { applyConflictDetection, contentsOppose } from './truth.js';
+import { journalMutation, currentRevision } from './journal.js';
 
 const RULE_GENERIC_WRITE_ERROR = 'rule memories require the governance repository';
 
@@ -65,16 +66,19 @@ export function create(db: Database.Database, input: CreateMemoryInput): CreateR
     // Merge: boost confidence (dedup = reinforcement) + prefer longer content
     const newConfidence = Math.min(existing.confidence + CONFIDENCE.BOOST_INCREMENT, 1.0);
     const newContent = content.length > existing.content.length ? content : existing.content;
-    db.prepare(`
-      UPDATE memories SET content = ?, confidence = ?, tags = ?, source = ?
-      WHERE id = ?
-    `).run(newContent, newConfidence,
-      // Union BOUNDED, never shrunk: cap growth at MAX_TAGS, but a
-      // pre-existing row already carrying more keeps everything it has —
-      // a flat slice destroyed two tags of an unrelated 7-tag row on any
-      // merge (review). Existing tags order first, so they survive.
-      JSON.stringify([...new Set([...existing.tags, ...tags])].slice(0, Math.max(LIMITS.MAX_TAGS, existing.tags.length))),
-      source, existing.id);
+    db.transaction(() => {
+      db.prepare(`
+        UPDATE memories SET content = ?, confidence = ?, tags = ?, source = ?
+        WHERE id = ?
+      `).run(newContent, newConfidence,
+        // Union BOUNDED, never shrunk: cap growth at MAX_TAGS, but a
+        // pre-existing row already carrying more keeps everything it has —
+        // a flat slice destroyed two tags of an unrelated 7-tag row on any
+        // merge (review). Existing tags order first, so they survive.
+        JSON.stringify([...new Set([...existing.tags, ...tags])].slice(0, Math.max(LIMITS.MAX_TAGS, existing.tags.length))),
+        source, existing.id);
+      journalMutation(db, { memoryId: existing.id, project, kind: input.kind, op: 'upsert', revision: currentRevision(db, existing.id) }, input.journal);
+    })();
 
     return { id: existing.id, deduplicated: true };
   }
@@ -89,10 +93,13 @@ export function create(db: Database.Database, input: CreateMemoryInput): CreateR
   const embeddingModel = embeddingBlob ? getEmbeddingModelConfig().key : null;
   const anchorJson = input.anchor ?? null;
 
-  db.prepare(`
-    INSERT INTO memories (id, content, kind, project, tags, confidence, source, origin_client, created_at, updated_at, recall_count, invalidated, expires_at, fingerprint, context, embedding, embedding_model, anchor)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?, ?)
-  `).run(id, content, input.kind, project, tagsJson, confidence, source, input.originClient ?? CLIENT_CLAUDE, timestamp, timestamp, input.expiresAt ?? null, fpJson, ctxJson, embeddingBlob, embeddingModel, anchorJson);
+  db.transaction(() => {
+    db.prepare(`
+      INSERT INTO memories (id, content, kind, project, tags, confidence, source, origin_client, created_at, updated_at, recall_count, invalidated, expires_at, fingerprint, context, embedding, embedding_model, anchor)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?, ?)
+    `).run(id, content, input.kind, project, tagsJson, confidence, source, input.originClient ?? CLIENT_CLAUDE, timestamp, timestamp, input.expiresAt ?? null, fpJson, ctxJson, embeddingBlob, embeddingModel, anchorJson);
+    journalMutation(db, { memoryId: id, project, kind: input.kind, op: 'upsert', revision: 1 }, input.journal);
+  })();
 
   if (input.skipConflictDetection) {
     return { id, deduplicated: false };
@@ -146,17 +153,20 @@ export function storeMemory(db: Database.Database, input: StoreMemoryInput): Cre
     // Embedding: backfill if existing lacks one
     const newEmbedding = input.embedding && !hasEmbedding(db, existing.id) ? input.embedding : undefined;
 
-    db.prepare(`
-      UPDATE memories SET content = ?, confidence = ?, tags = ?, source = ?,
-        context = ?, fingerprint = ?${newEmbedding ? ', embedding = ?, embedding_model = ?' : ''}
-      WHERE id = ?
-    `).run(
-      newContent, newConfidence, JSON.stringify(newTags), newSource,
-      hasCtx ? JSON.stringify(mergedCtx) : (existing.context ? JSON.stringify(existing.context) : null),
-      newFp ? JSON.stringify(newFp) : null,
-      ...(newEmbedding ? [newEmbedding, getEmbeddingModelConfig().key] : []),
-      existing.id,
-    );
+    db.transaction(() => {
+      db.prepare(`
+        UPDATE memories SET content = ?, confidence = ?, tags = ?, source = ?,
+          context = ?, fingerprint = ?${newEmbedding ? ', embedding = ?, embedding_model = ?' : ''}
+        WHERE id = ?
+      `).run(
+        newContent, newConfidence, JSON.stringify(newTags), newSource,
+        hasCtx ? JSON.stringify(mergedCtx) : (existing.context ? JSON.stringify(existing.context) : null),
+        newFp ? JSON.stringify(newFp) : null,
+        ...(newEmbedding ? [newEmbedding, getEmbeddingModelConfig().key] : []),
+        existing.id,
+      );
+      journalMutation(db, { memoryId: existing.id, project, kind, op: 'upsert', revision: currentRevision(db, existing.id) }, input.journal);
+    })();
 
     return { id: existing.id, deduplicated: true };
   }
@@ -168,10 +178,13 @@ export function storeMemory(db: Database.Database, input: StoreMemoryInput): Cre
   const ctxJson = input.context ? JSON.stringify(sanitizeContext(input.context)) : null;
   const anchorJson = input.anchor ?? null;
 
-  db.prepare(`
-    INSERT INTO memories (id, content, kind, project, tags, confidence, source, origin_client, created_at, updated_at, recall_count, invalidated, expires_at, fingerprint, context, embedding, embedding_model, anchor)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, NULL, ?, ?, ?, ?, ?)
-  `).run(id, content, kind, project, JSON.stringify(tags), confidence, source, input.originClient ?? CLIENT_CLAUDE, timestamp, timestamp, fpJson, ctxJson, input.embedding ?? null, input.embedding ? getEmbeddingModelConfig().key : null, anchorJson);
+  db.transaction(() => {
+    db.prepare(`
+      INSERT INTO memories (id, content, kind, project, tags, confidence, source, origin_client, created_at, updated_at, recall_count, invalidated, expires_at, fingerprint, context, embedding, embedding_model, anchor)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, NULL, ?, ?, ?, ?, ?)
+    `).run(id, content, kind, project, JSON.stringify(tags), confidence, source, input.originClient ?? CLIENT_CLAUDE, timestamp, timestamp, fpJson, ctxJson, input.embedding ?? null, input.embedding ? getEmbeddingModelConfig().key : null, anchorJson);
+    journalMutation(db, { memoryId: id, project, kind, op: 'upsert', revision: 1 }, input.journal);
+  })();
 
   return { id, deduplicated: false, ...detectConflicts(db, id) };
 }
@@ -297,6 +310,9 @@ export function update(db: Database.Database, id: string, newContent: string): b
       UPDATE memories SET content = ?, confidence = ?, source = 'corrected'
       WHERE id = ? AND invalidated = 0 AND kind != 'rule'
     `).run(content, CONFIDENCE.CORRECTION, id);
+    if (result.changes > 0 && existing) {
+      journalMutation(db, { memoryId: id, project: existing.project, kind: existing.kind, op: 'upsert', revision: currentRevision(db, id) });
+    }
     return result.changes > 0;
   })();
 }
@@ -331,13 +347,14 @@ export function getVersionHistory(db: Database.Database, memoryId: string): Arra
  *  logs nothing. */
 function retractWithTombstone(db: Database.Database, id: string, action: 'delete' | 'invalidate'): boolean {
   return db.transaction(() => {
-    const row = db.prepare("SELECT project, kind, content FROM memories WHERE id = ? AND kind != 'rule'").get(id) as
-      | { project: string | null; kind: string; content: string } | undefined;
+    const row = db.prepare("SELECT project, kind, content, revision FROM memories WHERE id = ? AND kind != 'rule'").get(id) as
+      | { project: string | null; kind: string; content: string; revision: number } | undefined;
     if (!row) return false;
     db.prepare(`
       INSERT INTO memory_tombstones (memory_id, action, project, kind, content, deleted_at)
       VALUES (?, ?, ?, ?, ?, datetime('now'))
     `).run(id, action, row.project, row.kind, row.content);
+    journalMutation(db, { memoryId: id, project: row.project, kind: row.kind, op: 'tombstone', revision: row.revision });
     const stmt = action === 'delete'
       ? "DELETE FROM memories WHERE id = ? AND kind != 'rule'"
       : "UPDATE memories SET invalidated = 1 WHERE id = ? AND kind != 'rule'";
@@ -353,10 +370,19 @@ export function deleteById(db: Database.Database, id: string): boolean {
   return retractWithTombstone(db, id, 'delete');
 }
 
-/** Promote a project-scoped memory to global scope */
+/** Promote a project-scoped memory to global scope. Journals a tombstone
+ *  under the OLD project: the row departed the only scope team sync can
+ *  see (journal.ts retraction semantics). */
 export function promote(db: Database.Database, id: string): boolean {
-  const result = db.prepare(
-    "UPDATE memories SET project = NULL WHERE id = ? AND invalidated = 0 AND project IS NOT NULL AND kind != 'rule'"
-  ).run(id);
-  return result.changes > 0;
+  return db.transaction(() => {
+    const row = db.prepare(
+      "SELECT project, kind, revision FROM memories WHERE id = ? AND invalidated = 0 AND project IS NOT NULL AND kind != 'rule'",
+    ).get(id) as { project: string; kind: string; revision: number } | undefined;
+    if (!row) return false;
+    journalMutation(db, { memoryId: id, project: row.project, kind: row.kind, op: 'tombstone', revision: row.revision });
+    const result = db.prepare(
+      "UPDATE memories SET project = NULL WHERE id = ? AND invalidated = 0 AND project IS NOT NULL AND kind != 'rule'"
+    ).run(id);
+    return result.changes > 0;
+  })();
 }

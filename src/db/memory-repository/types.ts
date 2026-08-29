@@ -35,6 +35,8 @@ export interface Memory {
 
 export interface CreateMemoryInput {
   content: string;
+  /** D13: replicated applications suppress journaling. */
+  journal?: import('./journal.js').JournalOptions;
   kind: LearnableKind;
   tags?: string[];
   project?: string | null;
@@ -93,6 +95,8 @@ export interface StorePitfallInput {
 /** Internal input for the unified smart-merge gateway */
 export interface StoreMemoryInput {
   content: string;
+  /** D13: replicated applications suppress journaling. */
+  journal?: import('./journal.js').JournalOptions;
   project: string | null;
   kind: 'decision' | 'pitfall';
   source?: MemorySource;

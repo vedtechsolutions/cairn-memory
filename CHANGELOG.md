@@ -7,6 +7,8 @@
 - Added the sync-envelope module to `waykeep-contract`: the Phase 2 replication wire vocabulary — client commands, canonical server log events, conflict reasons, share states, stable error codes, the op-status query/response, and the entity envelope with versioned hashing and reserved encryption fields. Types and constants only; additive.
 - Added schema v32 (team-sync foundations): `author`, `updated_at` (trigger-maintained), and tri-state `share_state` on memories; a tombstone log written whenever a memory is deleted or invalidated (forget audit today, retraction propagation later); and the neutral sync replica tables (entity map, alias log, conflict sets, contributor projection, state store, semantic journal). `migrate-project` now carries all project-keyed sync state through renames.
 
+- Added the semantic-change journal: every semantic memory mutation in a shareable scope (create, merge, correction, retraction, supersession, promote, explicit bulk deletion) records an intent entry in the same transaction — local audit today, the sync worker's feed later. Administrative rescopes never journal; autonomous maintenance (TTL/decay/pruning) journals nothing and can no longer delete sync-bound rows.
+
 ### Fixed
 
 - Fixed automatic injection precision (from a live cross-agent evaluation): pitfalls marked RESOLVED and superseded memories are excluded from every automatic context surface; conversational/tasking prompts ("ask/review/evaluate…") can no longer be captured as decisions; proactive warnings are capped at one bounded warning (96 tokens) per correlated turn.

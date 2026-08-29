@@ -51,6 +51,7 @@ export function expireTtlMemories(db: Database.Database, nowMs: number = Date.no
     DELETE FROM memories
     WHERE expires_at IS NOT NULL AND expires_at < ?
       AND kind NOT IN (${NON_DECAYING_PLACEHOLDERS})
+      AND id NOT IN (SELECT local_memory_id FROM sync_entity_map)
   `).run(new Date(nowMs).toISOString(), ...NON_DECAYING_KINDS);
   return result.changes;
 }
@@ -105,7 +106,10 @@ export function applyConfidenceDecay(db: Database.Database, nowMs: number = Date
     }
   })();
 
-  // Delete: remove memories below threshold (exempt corrections from deletion)
+  // Delete: remove memories below threshold (exempt corrections from deletion).
+  // Every autonomous deletion here excludes sync-bound rows: background
+  // hygiene never gains authority to retract team data, and a locally
+  // pruned bound row would resurrect on the next pull (journal.ts).
   const deleteResult = db.prepare(`
     DELETE FROM memories
     WHERE invalidated = 0
@@ -113,6 +117,7 @@ export function applyConfidenceDecay(db: Database.Database, nowMs: number = Date
       AND kind != 'task_state'
       AND kind != 'correction'
       AND kind NOT IN (${NON_DECAYING_PLACEHOLDERS})
+      AND id NOT IN (SELECT local_memory_id FROM sync_entity_map)
   `).run(CONFIDENCE.DELETE_THRESHOLD, ...NON_DECAYING_KINDS);
 
   // Prune the accumulated dead tail. Decay floors confidence AT the delete
@@ -130,6 +135,7 @@ export function applyConfidenceDecay(db: Database.Database, nowMs: number = Date
       AND created_at < ?
       AND kind NOT IN ('task_state', 'correction', 'user_profile', 'decision')
       AND kind NOT IN (${NON_DECAYING_PLACEHOLDERS})
+      AND id NOT IN (SELECT local_memory_id FROM sync_entity_map)
     LIMIT ?
   `).all(CONFIDENCE.DELETE_THRESHOLD, pruneCutoff, ...NON_DECAYING_KINDS, LIMITS.CLEANUP_MAX_DELETE) as Array<{ id: string }>;
 
@@ -154,6 +160,7 @@ export function applyConfidenceDecay(db: Database.Database, nowMs: number = Date
     WHERE invalidated = 1
       AND created_at < ?
       AND kind NOT IN (${NON_DECAYING_PLACEHOLDERS})
+      AND id NOT IN (SELECT local_memory_id FROM sync_entity_map)
   `).run(thirtyDaysAgo, ...NON_DECAYING_KINDS);
 
   return {

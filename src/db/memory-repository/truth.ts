@@ -15,6 +15,7 @@ import type { Memory, MemoryRow } from './types.js';
 import { rowToMemory } from './reads.js';
 import { buildFtsQuery, now } from '../../utils/index.js';
 import { SOURCE_AUTHORITY, TRUTH, type MemorySource } from '../../constants/index.js';
+import { journalMutation, currentRevision } from './journal.js';
 
 // --- Claim classification + staleness ---------------------------------------
 
@@ -324,8 +325,18 @@ export function applyConflictDetection(db: Database.Database, incoming: Memory):
     if (!conflict) continue;
 
     if (conflict.type === 'supersession' && conflict.loserId) {
-      db.prepare('UPDATE memories SET superseded_by = ?, superseded_at = ? WHERE id = ?')
-        .run(conflict.winnerId ?? incoming.id, now(), conflict.loserId);
+      const loser = conflict.loserId === existing.id ? existing : incoming;
+      db.transaction(() => {
+        db.prepare('UPDATE memories SET superseded_by = ?, superseded_at = ? WHERE id = ?')
+          .run(conflict.winnerId ?? incoming.id, now(), conflict.loserId);
+        // Supersession is a semantic RETIREMENT WITH A SUCCESSOR: it
+        // journals as an upsert of the retired row's new state, never as
+        // an ordinary tombstone (journal.ts retraction semantics).
+        journalMutation(db, {
+          memoryId: conflict.loserId!, project: loser.project, kind: loser.kind,
+          op: 'upsert', revision: currentRevision(db, conflict.loserId!),
+        });
+      })();
       return { supersededId: conflict.loserId, contradictionWith: null, signal: conflict.signal };
     }
 

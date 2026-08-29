@@ -18,6 +18,7 @@ import { GovernanceRepository } from '../governance/repository.js';
 // importers (tests, handlers) keep their `from './maintenance.js'` paths.
 export { applyConfidenceDecay, expireTtlMemories } from './decay.js';
 import { applyConfidenceDecay, expireTtlMemories } from './decay.js';
+import { journalTombstonesForIds } from './memory-repository/journal.js';
 
 /** Clean up old compaction snapshots (time-based retention) */
 export function cleanupSnapshots(db: Database.Database, _currentSessionId?: string): number {
@@ -76,8 +77,18 @@ export function cleanupArchivedPlans(db: Database.Database): number {
 /** Delete ordinary memories for a project. Governance policy has its own
  * explicit audited project-cleanup lifecycle. */
 export function forgetProject(db: Database.Database, project: string): number {
-  const result = db.prepare("DELETE FROM memories WHERE project = ? AND kind != 'rule'").run(project);
-  return result.changes;
+  // Explicit bulk retraction (journal.ts): log + journal, then delete.
+  return db.transaction(() => {
+    db.prepare(`
+      INSERT INTO memory_tombstones (memory_id, action, project, kind, content, deleted_at)
+      SELECT id, 'delete', project, kind, content, datetime('now')
+      FROM memories WHERE project = ? AND kind != 'rule'
+    `).run(project);
+    const ids = (db.prepare("SELECT id FROM memories WHERE project = ? AND kind != 'rule'").all(project) as Array<{ id: string }>).map(r => r.id);
+    journalTombstonesForIds(db, ids);
+    const result = db.prepare("DELETE FROM memories WHERE project = ? AND kind != 'rule'").run(project);
+    return result.changes;
+  })();
 }
 
 /** Find stale projects (no recall in N days) */
