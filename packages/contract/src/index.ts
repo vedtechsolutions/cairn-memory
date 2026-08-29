@@ -1,10 +1,15 @@
 /**
- * waykeep-contract — the integration contract for Cairn.
+ * waykeep-contract — the integration contract for Waykeep.
  *
  * Types and constants only, zero dependencies. Everything here is frozen
  * under an additive-stability guarantee: values may be added, never
- * changed or removed within a major version, and consumers must tolerate
- * unknown values.
+ * changed or removed within a major version. Unknown-value tolerance is
+ * PER VOCABULARY: open sets (memory kinds, client names, sync error
+ * codes) require consumers to treat unknown values as valid; the sync
+ * command/event vocabularies are CLOSED replication protocol — an
+ * unknown record in a pulled stream is a protocol failure that halts
+ * the project, never something a replica silently skips (see
+ * sync-envelope.ts).
  */
 
 export * from './clients.js';

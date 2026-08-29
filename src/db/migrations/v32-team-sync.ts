@@ -2,6 +2,8 @@ import type Database from 'better-sqlite3';
 
 import {
   CREATE_MEMORY_TOMBSTONES_TABLE,
+  CREATE_MEMORY_TOMBSTONES_INDEX,
+  CREATE_MEMORY_UPDATED_AT_INIT_TRIGGER,
   CREATE_SYNC_ENTITY_MAP_TABLE,
   CREATE_SYNC_ALIAS_LOG_TABLE,
   CREATE_SYNC_CONFLICT_SETS_TABLE,
@@ -48,8 +50,23 @@ export function migrateToV32(db: Database.Database): void {
     db.exec('DROP TRIGGER IF EXISTS memories_revision_au');
     db.exec(CREATE_MEMORY_REVISION_TRIGGER);
 
+    // Pre-release v32 shape heal: the tombstone log briefly shipped with a
+    // composite (memory_id, action, deleted_at) PK whose second-resolution
+    // key silently suppressed a delete/restore/delete cycle's second entry
+    // (review). Rebuild any such table to the rowid form, preserving rows.
+    const tombCols = db.prepare('PRAGMA table_info(memory_tombstones)').all() as Array<{ name: string }>;
+    if (tombCols.length > 0 && !tombCols.some((c) => c.name === 'id')) {
+      db.exec('ALTER TABLE memory_tombstones RENAME TO memory_tombstones_v32a');
+      db.exec(CREATE_MEMORY_TOMBSTONES_TABLE);
+      db.exec(`INSERT INTO memory_tombstones (memory_id, action, project, kind, content, deleted_at)
+               SELECT memory_id, action, project, kind, content, deleted_at FROM memory_tombstones_v32a`);
+      db.exec('DROP TABLE memory_tombstones_v32a');
+    }
+
     for (const ddl of [
       CREATE_MEMORY_TOMBSTONES_TABLE,
+      CREATE_MEMORY_TOMBSTONES_INDEX,
+      CREATE_MEMORY_UPDATED_AT_INIT_TRIGGER,
       CREATE_SYNC_ENTITY_MAP_TABLE,
       CREATE_SYNC_ALIAS_LOG_TABLE,
       CREATE_SYNC_CONFLICT_SETS_TABLE,

@@ -397,17 +397,33 @@ export const CREATE_INDEXES = [
  *  of semantic changes; the rest is inert until a consumer registers. */
 
 /** Retraction log written by deleteById/invalidate — tombstone propagation
- *  for sync, forget-audit standalone. */
+ *  for sync, forget-audit standalone. Rowid PK: every effective retraction
+ *  gets its own collision-proof row (a delete/restore/delete cycle inside
+ *  one second must log twice — review), ordering by insertion. */
 export const CREATE_MEMORY_TOMBSTONES_TABLE = `
 CREATE TABLE IF NOT EXISTS memory_tombstones (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
   memory_id TEXT NOT NULL,
   action TEXT NOT NULL CHECK (action IN ('delete','invalidate')),
   project TEXT,
   kind TEXT NOT NULL,
   content TEXT NOT NULL,
-  deleted_at TEXT NOT NULL,
-  PRIMARY KEY (memory_id, action, deleted_at)
+  deleted_at TEXT NOT NULL
 )`;
+
+export const CREATE_MEMORY_TOMBSTONES_INDEX =
+  'CREATE INDEX IF NOT EXISTS idx_memory_tombstones_memory ON memory_tombstones(memory_id)';
+
+/** Universal fresh-row initialization: updated_at = created_at on EVERY
+ *  insert path (create, smart-merge gateway, id-preserving restore,
+ *  future paths) — a per-call-site convention proved incomplete (review).
+ *  The inner UPDATE sets only updated_at, which appears in no trigger's
+ *  UPDATE OF list: no recursion, no revision bump, no FTS refire. */
+export const CREATE_MEMORY_UPDATED_AT_INIT_TRIGGER = `
+CREATE TRIGGER IF NOT EXISTS memories_updated_at_ai AFTER INSERT ON memories
+WHEN new.updated_at IS NULL BEGIN
+  UPDATE memories SET updated_at = new.created_at WHERE id = new.id;
+END`;
 
 /** Local row ↔ cloud entity. Cardinality is the brief's rule: one entity
  *  maps to at most one local row and vice versa; `shadow-assoc` rows carry
@@ -519,6 +535,8 @@ export const ALL_DDL: string[] = [
   CREATE_MEMORY_VERSIONS_TABLE,
   CREATE_MEMORY_VERSIONS_INDEX,
   CREATE_MEMORY_TOMBSTONES_TABLE,
+  CREATE_MEMORY_TOMBSTONES_INDEX,
+  CREATE_MEMORY_UPDATED_AT_INIT_TRIGGER,
   CREATE_SYNC_ENTITY_MAP_TABLE,
   CREATE_SYNC_ALIAS_LOG_TABLE,
   CREATE_SYNC_CONFLICT_SETS_TABLE,

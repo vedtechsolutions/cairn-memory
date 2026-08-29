@@ -1,9 +1,16 @@
-import { describe, it } from 'node:test';
+import { describe, it, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { openDatabase } from '../src/db/connection.js';
 import { MemoryRepository } from '../src/db/memory-repository.js';
 import { migrateToV32 } from '../src/db/migrations/v32-team-sync.js';
-import { moveProjectRows } from '../src/db/project-identity-migration.js';
+import { moveProjectRows, migrateProjectIdentity, __resetProjectMigrationForTests } from '../src/db/project-identity-migration.js';
+import { projectId, legacyProjectId, __resetProjectIdCacheForTests } from '../src/utils/project-id.js';
+
+const cleanupDirs: string[] = [];
+after(() => { for (const d of cleanupDirs) rmSync(d, { recursive: true, force: true }); });
 
 const V32_TABLES = [
   'memory_tombstones', 'sync_entity_map', 'sync_alias_log',
@@ -95,6 +102,92 @@ describe('v32 team-sync schema', () => {
       assert.equal(logs.length, 2);
       assert.deepEqual(new Set(logs.map((l) => `${l.action}`)), new Set(['delete', 'invalidate']));
       assert.ok(logs.find((l) => l.memory_id === a)?.content.includes('to be deleted'));
+    } finally {
+      db.close();
+    }
+  });
+
+  it('every insert path initializes updated_at — gateway store and raw SQL, not just create()', () => {
+    const db = openDatabase({ dbPath: ':memory:' });
+    try {
+      const repo = new MemoryRepository(db);
+      const viaGateway = repo.storeDecision('gateway-path decision content', 'p');
+      const g = db.prepare('SELECT created_at, updated_at FROM memories WHERE id = ?').get(viaGateway.id) as
+        { created_at: string; updated_at: string | null };
+      assert.equal(g.updated_at, g.created_at);
+
+      // The trigger covers any path that omits the column entirely
+      // (id-preserving restore, future call sites).
+      db.prepare("INSERT INTO memories (id, content, kind, project, created_at) VALUES ('raw1', 'raw path', 'fact', 'p', '2026-01-01 00:00:00')").run();
+      const r = db.prepare("SELECT updated_at FROM memories WHERE id = 'raw1'").get() as { updated_at: string | null };
+      assert.equal(r.updated_at, '2026-01-01 00:00:00');
+    } finally {
+      db.close();
+    }
+  });
+
+  it('a delete/restore/delete cycle inside one second logs both deletes', () => {
+    const db = openDatabase({ dbPath: ':memory:' });
+    try {
+      const repo = new MemoryRepository(db);
+      const { id } = repo.create({ content: 'restored then re-deleted', kind: 'fact', project: 'p', skipDedup: true });
+      assert.equal(repo.delete(id), true);
+      db.prepare("INSERT INTO memories (id, content, kind, project, created_at) VALUES (?, 'restored then re-deleted', 'fact', 'p', datetime('now'))").run(id);
+      assert.equal(repo.delete(id), true);
+      const n = (db.prepare("SELECT COUNT(*) n FROM memory_tombstones WHERE memory_id = ? AND action = 'delete'").get(id) as { n: number }).n;
+      assert.equal(n, 2);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('rule rows refuse retraction and write no tombstone', () => {
+    const db = openDatabase({ dbPath: ':memory:' });
+    try {
+      const repo = new MemoryRepository(db);
+      db.prepare("INSERT INTO memories (id, content, kind, project, created_at, source) VALUES ('rule1', 'a rule', 'rule', 'p', datetime('now'), 'user')").run();
+      assert.equal(repo.delete('rule1'), false);
+      assert.equal(repo.invalidate('rule1'), false);
+      assert.equal((db.prepare('SELECT COUNT(*) n FROM memory_tombstones').get() as { n: number }).n, 0);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('a failed mutation rolls back its tombstone log entry', () => {
+    const db = openDatabase({ dbPath: ':memory:' });
+    try {
+      const repo = new MemoryRepository(db);
+      const { id } = repo.create({ content: 'delete will be aborted', kind: 'fact', project: 'p', skipDedup: true });
+      db.exec("CREATE TRIGGER abort_delete BEFORE DELETE ON memories BEGIN SELECT RAISE(ABORT, 'injected'); END");
+      assert.throws(() => repo.delete(id), /injected/);
+      db.exec('DROP TRIGGER abort_delete');
+      assert.equal((db.prepare('SELECT COUNT(*) n FROM memory_tombstones').get() as { n: number }).n, 0);
+      assert.equal(repo.delete(id), true);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('lazy identity migration moves a project whose only remaining rows are v32 sync state', () => {
+    const db = openDatabase({ dbPath: ':memory:' });
+    const dir = mkdtempSync(join(tmpdir(), 'waykeep-v32lazy-'));
+    cleanupDirs.push(dir);
+    mkdirSync(join(dir, '.git'));
+    writeFileSync(join(dir, '.git', 'config'),
+      '[core]\n\trepositoryformatversion = 0\n[remote "origin"]\n\turl = git@github.com:acme/v32lazy.git\n');
+    try {
+      __resetProjectMigrationForTests();
+      __resetProjectIdCacheForTests();
+      const oldId = legacyProjectId(dir);
+      db.prepare("INSERT INTO memory_tombstones (memory_id, action, project, kind, content, deleted_at) VALUES ('m1', 'delete', ?, 'fact', 'last trace', datetime('now'))").run(oldId);
+
+      migrateProjectIdentity(db, dir);
+
+      const newId = projectId(dir);
+      assert.notEqual(newId, oldId);
+      assert.equal((db.prepare('SELECT COUNT(*) n FROM memory_tombstones WHERE project = ?').get(oldId) as { n: number }).n, 0);
+      assert.equal((db.prepare('SELECT COUNT(*) n FROM memory_tombstones WHERE project = ?').get(newId) as { n: number }).n, 1);
     } finally {
       db.close();
     }

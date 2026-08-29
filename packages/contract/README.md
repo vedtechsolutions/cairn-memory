@@ -12,7 +12,6 @@ This package defines the surfaces a client adapter or external integration build
 - **Round-trip format** — the portable export/import record format.
 - **Client adapter** — the adapter registration and lifecycle interfaces.
 - **Sync envelope** — the Phase 2 team-sync wire vocabulary: commands, canonical log events, share states, stable error codes, and the entity envelope.
-- **Sync envelope** — the Phase 2 team-sync wire vocabulary: commands, canonical log events, share states, stable error codes, and the entity envelope.
 
 ## Install
 
@@ -29,7 +28,7 @@ import { CONTEXT_MODES, INTENTS } from 'waykeep-contract';
 
 ## Stability
 
-Everything exported is frozen under an additive-stability guarantee: values may be added, never changed or removed within a major version, and consumers must tolerate unknown values. Versions before `1.0.0` may still see breaking changes.
+Everything exported is frozen under an additive-stability guarantee: values may be added, never changed or removed within a major version. Unknown-value tolerance is per vocabulary: open sets (memory kinds, client names, sync error codes) require consumers to treat unknown values as valid, while the sync command/event vocabularies are closed replication protocol — an unknown record in a pulled stream is a protocol failure that halts the project, never something to skip. Versions before `1.0.0` may still see breaking changes.
 
 ## License
 

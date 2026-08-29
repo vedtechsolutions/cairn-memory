@@ -335,7 +335,7 @@ function retractWithTombstone(db: Database.Database, id: string, action: 'delete
       | { project: string | null; kind: string; content: string } | undefined;
     if (!row) return false;
     db.prepare(`
-      INSERT OR IGNORE INTO memory_tombstones (memory_id, action, project, kind, content, deleted_at)
+      INSERT INTO memory_tombstones (memory_id, action, project, kind, content, deleted_at)
       VALUES (?, ?, ?, ?, ?, datetime('now'))
     `).run(id, action, row.project, row.kind, row.content);
     const stmt = action === 'delete'

@@ -158,7 +158,10 @@ function ensureSchema(db: Database.Database): void {
     db.exec(CREATE_EXACT_DEDUP_INDEX);
     db.prepare('UPDATE schema_version SET version = ?').run(31);
   }
-  if (currentVersion < 32 && SCHEMA_VERSION >= 32) {
+  // <= 32 on purpose (the v30 precedent): v32's shape changed while
+  // unreleased (tombstone rowid PK, updated_at init trigger), so an
+  // already-at-32 database still needs the idempotent heal pass.
+  if (currentVersion <= 32 && SCHEMA_VERSION >= 32) {
     migrateToV32(db);
   }
 
