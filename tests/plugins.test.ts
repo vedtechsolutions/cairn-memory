@@ -10,7 +10,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, rmdirSync, symlinkSync, mkdirSync, chmodSync, writeFileSync, statSync, existsSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, symlinkSync, mkdirSync, chmodSync, writeFileSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -142,38 +142,19 @@ describe('thin-plugin packaging', () => {
       symlinkSync(REPO_ROOT, join(sim, 'lib', 'node_modules', 'cairn-memory'));
       symlinkSync('../lib/node_modules/cairn-memory/dist/src/cli/index.js', join(sim, 'bin', 'cairn'));
       chmodSync(CLI_JS, 0o755);
-      // Pre-plant a /tmp cache pointing at a decoy (the validator's
-      // stronger form): it must be neither USED nor MODIFIED. /tmp is
-      // SHARED state, so the plant is skipped entirely when anything
-      // already lives at the path, and cleanup removes ONLY what this
-      // test created — an unconditional recursive delete destroyed
-      // pre-existing/concurrent contents (review).
-      mkdirSync(join(sim, 'decoy'), { recursive: true });
-      writeFileSync(join(sim, 'decoy', 'hook-relay.sh'), '#!/bin/sh\necho DECOY-USED\n');
-      chmodSync(join(sim, 'decoy', 'hook-relay.sh'), 0o755);
-      const tmpCairnExisted = existsSync('/tmp/.cairn');
-      const plantPath = '/tmp/.cairn/plugin-hook-dir';
-      let planted: string | null = null;
-      if (!existsSync(plantPath)) {
-        mkdirSync('/tmp/.cairn', { recursive: true });
-        planted = `${join(sim, 'bin', 'cairn')}|${join(sim, 'decoy')}\n`;
-        writeFileSync(plantPath, planted);
-      }
-      // Shared-state-free regression guard: the launcher must reference
-      // no /tmp path at all (the fallback that made planting meaningful
-      // was removed; this pins its absence without touching /tmp).
+      // NO /tmp planting: any check-then-write against a SHARED path
+      // races concurrent writers (TOCTOU), and cleanup can unlink a
+      // file someone else replaced (review). The same property is
+      // pinned race-free: the launcher CODE (comments stripped) must
+      // reference no /tmp path at all — the fallback that would have
+      // read a planted cache no longer exists to be probed.
       const launcherCode = read('plugins/claude/cairn/bin/cairn-relay.sh')
         .split('\n').filter(l => !l.trim().startsWith('#')).join('\n');
       assert.ok(!launcherCode.includes('/tmp'),
         'the launcher CODE must never reference /tmp (the comment documenting the removed fallback may)');
       const env: Record<string, string> = { PATH: `${join(sim, 'bin')}:/usr/bin:/bin` };
       const r = spawnSync(LAUNCHER, ['--cairn-probe'], { encoding: 'utf-8', env });
-      assert.equal(r.stdout.trim(), 'cairn-relay', 'still works — just uncached, and never the decoy');
-      if (planted !== null) {
-        assert.equal(readFileSync(plantPath, 'utf-8'), planted, 'the planted cache is untouched');
-        rmSync(plantPath, { force: true });
-        if (!tmpCairnExisted) { try { rmdirSync('/tmp/.cairn'); } catch { /* non-empty: someone else's state, leave it */ } }
-      }
+      assert.equal(r.stdout.trim(), 'cairn-relay', 'still works — just uncached');
     } finally {
       chmodSync(CLI_JS, priorMode);
       rmSync(sim, { recursive: true, force: true });
