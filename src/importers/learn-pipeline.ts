@@ -54,6 +54,17 @@ export interface LearnOptions {
    *  file gaining a keyword between CLI re-imports is deliberately not
    *  picked up — idempotency wins there (review R3, decided). */
   reinforceExact?: boolean;
+  /** Insert-only (the repo-pack path): a NEAR-duplicate never reaches
+   *  the gateway merge — it lands as its own row. The merge is correct
+   *  for interactive learning where the user authors both sides; a pack
+   *  is untrusted external data, and D12 forbids it any edit claim —
+   *  the near-dup merge rewrote existing content, unioned foreign tags,
+   *  and bumped confidence from one dropped file (pack review C1).
+   *  Insert-only also restores the deterministic round-trip: imports
+   *  never collapse near-dup pairs (C2). Convergent on re-import: the
+   *  inserted row IS the pack bytes, so the next pass is an exact
+   *  no-op. */
+  insertOnly?: boolean;
 }
 
 /** Apply sections through the gateway. `defaultProject` scopes sections
@@ -93,6 +104,7 @@ export function learnSections(
         continue;
       }
       const result = repo.create({
+        ...(options.insertOnly && similar !== null && !isExact ? { skipDedup: true as const } : {}),
         content,
         kind: section.kind,
         // Tags get the SAME secret scrub as content, the count cap, and

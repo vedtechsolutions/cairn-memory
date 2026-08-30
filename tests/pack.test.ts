@@ -97,6 +97,75 @@ describe('free manual repo-pack (D12 / R16b)', () => {
     assert.ok(rows.some((r) => r.content === 'a completely different unrelated lesson'), 'the edit landed as its own observation');
   });
 
+  it('C1: a near-duplicate pack file can NEVER rewrite an existing memory — insert-only semantics', () => {
+    const id = repo.create({ content: 'the build cache must be cleared before a release', kind: 'fact', project: PROJECT, skipDedup: true, skipConflictDetection: true }).id;
+    const before = db.prepare('SELECT content, tags, confidence FROM memories WHERE id = ?').get(id) as { content: string; tags: string; confidence: number };
+
+    writeFileSync(join(dir, `crafted${PACK_EXT}`), [
+      '# waykeep pack record v1',
+      'kind: "fact"',
+      'content: "the build cache must be cleared before a release build"',
+      'tags: ["injected"]',
+    ].join('\n') + '\n');
+    const r = packImport(db, dir, PROJECT);
+    assert.equal(r.merged, 0, 'a pack import never merges');
+    assert.equal(r.ingested, 1, 'the near-dup lands as its OWN row');
+
+    const after = db.prepare('SELECT content, tags, confidence FROM memories WHERE id = ?').get(id) as { content: string; tags: string; confidence: number };
+    assert.deepEqual(after, before, 'the existing row is byte-identical — no edit claim');
+    assert.equal((db.prepare('SELECT COUNT(*) n FROM memories').get() as { n: number }).n, 2);
+  });
+
+  it('C2: the round-trip holds for NEAR-DUPLICATE pairs — import never collapses them', () => {
+    repo.create({ content: 'cache cleared before a release', kind: 'fact', project: PROJECT, skipDedup: true, skipConflictDetection: true });
+    repo.create({ content: 'cache cleared before a release build', kind: 'fact', project: PROJECT, skipDedup: true, skipConflictDetection: true });
+    packExport(db, dir, PROJECT);
+    const firstBytes = packBytes();
+    assert.equal(firstBytes.size, 2);
+
+    const db2 = openDatabase({ dbPath: ':memory:' });
+    try {
+      const r = packImport(db2, dir, PROJECT);
+      assert.equal(r.ingested, 2, 'both near-dups land');
+      assert.equal(r.merged, 0);
+      const dir2 = mkdtempSync(join(tmpdir(), 'waykeep-pack-nd-'));
+      try {
+        packExport(db2, dir2, PROJECT);
+        const secondFiles = readdirSync(dir2).filter((f) => f.endsWith(PACK_EXT)).sort();
+        assert.deepEqual(secondFiles, [...firstBytes.keys()], 'two files in, two files out');
+      } finally {
+        rmSync(dir2, { recursive: true, force: true });
+      }
+    } finally {
+      db2.close();
+    }
+  });
+
+  it('C3: the prune owns only its scope — a sibling project pack in the same dir survives', () => {
+    repo.create({ content: 'project one lesson', kind: 'fact', project: 'p1', skipDedup: true, skipConflictDetection: true });
+    repo.create({ content: 'project two lesson', kind: 'fact', project: 'p2', skipDedup: true, skipConflictDetection: true });
+    packExport(db, dir, 'p1');
+    const p1Files = packFiles();
+    const r2 = packExport(db, dir, 'p2');
+    assert.equal(r2.pruned, 0, "p2's export never touches p1's files");
+    for (const f of p1Files) assert.ok(packFiles().includes(f), `${f} survives`);
+
+    // A row leaving p1 IS pruned on p1's next export — but only p1's file.
+    db.prepare("UPDATE memories SET invalidated = 1 WHERE project = 'p1'").run();
+    const r3 = packExport(db, dir, 'p1');
+    assert.equal(r3.pruned, 1);
+    assert.equal(packFiles().length, 1, "p2's file remains");
+  });
+
+  it('C4: CRLF and BOM pack files parse — a Windows checkout is not corruption', () => {
+    const lf = '# waykeep pack record v1\nkind: "fact"\ncontent: "crlf lesson"\n';
+    writeFileSync(join(dir, `crlf${PACK_EXT}`), lf.replace(/\n/g, '\r\n'));
+    writeFileSync(join(dir, `bom${PACK_EXT}`), '\uFEFF' + '# waykeep pack record v1\nkind: "fact"\ncontent: "bom lesson"\n');
+    const r = packImport(db, dir, PROJECT);
+    assert.equal(r.errors.length, 0, 'both parse cleanly');
+    assert.equal(r.ingested, 2);
+  });
+
   it('malicious pack content is neutralized and scrubbed on import; malformed files are skipped loudly', () => {
     writeFileSync(join(dir, `hostile${PACK_EXT}`), [
       '# waykeep pack record v1',
@@ -137,11 +206,18 @@ describe('free manual repo-pack (D12 / R16b)', () => {
       assert.ok(contents.includes('shared project lesson'));
       assert.ok(!contents.includes('private project lesson'), 'bulk export never carries private projects');
 
+      // Under the C3 manifest guard: a HAND-ADDED pack file is foreign
+      // (never in our manifest) and survives; only files THIS scope's
+      // previous export owned are prune candidates.
       writeFileSync(join(dir, `stale${PACK_EXT}`), '# waykeep pack record v1\nkind: "fact"\ncontent: "stale"\n');
       writeFileSync(join(dir, 'unrelated.txt'), 'not ours');
+      const beforePrune = packFiles();
+      db.prepare("UPDATE memories SET invalidated = 1 WHERE content = 'shared project lesson'").run();
       const r2 = packExport(db, dir, 'all-shared');
-      assert.ok(r2.pruned >= 1, 'stale pack files pruned');
-      assert.ok(readdirSync(dir).includes('unrelated.txt'), 'foreign files untouched');
+      assert.equal(r2.pruned, 1, 'the departed row\'s OWNED file is pruned');
+      assert.ok(packFiles().includes(`stale${PACK_EXT}`), 'foreign pack files survive');
+      assert.ok(readdirSync(dir).includes('unrelated.txt'), 'non-pack files untouched');
+      assert.ok(beforePrune.length > packFiles().length - 1, 'sanity');
     } finally {
       delete process.env.CAIRN_CONFIG_PATH;
       resetConfigCacheForTests();

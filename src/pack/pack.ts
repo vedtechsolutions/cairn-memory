@@ -38,6 +38,9 @@ import { learnSections, type LearnSection } from '../importers/learn-pipeline.js
  */
 
 export const PACK_EXT = '.waykeep.md';
+export const PACK_MANIFEST = '.waykeep-pack.json';
+
+interface PackManifest { version: 1; scopes: Record<string, string[]> }
 const PACK_HEADER = '# waykeep pack record v1';
 
 export interface PackRecord {
@@ -69,7 +72,11 @@ export function contentAddress(serialized: string): string {
  *  Every failure names the problem — a malformed pack file is skipped
  *  loudly, never half-imported. */
 export function parsePackRecord(text: string): PackRecord {
-  const lines = text.split('\n').filter((l) => l.length > 0);
+  // Interop tolerance (pack review C4): a Windows checkout with
+  // core.autocrlf converts LF→CRLF and editors add BOMs — tolerate both
+  // at PARSE time; the canonical write form stays LF-only, so
+  // determinism is unaffected.
+  const lines = text.replace(/^\uFEFF/, '').split('\n').map((l) => l.replace(/\r$/, '')).filter((l) => l.length > 0);
   if (lines[0] !== PACK_HEADER) throw new Error('missing pack record header');
   const fields = new Map<string, unknown>();
   for (const line of lines.slice(1)) {
@@ -153,13 +160,32 @@ export function packExport(db: Database.Database, dir: string, project: string |
       result.written++;
     }
   }
-  // Prune only files of OUR extension that no longer correspond to a row.
-  for (const entry of readdirSync(dir)) {
-    if (entry.endsWith(PACK_EXT) && !current.has(entry)) {
+  // Prune with a SCOPED manifest guard (pack review C3): the prune owns
+  // only files THIS scope's previous export wrote — a foreign pack, a
+  // sibling project's pack in the same directory, or hand-added files
+  // are never touched. Files still listed under another scope survive
+  // even when this scope drops them.
+  const manifestPath = join(dir, PACK_MANIFEST);
+  let manifest: PackManifest = { version: 1, scopes: {} };
+  if (existsSync(manifestPath)) {
+    try {
+      const parsed = JSON.parse(readFileSync(manifestPath, 'utf-8')) as PackManifest;
+      if (parsed && parsed.version === 1 && parsed.scopes && typeof parsed.scopes === 'object') manifest = parsed;
+    } catch { /* unreadable manifest: prune nothing this pass */ }
+  }
+  const scopeKey = project === 'all-shared' ? '(all-shared)' : project === null ? '(global)' : project;
+  const owned = new Set(manifest.scopes[scopeKey] ?? []);
+  const listedElsewhere = new Set(
+    Object.entries(manifest.scopes).filter(([k]) => k !== scopeKey).flatMap(([, files]) => files),
+  );
+  for (const entry of owned) {
+    if (!current.has(entry) && !listedElsewhere.has(entry) && entry.endsWith(PACK_EXT) && existsSync(join(dir, entry))) {
       unlinkSync(join(dir, entry));
       result.pruned++;
     }
   }
+  manifest.scopes[scopeKey] = [...current].sort();
+  writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
   return result;
 }
 
@@ -188,7 +214,7 @@ export function packImport(db: Database.Database, dir: string, project: string |
       errors.push(`${entry}: ${(err as Error).message}`);
     }
   }
-  const learned = learnSections(repo, sections, project, { reinforceExact: false });
+  const learned = learnSections(repo, sections, project, { reinforceExact: false, insertOnly: true });
   return {
     ingested: learned.ingested,
     exactDuplicates: learned.exactDuplicates,
