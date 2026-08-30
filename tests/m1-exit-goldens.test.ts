@@ -180,13 +180,30 @@ describe('M1-exit: the render-wiring guard (AST)', () => {
     // and `const JSON = { stringify(x){…} }` forges the receiver pin).
     // The ONE exception: the home file's TOP-LEVEL declaration (pack's
     // own clean); a parameter named clean forfeits even there.
-    const foldKey = (e: import('typescript').Expression): string | null => {
+    // Transparent expression wrappers (Codex 67f6712: parenthesizing or
+    // type-asserting is a semantics-preserving refactor, not a new key).
+    const unwrap = (e: import('typescript').Expression): import('typescript').Expression => {
+      while (tsm.isParenthesizedExpression(e) || tsm.isAsExpression(e)
+        || tsm.isSatisfiesExpression(e) || tsm.isNonNullExpression(e)) e = e.expression;
+      return e;
+    };
+    const foldKey = (raw: import('typescript').Expression): string | null => {
+      const e = unwrap(raw);
       if (tsm.isStringLiteral(e) || tsm.isNoSubstitutionTemplateLiteral(e)) return e.text;
+      // Template with literal-only substitutions is static too:
+      if (tsm.isTemplateExpression(e)) {
+        let out = e.head.text;
+        for (const span of e.templateSpans) {
+          const f = foldKey(span.expression);
+          if (f === null) return null;
+          out += f + span.literal.text;
+        }
+        return out;
+      }
       if (tsm.isBinaryExpression(e) && e.operatorToken.kind === tsm.SyntaxKind.PlusToken) {
         const l = foldKey(e.left); const r = foldKey(e.right);
         return l !== null && r !== null ? l + r : null;
       }
-      if (tsm.isParenthesizedExpression(e)) return foldKey(e.expression);
       return null; // dynamic keys: KNOWN-UNCOVERED, asserted below
     };
     // Every STATIC spelling of a member/property name (Codex 19b1a89
@@ -214,8 +231,10 @@ describe('M1-exit: the render-wiring guard (AST)', () => {
       // refactor must not shed the forfeiture).
       if (tsm.isMethodDeclaration(n) || tsm.isPropertyDeclaration(n)
         || tsm.isGetAccessorDeclaration(n) || tsm.isSetAccessorDeclaration(n)) forfeit(staticName(n.name));
-      if (tsm.isPropertyAssignment(n)
-        && (tsm.isArrowFunction(n.initializer) || tsm.isFunctionExpression(n.initializer))) forfeit(staticName(n.name));
+      if (tsm.isPropertyAssignment(n)) {
+        const init = unwrap(n.initializer);
+        if (tsm.isArrowFunction(init) || tsm.isFunctionExpression(init)) forfeit(staticName(n.name));
+      }
       // Shorthand ({ rerank }) is NOT collected: its value IS the
       // in-scope binding of that name, so it launders only when that
       // binding is itself a shadow — which the recursive param/var/
@@ -425,6 +444,11 @@ describe('M1-exit: the render-wiring guard (AST)', () => {
       ['quoted-class-field', 'class Local { "formatMemoryContent" = (x) => x; }\nemitToModel(local.formatMemoryContent(memory.content))'],
       ['quoted-class-method', 'class Local { "formatMemoryContent"(x) { return x; } }\nemitToModel(local.formatMemoryContent(memory.content))'],
       ['accessor-shadow', 'class Local { get formatMemoryContent() { return (x) => x; } }\nemitToModel(local.formatMemoryContent(memory.content))'],
+      // Codex 67f6712 — wrapper-transparent static spellings:
+      ['asserted-computed-member', 'const local = { ["formatMemoryContent" as const](x) { return x; } }; emitToModel(local.formatMemoryContent(memory.content))'],
+      ['template-substitution-key', 'const { [`con${"tent"}`]: text } = memory; emitToModel(text)'],
+      ['wrapped-property-fn', 'const local = { formatMemoryContent: ((x) => x) }; emitToModel(local.formatMemoryContent(memory.content))'],
+      ['wrapped-receiver-forgery', 'const JSON = { stringify: ((x) => x) }; emitToModel(JSON.stringify(memory.content))'],
       // Codex 943d023 #2 — static property-name spellings:
       ['string-key-destructuring', 'const { "content": text } = memory; emitToModel(text)'],
       ['computed-key-destructuring', 'const { ["con" + "tent"]: text } = memory; emitToModel(text)'],
