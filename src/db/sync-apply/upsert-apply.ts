@@ -258,12 +258,17 @@ export function applyUpsert(db: Database.Database, project: string, env: SyncEnt
     // hasPendingVolatileIntent), the volatile fields keep their LOCAL
     // values — a delayed echo or clean remote edit must never roll back
     // an unacknowledged strengthen. The embedding clears only when the
-    // PROJECTION bytes changed (deliberately wider than content alone —
-    // a tags-only change over-clears, which is the safe direction; a
-    // byte-equal echo keeps its still-valid vector).
+    // CONTENT bytes changed: production vectors embed content alone
+    // (memory-tools.ts embed(content) — the contextual variant in
+    // utils/contextual-embed.ts is benchmark-only, gated on an offline
+    // eval), so a tags-only edit leaves a still-valid vector. If
+    // contextual embedding ever ships to production, THIS clause must
+    // widen to the embedded field set with it.
     const inert = buildInertProjection(env, record);
     const preserveVolatile = hasPendingVolatileIntent(db, existing.local_memory_id);
-    const bytesChanged = localPh !== ph;
+    const currentContent = (db.prepare('SELECT content FROM memories WHERE id = ?')
+      .get(existing.local_memory_id) as { content: string }).content;
+    const bytesChanged = currentContent !== projected.content;
     if (preserveVolatile) {
       db.prepare(`
         UPDATE memories SET content = ?, kind = ?, tags = ?, context = ?, anchor = ?

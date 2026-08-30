@@ -719,6 +719,22 @@ describe('sync apply — §6 M1 transitions', () => {
     assert.equal(row.confidence, strengthened, 'the unacknowledged strengthen is never erased');
   });
 
+  it('embedding lifecycle: a tags-only remote edit keeps the still-valid vector; a content edit clears it', () => {
+    const id = randomUUID();
+    applyEventBatch(db, PROJECT, [upsertEvent(1, envelope(record({ id }), { entityId: 'E1', version: 1 }))]);
+    db.prepare("UPDATE memories SET embedding = ?, embedding_model = 'test-model' WHERE id = ?").run(Buffer.from([7]), id);
+
+    // Tags-only change: production vectors embed content alone, so the
+    // vector stays valid.
+    applyEventBatch(db, PROJECT, [upsertEvent(2, envelope(record({ id, tags: ['newly-tagged'] }), { entityId: 'E1', version: 2 }))]);
+    let row = db.prepare('SELECT embedding FROM memories WHERE id = ?').get(id) as { embedding: Buffer | null };
+    assert.ok(row.embedding, 'tags-only edit preserves the vector');
+
+    applyEventBatch(db, PROJECT, [upsertEvent(3, envelope(record({ id, tags: ['newly-tagged'], content: 'genuinely new content text' }), { entityId: 'E1', version: 3 }))]);
+    row = db.prepare('SELECT embedding FROM memories WHERE id = ?').get(id) as { embedding: Buffer | null };
+    assert.equal(row.embedding, null, 'a content change clears the stale vector');
+  });
+
   it('inbound predicate: project mismatch, unknown kinds, rule kind, and unknown event types are refused whole-batch', () => {
     const wrongProject = record({ id: randomUUID(), project: 'other-proj' });
     assert.throws(() => applyEventBatch(db, PROJECT, [upsertEvent(1, envelope(wrongProject, { entityId: 'E1', version: 1 }))]), ApplyValidationError);
