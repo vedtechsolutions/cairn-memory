@@ -26,11 +26,14 @@ export function isResolvedPitfallContent(content: string): boolean {
  * it stripped before storage while genuine labels are minted fresh
  * here. Local rows render with the same cleaning, no label.
  *
- * KNOWN LIMIT (stated, not hidden): Unicode homoglyphs of the brand
- * (e.g. a Cyrillic 'а') cannot be closed by string matching — a
- * lookalike label can render visually similar. Zero-width splits ARE
- * closed (stripped in neutralizeMemoryText); the POSITION is the
- * signal: a genuine label is always at offset 0, minted here.
+ * HOMOGLYPHS (e.g. a Cyrillic 'а') cannot be closed by string matching
+ * — so POSITION closes them: a genuine label is always at offset 0,
+ * minted here, and a LOCAL row's leading bracket (any bracket, any
+ * spelling) is defanged, so nothing else can occupy that offset.
+ * Zero-width splits are stripped in neutralizeMemoryText. The middle
+ * dot in "[·…]" is the DEFANG marker, not a rendering bug — do not
+ * "fix" it; Waykeep's own captured log prefixes ([cairn]) degrade to
+ * [·cairn] by design.
  */
 // Anchors cover every line-break form: a BARE \r returns the carriage
 // in a terminal, so `ok\r[waykeep-team: …]` rendered at the visual line
@@ -61,7 +64,14 @@ export function formatMemoryContent(
     .replace(LINE_LEADING_MARKERS, '$1')
     .replace(INLINE_BRAND_MARKERS, '[\u00B7$1$2')
     .trim();
-  if (memory.author === null || memory.author === undefined) return cleaned;
+  if (memory.author === null || memory.author === undefined) {
+    // OFFSET-0 is a real signal, not an aspiration (review N1): a local
+    // row never opens with a bracket — ANY leading bracket defangs, so
+    // a homoglyph label (Cyrillic а, future confusables, spellings
+    // nobody enumerated) cannot occupy the one position a genuine label
+    // owns. String matching cannot close homoglyphs; position can.
+    return cleaned.startsWith('[') ? `[\u00B7${cleaned.slice(1)}` : cleaned;
+  }
   const client = memory.origin_client ? ` via ${escapeIdentity(memory.origin_client)}` : '';
   // The label sits INSIDE the ingest neutralizer's protected class
   // ('waykeep' + word boundary): a payload arriving WITH this exact

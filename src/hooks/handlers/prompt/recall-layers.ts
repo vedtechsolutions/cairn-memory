@@ -129,7 +129,7 @@ export function runRecallLayers(ctx: PromptCtx): void {
         .filter(r => !allSoFar.has(r.memory.id));
       for (const r of relevantRefs) {
         if (!budgetAvailable()) break;
-        budgetPush(`[CAIRN ref] ${r.memory.content}`);
+        budgetPush(`[CAIRN ref] ${formatMemoryContent(r.memory)}`);
         newlyInjected.push(r.memory.id);
       }
     }

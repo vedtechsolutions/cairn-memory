@@ -1,6 +1,7 @@
 /** Tier 1 renderer — fixed context (header, project, git, user, plan, goal,
  *  files, approach). Always included in the full briefing. */
 import type { MemoryRepository } from '../../../db/memory-repository.js';
+import { formatMemoryContent } from '../../../utils/memory-injection.js';
 import type { PlanRepository, Plan } from '../../../db/plan-repository.js';
 import { LIMITS, TOKEN_BUDGET } from '../../../constants/index.js';
 import { formatProjectContextCompact } from '../../../utils/project-scanner.js';
@@ -56,7 +57,7 @@ export function renderTier1(
     if (userProfiles.length > 0) {
       lines.push('User:');
       for (const up of userProfiles) {
-        lines.push(`  - ${up.content}`);
+        lines.push(`  - ${formatMemoryContent(up)}`);
       }
     }
   }
