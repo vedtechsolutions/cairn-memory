@@ -441,6 +441,10 @@ export async function startHookSocket(
       }
     });
   });
+  // The dedicated apply connection lives and dies with the socket owner
+  // (Codex advisory): a lingering second connection would keep WAL
+  // participation and file descriptors across in-process restarts.
+  server.once('close', () => ownerRpc.close());
 
   // Bind, then fail-closed self-verify BEFORE returning the server as live, so
   // a caller that receives a non-null server can trust it is listening AND

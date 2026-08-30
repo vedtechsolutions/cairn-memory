@@ -79,7 +79,7 @@ function errorResponse(res: ServerResponse, status: number, code: string, messag
  *  on the same budget the hook path uses (review C3: without this, a
  *  slow-loris on the shared socket held a connection and a pending
  *  promise for Node's 300s default). */
-function readBodyCapped(req: IncomingMessage, maxBytes: number, timeoutMs: number): Promise<string> {
+export function readBodyCapped(req: IncomingMessage, maxBytes: number, timeoutMs: number): Promise<string> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     let received = 0;
@@ -227,10 +227,13 @@ export class OwnerRpc {
     }
 
     const conn = this.connection();
-    // The events hash binds the batch_id to THIS body (review C4): a
-    // reused id with different events is a loud caller bug, never a
-    // silent no-apply masquerading as a replay.
-    const eventsHash = createHash('sha256').update(JSON.stringify(body.events), 'utf8').digest('hex');
+    // The request digest binds the batch_id to THIS semantic request —
+    // project AND events (reviews C4 + Codex H1): the batch key is
+    // global, so a reused id with a different body OR a different
+    // project caller is a loud VALIDATION, never a silent no-apply
+    // masquerading as a replay.
+    const eventsHash = createHash('sha256')
+      .update(JSON.stringify({ project: body.project, events: body.events }), 'utf8').digest('hex');
 
     for (let attempt = 1; ; attempt++) {
       try {

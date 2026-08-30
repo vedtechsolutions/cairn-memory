@@ -11,7 +11,9 @@ import { canonicalJson } from 'waykeep-contract';
 import type { SyncEntityEnvelope, SyncEvent, PortableRecord } from 'waykeep-contract';
 
 import { openDatabase } from '../src/db/connection.js';
-import { OwnerRpc } from '../src/mcp/owner-rpc.js';
+import { OwnerRpc, readBodyCapped } from '../src/mcp/owner-rpc.js';
+import { EventEmitter } from 'node:events';
+import type { IncomingMessage } from 'node:http';
 import { hashCanonical, readGeneration } from '../src/db/sync-apply/index.js';
 
 const PROJECT = 'rpc-proj';
@@ -271,6 +273,37 @@ describe('owner-control RPC', () => {
       setTimeout(() => { sock.destroy(); resolve(buf); }, 2_000);
     });
     assert.match(status, /400/, 'the stalled request received a structured 400 well before Node\'s 300s default');
+  });
+
+  it('H1: the digest is project-scoped — the same batch_id and events from a different project is a loud VALIDATION', async () => {
+    const id = randomUUID();
+    const events = [upsert(20, envelope(record({ id, content: 'project scoped digest row' }), 'E-proj', 1))];
+    await applyBatch({ project: PROJECT, batch_id: 'batch-xproj', events });
+    const { status, json } = await applyBatch({ project: 'another-proj', batch_id: 'batch-xproj', events });
+    assert.equal(status, 400);
+    assert.equal(json.error, 'VALIDATION');
+  });
+
+  it('streaming cap: a body exceeding the limit is aborted mid-stream (direct reader probe)', async () => {
+    const fake = new EventEmitter() as unknown as IncomingMessage & EventEmitter;
+    (fake as unknown as { destroy: () => void }).destroy = () => { /* probe */ };
+    const read = readBodyCapped(fake as IncomingMessage, 10, 1_000);
+    fake.emit('data', Buffer.from('12345678'));
+    fake.emit('data', Buffer.from('90123'));
+    await assert.rejects(read, (err: { tooLarge?: boolean }) => err.tooLarge === true,
+      'the reader aborts as soon as the accumulated bytes exceed the cap');
+  });
+
+  it('declared oversize receives a REAL 413 response over a raw request (no vacuous pass)', async () => {
+    const status = await new Promise<number>((resolve, reject) => {
+      const req = httpRequest(`${baseUrl}/owner/apply`, {
+        method: 'POST', headers: { 'Content-Length': String(2_000_000) },
+      }, (res) => resolve(res.statusCode ?? 0));
+      req.on('error', reject);
+      req.flushHeaders();
+      // No body sent — the pre-buffer gate answers on headers alone.
+    });
+    assert.equal(status, 413);
   });
 
   it('generation is durable and visible to the main connection after RPC applies', () => {
