@@ -258,8 +258,9 @@ export function applyUpsert(db: Database.Database, project: string, env: SyncEnt
     // hasPendingVolatileIntent), the volatile fields keep their LOCAL
     // values — a delayed echo or clean remote edit must never roll back
     // an unacknowledged strengthen. The embedding clears only when the
-    // content bytes actually changed (a byte-equal echo keeps its
-    // still-valid vector).
+    // PROJECTION bytes changed (deliberately wider than content alone —
+    // a tags-only change over-clears, which is the safe direction; a
+    // byte-equal echo keeps its still-valid vector).
     const inert = buildInertProjection(env, record);
     const preserveVolatile = hasPendingVolatileIntent(db, existing.local_memory_id);
     const bytesChanged = localPh !== ph;
