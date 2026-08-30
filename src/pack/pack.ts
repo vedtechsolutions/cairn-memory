@@ -1,5 +1,5 @@
-import { createHash } from 'node:crypto';
-import { mkdirSync, readdirSync, readFileSync, writeFileSync, unlinkSync, existsSync, lstatSync, renameSync, statSync } from 'node:fs';
+import { createHash, randomBytes } from 'node:crypto';
+import { mkdirSync, readFileSync, writeFileSync, unlinkSync, existsSync, lstatSync, renameSync, openSync, fstatSync, closeSync, opendirSync, constants as fsConstants } from 'node:fs';
 import { join } from 'node:path';
 
 import type Database from 'better-sqlite3';
@@ -63,15 +63,51 @@ function isRegularFile(path: string): boolean {
   }
 }
 
-/** Symlink-safe write: temp regular file + rename. Refuses to replace a
- *  non-regular entry. */
+/** Symlink-safe write: UNPREDICTABLE temp name opened with 'wx'
+ *  (O_CREAT|O_EXCL — refuses to open through ANY pre-existing path,
+ *  symlinks included; Codex pack delta Z3 planted a link at the
+ *  previous predictable .tmp-pid name), then rename. Refuses to replace
+ *  a non-regular destination. */
 function writeRegularFile(path: string, dir: string, name: string, bytes: string): void {
   if (existsSync(path) && !isRegularFile(path)) {
     throw new Error(`${name} exists and is not a regular file — refusing to write through it`);
   }
-  const tmp = join(dir, `.tmp-${process.pid}-${name}`);
-  writeFileSync(tmp, bytes);
-  renameSync(tmp, path);
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const tmp = join(dir, `.tmp-${randomBytes(8).toString('hex')}`);
+    try {
+      writeFileSync(tmp, bytes, { flag: 'wx' });
+      renameSync(tmp, path);
+      return;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'EEXIST') continue;
+      throw err;
+    }
+  }
+  throw new Error(`could not allocate a temp file for ${name}`);
+}
+
+/** Bounded symlink-race-free read (Codex pack delta Z4): the fd is
+ *  opened O_NOFOLLOW, fstat'd for type+size ON THE OPEN FD, then read —
+ *  no path-based stat-then-read window to swap a symlink or grow the
+ *  file into. */
+function readBoundedRegular(path: string, maxBytes: number): string {
+  let fd: number;
+  try {
+    fd = openSync(path, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ELOOP') {
+      throw new Error('not a regular file (symlinks are outside the pack boundary)');
+    }
+    throw err;
+  }
+  try {
+    const st = fstatSync(fd);
+    if (!st.isFile()) throw new Error('not a regular file (symlinks are outside the pack boundary)');
+    if (st.size > maxBytes) throw new Error(`exceeds ${maxBytes} bytes`);
+    return readFileSync(fd, 'utf-8');
+  } finally {
+    closeSync(fd);
+  }
 }
 const PACK_HEADER = '# waykeep pack record v1';
 
@@ -90,7 +126,7 @@ const clean = (text: string): string =>
  *  trailing newline. The determinism contract lives here. */
 export function serializePackRecord(r: PackRecord): string {
   const lines = [PACK_HEADER, `kind: ${JSON.stringify(r.kind)}`, `content: ${JSON.stringify(r.content)}`];
-  if (r.tags.length > 0) lines.push(`tags: ${JSON.stringify(r.tags)}`);
+  if (r.tags.length > 0) lines.push(`tags: ${JSON.stringify([...r.tags].sort())}`);
   if (r.why) lines.push(`why: ${JSON.stringify(r.why)}`);
   if (r.how) lines.push(`how: ${JSON.stringify(r.how)}`);
   return lines.join('\n') + '\n';
@@ -205,7 +241,11 @@ export function packExport(db: Database.Database, dir: string, project: string |
     }
     current.add(file);
     const path = join(dir, file);
-    if (isRegularFile(path) && readFileSync(path, 'utf-8') === serialized) {
+    let existingBytes: string | null = null;
+    if (isRegularFile(path)) {
+      try { existingBytes = readBoundedRegular(path, PACK_BOUNDS.MAX_FILE_BYTES); } catch { existingBytes = null; }
+    }
+    if (existingBytes === serialized) {
       result.unchanged++;
     } else {
       writeRegularFile(path, dir, file, serialized);
@@ -221,7 +261,7 @@ export function packExport(db: Database.Database, dir: string, project: string |
   let manifest: PackManifest = { version: 1, scopes: {} };
   if (existsSync(manifestPath)) {
     try {
-      const parsed = JSON.parse(readFileSync(manifestPath, 'utf-8')) as PackManifest;
+      const parsed = JSON.parse(readBoundedRegular(manifestPath, PACK_BOUNDS.MAX_FILE_BYTES * 4)) as PackManifest;
       if (parsed && parsed.version === 1 && parsed.scopes && typeof parsed.scopes === 'object') manifest = parsed;
     } catch { /* unreadable manifest: prune nothing this pass */ }
   }
@@ -256,22 +296,30 @@ export function packImport(db: Database.Database, dir: string, project: string |
   const repo = new MemoryRepository(db);
   const sections: LearnSection[] = [];
   const errors: string[] = [];
-  const entries = readdirSync(dir).sort().filter((e) => e.endsWith(PACK_EXT));
-  if (entries.length > PACK_BOUNDS.MAX_FILES) {
-    return { ingested: 0, exactDuplicates: 0, merged: 0, errors: [`directory holds ${entries.length} pack files — the ${PACK_BOUNDS.MAX_FILES} cap refuses the whole import`] };
+  // Bounded enumeration BEFORE any bulk allocation (Codex pack delta
+  // Z4): the directory iterator bails at the cap instead of listing an
+  // arbitrary directory whole.
+  const entries: string[] = [];
+  const dh = opendirSync(dir);
+  try {
+    let ent = dh.readSync();
+    while (ent !== null) {
+      if (ent.name.endsWith(PACK_EXT)) {
+        entries.push(ent.name);
+        if (entries.length > PACK_BOUNDS.MAX_FILES) {
+          return { ingested: 0, exactDuplicates: 0, merged: 0, errors: [`directory holds over ${PACK_BOUNDS.MAX_FILES} pack files — the cap refuses the whole import`] };
+        }
+      }
+      ent = dh.readSync();
+    }
+  } finally {
+    dh.closeSync();
   }
+  entries.sort();
   for (const entry of entries) {
     try {
       const path = join(dir, entry);
-      if (!isRegularFile(path)) {
-        errors.push(`${entry}: not a regular file (symlinks are outside the pack boundary)`);
-        continue;
-      }
-      if (statSync(path).size > PACK_BOUNDS.MAX_FILE_BYTES) {
-        errors.push(`${entry}: exceeds ${PACK_BOUNDS.MAX_FILE_BYTES} bytes`);
-        continue;
-      }
-      const rec = parsePackRecord(readFileSync(path, 'utf-8'));
+      const rec = parsePackRecord(readBoundedRegular(path, PACK_BOUNDS.MAX_FILE_BYTES));
       sections.push({
         kind: rec.kind as LearnSection['kind'],
         content: rec.content,

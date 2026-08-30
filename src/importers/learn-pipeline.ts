@@ -106,18 +106,30 @@ export function learnSections(
       const cleanedTags = section.tags.map((t) => scrubSecrets(sanitize(t)).text.slice(0, LIMITS.MAX_TAG_CHARS)).slice(0, LIMITS.MAX_TAGS);
       const contentExact = similar !== null && similar.content === content;
       let isExact = contentExact;
-      if (options.insertOnly && contentExact) {
-        const full = repo.findById(similar!.id);
-        isExact = full !== null
-          && JSON.stringify([...(full.tags ?? [])].sort()) === JSON.stringify([...cleanedTags].sort())
+      if (options.insertOnly) {
+        // Full-identity exactness must consult EVERY same-content row
+        // (Codex pack delta Z2): the single similar row may be a
+        // different metadata variant, and re-imports then inserted
+        // endless copies. Tags compare SORTED — the same canonical
+        // order the pack serializer writes.
+        const sameContent = repo.findAllByExactContent(content, project, section.kind);
+        const wantTags = JSON.stringify([...cleanedTags].sort());
+        isExact = sameContent.some((full) =>
+          JSON.stringify([...(full.tags ?? [])].sort()) === wantTags
           && (full.context?.why ?? null) === (section.context?.why ?? null)
-          && (full.context?.how_to_apply ?? null) === (section.context?.how_to_apply ?? null);
+          && (full.context?.how_to_apply ?? null) === (section.context?.how_to_apply ?? null));
       }
       if (isExact && !options.reinforceExact) {
         exactDuplicates++;
         continue;
       }
       const result = repo.create({
+        // insertOnly is a FULL no-claims mode (Codex pack delta Z1):
+        // skipDedup alone left conflict detection live, and an imported
+        // near-claim SUPERSEDED the stored original — a retirement
+        // claim through the back door. A pack observation may never
+        // retire, merge into, or otherwise touch an existing row.
+        ...(options.insertOnly ? { skipConflictDetection: true as const } : {}),
         ...(options.insertOnly && similar !== null && !isExact ? { skipDedup: true as const } : {}),
         content,
         kind: section.kind,

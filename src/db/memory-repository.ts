@@ -1,4 +1,5 @@
 import type Database from 'better-sqlite3';
+import { rowToMemory } from './memory-repository/reads.js';
 import { CONFIDENCE, type MemoryKind } from '../constants/index.js';
 import { resolveProjectParam } from './project-resolver.js';
 import type { ContextFingerprint } from '../utils/fingerprint.js';
@@ -230,6 +231,18 @@ export class MemoryRepository {
    *  true no-op and a merge can name the real pre-existing text (create
    *  overwrites it with the longer version, so post-hoc reads lie). Same
    *  query the gateway itself runs — one representation, one cost. */
+  /** Every ACTIVE row with byte-equal content in a scope+kind — the
+   *  insert-only importer's full-identity exactness basis. */
+  findAllByExactContent(content: string, project: string | null, kind: string): Memory[] {
+    const rows = this.db.prepare(`
+      SELECT * FROM memories
+      WHERE content = ? AND kind = ? AND ((? IS NULL AND project IS NULL) OR project = ?)
+        AND invalidated = 0 AND superseded_by IS NULL
+      ORDER BY id
+    `).all(content, kind, project, project) as Parameters<typeof rowToMemory>[0][];
+    return rows.map(rowToMemory);
+  }
+
   findSimilarTo(content: string, project: string | null, kind: string): { id: string; content: string } | null {
     const existing = writes.probeSimilar(this.db, content, project, kind);
     return existing ? { id: existing.id, content: existing.content } : null;

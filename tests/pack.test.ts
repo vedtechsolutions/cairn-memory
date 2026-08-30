@@ -321,6 +321,93 @@ describe('free manual repo-pack (D12 / R16b)', () => {
     }
   });
 
+  it('Z1: an imported near-claim can NEVER supersede a stored memory — no-claims mode covers conflict detection', () => {
+    const id = repo.create({ content: 'the app runtime is node 18.1', kind: 'fact', project: PROJECT, skipDedup: true, skipConflictDetection: true }).id;
+    writeFileSync(join(dir, `claim${PACK_EXT}`), '# waykeep pack record v1\nkind: "fact"\ncontent: "the app runtime is node 20.3"\n');
+    packImport(db, dir, PROJECT);
+    const row = db.prepare('SELECT superseded_by, revision, invalidated FROM memories WHERE id = ?').get(id) as
+      { superseded_by: string | null; revision: number; invalidated: number };
+    assert.equal(row.superseded_by, null, 'no retirement claim through the back door');
+    assert.equal(row.revision, 1, 'the original row is untouched');
+    assert.equal(row.invalidated, 0);
+    assert.equal((db.prepare('SELECT COUNT(*) n FROM memories').get() as { n: number }).n, 2, 'the observation coexists');
+  });
+
+  it('Z2: identity is canonical — reversed tags are the SAME observation; re-imports insert nothing new', () => {
+    repo.create({ content: 'canonical tag order lesson', kind: 'fact', project: PROJECT, skipDedup: true, skipConflictDetection: true, tags: ['beta', 'alpha'] });
+    repo.create({ content: 'canonical tag order lesson', kind: 'fact', project: PROJECT, skipDedup: true, skipConflictDetection: true, tags: ['alpha', 'beta'] });
+    packExport(db, dir, PROJECT);
+    assert.equal(packFiles().length, 1, 'reversed tags serialize to ONE canonical file');
+
+    const db2 = openDatabase({ dbPath: ':memory:' });
+    try {
+      const r1 = packImport(db2, dir, PROJECT);
+      assert.equal(r1.ingested, 1);
+      // Re-import twice more: the row count must be stable.
+      packImport(db2, dir, PROJECT);
+      const r3 = packImport(db2, dir, PROJECT);
+      assert.equal(r3.ingested, 0, 'no endless copies');
+      assert.equal((db2.prepare('SELECT COUNT(*) n FROM memories').get() as { n: number }).n, 1);
+    } finally { db2.close(); }
+  });
+
+  it('Z2b: same-content/different-metadata re-imports are stable too', () => {
+    repo.create({ content: 'metadata variant lesson', kind: 'fact', project: PROJECT, skipDedup: true, skipConflictDetection: true, tags: ['alpha'] });
+    repo.create({ content: 'metadata variant lesson', kind: 'fact', project: PROJECT, skipDedup: true, skipConflictDetection: true, context: { why: 'variant why' } });
+    packExport(db, dir, PROJECT);
+    const db2 = openDatabase({ dbPath: ':memory:' });
+    try {
+      packImport(db2, dir, PROJECT);
+      packImport(db2, dir, PROJECT);
+      packImport(db2, dir, PROJECT);
+      assert.equal((db2.prepare('SELECT COUNT(*) n FROM memories').get() as { n: number }).n, 2, 'two variants, never a third row');
+    } finally { db2.close(); }
+  });
+
+  it('Z3: a symlink planted at ANY temp-shaped or content-address path cannot route a write outside', () => {
+    const outside = join(tmpdir(), `waykeep-victim2-${process.pid}.txt`);
+    writeFileSync(outside, 'ORIGINAL');
+    try {
+      repo.create({ content: 'temp race probe row', kind: 'fact', project: PROJECT, skipDedup: true, skipConflictDetection: true });
+      // The temp name is unpredictable now; plant links at plausible old-scheme names.
+      symlinkSync(outside, join(dir, `.tmp-${process.pid}-x`));
+      packExport(db, dir, PROJECT);
+      assert.equal(readFileSync(outside, 'utf-8'), 'ORIGINAL', 'no write escaped the boundary');
+    } finally { rmSync(outside, { force: true }); }
+  });
+
+  it('Z5: single-dash flag-shaped values are refused at the CLI layer', async () => {
+    const { execFile } = await import('node:child_process');
+    const { promisify } = await import('node:util');
+    const run = promisify(execFile);
+    const env = { ...process.env, CAIRN_DB_PATH: join(dir, 'cli.db') };
+    const r = await run(process.execPath, ['dist/src/cli/index.js', 'pack', 'export', '--dir', '-dash-dir', '--project', 'p'], { env, cwd: process.cwd() }).catch((e) => e as { code?: number; stderr?: string });
+    assert.notEqual((r as { code?: number }).code ?? 0, 0, 'exits non-zero');
+    assert.ok(!readdirSync(process.cwd()).includes('-dash-dir'), 'no stray directory');
+  });
+
+  it('Z6/R16b: runtime fake-git interception — neither pack command invokes git at the command boundary', async () => {
+    const { execFile } = await import('node:child_process');
+    const { promisify } = await import('node:util');
+    const { chmodSync } = await import('node:fs');
+    const run = promisify(execFile);
+    const binDir = mkdtempSync(join(tmpdir(), 'waykeep-fakegit-'));
+    const marker = join(binDir, 'git-was-called');
+    try {
+      writeFileSync(join(binDir, 'git'), `#!/bin/sh
+echo invoked > "${marker}"
+exit 0
+`);
+      chmodSync(join(binDir, 'git'), 0o755);
+      const env = { ...process.env, PATH: `${binDir}:${process.env.PATH}`, CAIRN_DB_PATH: join(dir, 'rt.db') };
+      await run(process.execPath, ['dist/src/cli/index.js', 'pack', 'export', '--dir', join(dir, 'rtpack'), '--project', 'p'], { env, cwd: process.cwd() });
+      await run(process.execPath, ['dist/src/cli/index.js', 'pack', 'import', '--dir', join(dir, 'rtpack'), '--project', 'p'], { env, cwd: process.cwd() }).catch(() => null);
+      assert.ok(!readdirSync(binDir).includes('git-was-called'), 'git was never invoked by either command');
+    } finally {
+      rmSync(binDir, { recursive: true, force: true });
+    }
+  });
+
   it('parsePackRecord refuses unknown fields, duplicates, and oversized content', () => {
     assert.throws(() => parsePackRecord('# waykeep pack record v1\nkind: "fact"\ncontent: "x"\nevil: "y"\n'), /unrecognized line/);
     assert.throws(() => parsePackRecord('# waykeep pack record v1\nkind: "fact"\ncontent: "x"\ncontent: "y"\n'), /duplicate field/);

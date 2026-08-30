@@ -71,7 +71,7 @@ switch (command) {
         if (a === '--dir' || a === '--project') {
           const key = a.slice(2) as 'dir' | 'project';
           const v = packArgs[i + 1];
-          if (v === undefined || v.startsWith('--')) argError = `${a} requires a value`;
+          if (v === undefined || v.startsWith('-')) argError = `${a} requires a value (got ${v ?? 'nothing'})`;
           else if (opts[key] !== undefined) argError = `duplicate ${a}`;
           else { opts[key] = v; i++; }
         } else if (a === '--global') {
