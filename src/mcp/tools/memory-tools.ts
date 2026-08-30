@@ -202,7 +202,7 @@ export function registerMemoryTools(
       };
       const lines = results.map(({ memory: m, score }) => {
         const scope = m.project ? `[${m.project}]` : '[global]';
-        const tags = m.tags.length > 0 ? ` (${m.tags.join(', ')})` : '';
+        const tags = m.tags.length > 0 ? ` (${m.tags.map(formatAuxText).join(', ')})` : '';
         const why = m.context?.why ? ` (Why: ${formatAuxText(m.context.why)})` : '';
 
         if (mode === 'minimal') {
