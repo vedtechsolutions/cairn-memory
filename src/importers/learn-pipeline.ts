@@ -98,7 +98,21 @@ export function learnSections(
       // confidence every pass), and a merge captures the pre-existing
       // text before create overwrites it with the longer version.
       const similar = repo.findSimilarTo(content, project, section.kind);
-      const isExact = similar !== null && similar.content === content;
+      // Exactness under insertOnly is the FULL observation identity —
+      // content AND tags AND context (Codex pack #2a: content-only
+      // exactness silently dropped a same-content/different-metadata
+      // record, breaking the pack round-trip). Interactive paths keep
+      // content-only exactness (metadata enrichment is their point).
+      const cleanedTags = section.tags.map((t) => scrubSecrets(sanitize(t)).text.slice(0, LIMITS.MAX_TAG_CHARS)).slice(0, LIMITS.MAX_TAGS);
+      const contentExact = similar !== null && similar.content === content;
+      let isExact = contentExact;
+      if (options.insertOnly && contentExact) {
+        const full = repo.findById(similar!.id);
+        isExact = full !== null
+          && JSON.stringify([...(full.tags ?? [])].sort()) === JSON.stringify([...cleanedTags].sort())
+          && (full.context?.why ?? null) === (section.context?.why ?? null)
+          && (full.context?.how_to_apply ?? null) === (section.context?.how_to_apply ?? null);
+      }
       if (isExact && !options.reinforceExact) {
         exactDuplicates++;
         continue;
@@ -110,7 +124,7 @@ export function learnSections(
         // Tags get the SAME secret scrub as content, the count cap, and
         // the length cap — a credential or an essay can arrive as a
         // source keyword/concept (review).
-        tags: section.tags.map((t) => scrubSecrets(sanitize(t)).text.slice(0, LIMITS.MAX_TAG_CHARS)).slice(0, LIMITS.MAX_TAGS),
+        tags: cleanedTags,
         project,
         context: section.context,
         ...(section.originClient ? { originClient: section.originClient } : {}),

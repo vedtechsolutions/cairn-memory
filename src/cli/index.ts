@@ -57,15 +57,38 @@ switch (command) {
   case 'pack': {
     void (async () => {
       const { runPack } = await import('./pack.js');
+      // Strict parsing (Codex pack #7): a missing flag VALUE previously
+      // consumed the next flag ('--dir --project p' created a directory
+      // named '--project' and exited 0). Values may not be flag-shaped;
+      // unknown flags, duplicates, extra positionals, and
+      // --project+--global are refused before any filesystem or DB work.
       const packArgs = process.argv.slice(3);
-      const dirIdx = packArgs.indexOf('--dir');
-      const projIdx = packArgs.indexOf('--project');
-      process.exitCode = runPack({
-        command: packArgs[0] ?? '',
-        dir: dirIdx >= 0 ? packArgs[dirIdx + 1] : undefined,
-        project: projIdx >= 0 ? packArgs[projIdx + 1] : undefined,
-        global: packArgs.includes('--global'),
-      });
+      const sub = packArgs[0];
+      const opts: { dir?: string; project?: string; global?: boolean } = {};
+      let argError: string | null = null;
+      for (let i = 1; i < packArgs.length && !argError; i++) {
+        const a = packArgs[i];
+        if (a === '--dir' || a === '--project') {
+          const key = a.slice(2) as 'dir' | 'project';
+          const v = packArgs[i + 1];
+          if (v === undefined || v.startsWith('--')) argError = `${a} requires a value`;
+          else if (opts[key] !== undefined) argError = `duplicate ${a}`;
+          else { opts[key] = v; i++; }
+        } else if (a === '--global') {
+          if (opts.global) argError = 'duplicate --global';
+          else opts.global = true;
+        } else {
+          argError = `unknown argument ${a}`;
+        }
+      }
+      if (!argError && opts.project !== undefined && opts.global) argError = '--project and --global are mutually exclusive';
+      if (argError) {
+        console.error(`waykeep pack: ${argError}`);
+        console.error('usage: waykeep pack export|import --dir <path> [--project ID | --global]');
+        process.exitCode = 1;
+        return;
+      }
+      process.exitCode = runPack({ command: sub ?? '', ...opts });
     })();
     break;
   }

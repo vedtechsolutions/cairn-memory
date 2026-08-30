@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdirSync, readdirSync, readFileSync, writeFileSync, unlinkSync, existsSync } from 'node:fs';
+import { mkdirSync, readdirSync, readFileSync, writeFileSync, unlinkSync, existsSync, lstatSync, renameSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 import type Database from 'better-sqlite3';
@@ -7,7 +7,7 @@ import { SHAREABLE_KINDS } from 'waykeep-contract';
 
 import { LIMITS } from '../constants/index.js';
 import { MemoryRepository } from '../db/memory-repository.js';
-import { isPrivateProject } from '../config/cairn-config.js';
+import { cairnConfigSnapshot } from '../config/cairn-config.js';
 import { scrubSecrets, sanitize } from '../utils/index.js';
 import { neutralizeMemoryText } from '../utils/validation.js';
 import { learnSections, type LearnSection } from '../importers/learn-pipeline.js';
@@ -41,6 +41,38 @@ export const PACK_EXT = '.waykeep.md';
 export const PACK_MANIFEST = '.waykeep-pack.json';
 
 interface PackManifest { version: 1; scopes: Record<string, string[]> }
+
+/** Bounds for untrusted pack input (Codex pack #4): everything is
+ *  capped BEFORE allocation. */
+export const PACK_BOUNDS = {
+  MAX_FILE_BYTES: 65_536,
+  MAX_FILES: 10_000,
+  MAX_LINES: 64,
+  MAX_AUX_CHARS: 2_000,
+} as const;
+
+/** The directory is the FILESYSTEM BOUNDARY (Codex pack #3): only
+ *  regular files are read, written, or pruned — a planted symlink can
+ *  neither leak an outside file in nor route a write OUT (the probe
+ *  overwrote a file outside --dir through a content-address symlink). */
+function isRegularFile(path: string): boolean {
+  try {
+    return lstatSync(path).isFile();
+  } catch {
+    return false;
+  }
+}
+
+/** Symlink-safe write: temp regular file + rename. Refuses to replace a
+ *  non-regular entry. */
+function writeRegularFile(path: string, dir: string, name: string, bytes: string): void {
+  if (existsSync(path) && !isRegularFile(path)) {
+    throw new Error(`${name} exists and is not a regular file — refusing to write through it`);
+  }
+  const tmp = join(dir, `.tmp-${process.pid}-${name}`);
+  writeFileSync(tmp, bytes);
+  renameSync(tmp, path);
+}
 const PACK_HEADER = '# waykeep pack record v1';
 
 export interface PackRecord {
@@ -77,6 +109,7 @@ export function parsePackRecord(text: string): PackRecord {
   // at PARSE time; the canonical write form stays LF-only, so
   // determinism is unaffected.
   const lines = text.replace(/^\uFEFF/, '').split('\n').map((l) => l.replace(/\r$/, '')).filter((l) => l.length > 0);
+  if (lines.length > PACK_BOUNDS.MAX_LINES) throw new Error(`record exceeds ${PACK_BOUNDS.MAX_LINES} lines`);
   if (lines[0] !== PACK_HEADER) throw new Error('missing pack record header');
   const fields = new Map<string, unknown>();
   for (const line of lines.slice(1)) {
@@ -105,8 +138,8 @@ export function parsePackRecord(text: string): PackRecord {
   }
   const why = fields.get('why');
   const how = fields.get('how');
-  if (why !== undefined && typeof why !== 'string') throw new Error('why must be a string');
-  if (how !== undefined && typeof how !== 'string') throw new Error('how must be a string');
+  if (why !== undefined && (typeof why !== 'string' || why.length > PACK_BOUNDS.MAX_AUX_CHARS)) throw new Error('why must be a bounded string');
+  if (how !== undefined && (typeof how !== 'string' || how.length > PACK_BOUNDS.MAX_AUX_CHARS)) throw new Error('how must be a bounded string');
   return { kind, content, tags: tags as string[], why: why as string | undefined, how: how as string | undefined };
 }
 
@@ -121,6 +154,14 @@ export interface PackExportResult {
 
 export function packExport(db: Database.Database, dir: string, project: string | null | 'all-shared'): PackExportResult {
   mkdirSync(dir, { recursive: true });
+  // ONE policy snapshot, fail closed (Codex pack #6): bulk export
+  // refuses to run on an unhealthy config — a malformed privacy file
+  // must never widen what leaves the store — and per-row checks read
+  // this snapshot, never the file again.
+  const snapshot = cairnConfigSnapshot();
+  if (project === 'all-shared' && !snapshot.health.healthy) {
+    throw new Error(`config at ${snapshot.health.path} is unhealthy (${snapshot.health.problem}) — bulk export refuses fail-closed; fix the config or name a project explicitly`);
+  }
   const where = project === 'all-shared'
     ? "project IS NOT NULL AND invalidated = 0 AND superseded_by IS NULL"
     : project === null
@@ -136,27 +177,38 @@ export function packExport(db: Database.Database, dir: string, project: string |
   for (const row of rows) {
     // Private projects never leave through the bulk form; an explicitly
     // named private project is the user's deliberate choice.
-    if (project === 'all-shared' && row.project !== null && isPrivateProject(row.project)) continue;
+    if (project === 'all-shared' && row.project !== null && snapshot.config.scope.privateProjects.has(row.project)) continue;
     const scrubbed = clean(row.content);
+    if (scrubbed.length === 0) continue; // cleaning emptied it — nothing to observe
     const ctx = row.context ? (JSON.parse(row.context) as { why?: string; how_to_apply?: string }) : {};
-    const rec: PackRecord = {
-      kind: row.kind,
-      content: scrubbed,
-      tags: row.tags ? (JSON.parse(row.tags) as string[]).map((t) => clean(t).slice(0, LIMITS.MAX_TAG_CHARS)) : [],
-      why: ctx.why ? clean(ctx.why) : undefined,
-      how: ctx.how_to_apply ? clean(ctx.how_to_apply) : undefined,
-    };
+    const cleanedTags = row.tags
+      ? (JSON.parse(row.tags) as string[]).map((t) => clean(t).slice(0, LIMITS.MAX_TAG_CHARS)).filter((t) => t.length > 0).slice(0, LIMITS.MAX_TAGS)
+      : [];
+    const cleanedWhy = ctx.why ? clean(ctx.why).slice(0, PACK_BOUNDS.MAX_AUX_CHARS) : undefined;
+    const cleanedHow = ctx.how_to_apply ? clean(ctx.how_to_apply).slice(0, PACK_BOUNDS.MAX_AUX_CHARS) : undefined;
+    const rec: PackRecord = { kind: row.kind, content: scrubbed, tags: cleanedTags, why: cleanedWhy || undefined, how: cleanedHow || undefined };
     const serialized = serializePackRecord(rec);
+    // Every emitted record must pass its own parser (Codex pack #2b —
+    // over-cap legacy tags exported bytes the import refused).
+    parsePackRecord(serialized);
     const file = `${contentAddress(serialized)}${PACK_EXT}`;
-    if (scrubbed !== row.content) {
+    // Redactions are loud for EVERY serialized field, not content alone
+    // (Codex pack #6): a secret resting in tags or context matters the
+    // same.
+    const rawTags = row.tags ? (JSON.parse(row.tags) as string[]) : [];
+    const fieldChanged = scrubbed !== row.content
+      || rawTags.slice(0, LIMITS.MAX_TAGS).some((t, i) => cleanedTags[i] !== undefined && cleanedTags[i] !== t.slice(0, LIMITS.MAX_TAG_CHARS))
+      || (ctx.why !== undefined && cleanedWhy !== ctx.why.slice(0, PACK_BOUNDS.MAX_AUX_CHARS))
+      || (ctx.how_to_apply !== undefined && cleanedHow !== ctx.how_to_apply.slice(0, PACK_BOUNDS.MAX_AUX_CHARS));
+    if (fieldChanged) {
       result.redactions.push({ file, excerpt: scrubbed.slice(0, 60) });
     }
     current.add(file);
     const path = join(dir, file);
-    if (existsSync(path) && readFileSync(path, 'utf-8') === serialized) {
+    if (isRegularFile(path) && readFileSync(path, 'utf-8') === serialized) {
       result.unchanged++;
     } else {
-      writeFileSync(path, serialized);
+      writeRegularFile(path, dir, file, serialized);
       result.written++;
     }
   }
@@ -179,13 +231,17 @@ export function packExport(db: Database.Database, dir: string, project: string |
     Object.entries(manifest.scopes).filter(([k]) => k !== scopeKey).flatMap(([, files]) => files),
   );
   for (const entry of owned) {
-    if (!current.has(entry) && !listedElsewhere.has(entry) && entry.endsWith(PACK_EXT) && existsSync(join(dir, entry))) {
-      unlinkSync(join(dir, entry));
+    // Manifest paths are validated: bare *.waykeep.md names only —
+    // never separators — and only REGULAR files are unlinked.
+    if (!/^[A-Za-z0-9._-]+$/.test(entry) || !entry.endsWith(PACK_EXT)) continue;
+    const p = join(dir, entry);
+    if (!current.has(entry) && !listedElsewhere.has(entry) && isRegularFile(p)) {
+      unlinkSync(p);
       result.pruned++;
     }
   }
   manifest.scopes[scopeKey] = [...current].sort();
-  writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
+  writeRegularFile(manifestPath, dir, PACK_MANIFEST, JSON.stringify(manifest, null, 2) + '\n');
   return result;
 }
 
@@ -200,10 +256,22 @@ export function packImport(db: Database.Database, dir: string, project: string |
   const repo = new MemoryRepository(db);
   const sections: LearnSection[] = [];
   const errors: string[] = [];
-  for (const entry of readdirSync(dir).sort()) {
-    if (!entry.endsWith(PACK_EXT)) continue;
+  const entries = readdirSync(dir).sort().filter((e) => e.endsWith(PACK_EXT));
+  if (entries.length > PACK_BOUNDS.MAX_FILES) {
+    return { ingested: 0, exactDuplicates: 0, merged: 0, errors: [`directory holds ${entries.length} pack files — the ${PACK_BOUNDS.MAX_FILES} cap refuses the whole import`] };
+  }
+  for (const entry of entries) {
     try {
-      const rec = parsePackRecord(readFileSync(join(dir, entry), 'utf-8'));
+      const path = join(dir, entry);
+      if (!isRegularFile(path)) {
+        errors.push(`${entry}: not a regular file (symlinks are outside the pack boundary)`);
+        continue;
+      }
+      if (statSync(path).size > PACK_BOUNDS.MAX_FILE_BYTES) {
+        errors.push(`${entry}: exceeds ${PACK_BOUNDS.MAX_FILE_BYTES} bytes`);
+        continue;
+      }
+      const rec = parsePackRecord(readFileSync(path, 'utf-8'));
       sections.push({
         kind: rec.kind as LearnSection['kind'],
         content: rec.content,

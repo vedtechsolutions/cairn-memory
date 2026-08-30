@@ -1,6 +1,6 @@
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, readdirSync, readFileSync, writeFileSync, unlinkSync, renameSync } from 'node:fs';
+import { mkdtempSync, rmSync, readdirSync, readFileSync, writeFileSync, unlinkSync, renameSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -232,6 +232,92 @@ describe('free manual repo-pack (D12 / R16b)', () => {
     for (const mod of ['src/pack/pack.ts', 'src/cli/pack.ts']) {
       const source = readFileSync(join(process.cwd(), mod), 'utf-8');
       assert.ok(!/child_process|node:child_process|execSync|spawnSync|execFileSync|\bexecFile\b|\bspawn\s*\(/.test(source), `${mod} spawns nothing`);
+    }
+  });
+
+  it('H2a: same content with DIFFERENT metadata round-trips as two records — full observation identity', () => {
+    repo.create({ content: 'identity lesson text', kind: 'fact', project: PROJECT, skipDedup: true, skipConflictDetection: true, tags: ['alpha'] });
+    repo.create({ content: 'identity lesson text', kind: 'fact', project: PROJECT, skipDedup: true, skipConflictDetection: true, context: { why: 'a different why' } });
+    packExport(db, dir, PROJECT);
+    assert.equal(packFiles().length, 2);
+
+    const db2 = openDatabase({ dbPath: ':memory:' });
+    try {
+      const r = packImport(db2, dir, PROJECT);
+      assert.equal(r.ingested, 2, 'metadata differences are part of the observation identity');
+      const dir2 = mkdtempSync(join(tmpdir(), 'waykeep-pack-id-'));
+      try {
+        packExport(db2, dir2, PROJECT);
+        assert.equal(readdirSync(dir2).filter((f) => f.endsWith(PACK_EXT)).length, 2, 'two in, two out');
+      } finally { rmSync(dir2, { recursive: true, force: true }); }
+    } finally { db2.close(); }
+  });
+
+  it('H2b: legacy over-cap tags export as parser-passing records', () => {
+    const id = repo.create({ content: 'over-cap tag row', kind: 'fact', project: PROJECT, skipDedup: true, skipConflictDetection: true }).id;
+    db.prepare('UPDATE memories SET tags = ? WHERE id = ?').run(JSON.stringify(['a', 'b', 'c', 'd', 'e', 'f', 'g']), id);
+    packExport(db, dir, PROJECT);
+    const r = packImport(db, dir, PROJECT);
+    assert.equal(r.errors.length, 0, 'every emitted record passes its own parser');
+  });
+
+  it('H3: symlinks are outside the pack boundary in BOTH directions', () => {
+    const outside = join(tmpdir(), `waykeep-victim-${process.pid}.txt`);
+    writeFileSync(outside, 'ORIGINAL BYTES');
+    try {
+      // Import: a symlinked record is refused loudly.
+      const legit = join(tmpdir(), `waykeep-outside-${process.pid}${PACK_EXT}`);
+      writeFileSync(legit, '# waykeep pack record v1\nkind: "fact"\ncontent: "outside record"\n');
+      symlinkSync(legit, join(dir, `link${PACK_EXT}`));
+      const r = packImport(db, dir, PROJECT);
+      assert.ok(r.errors.some((e) => e.includes('not a regular file')), 'symlinked import refused');
+      assert.equal(db.prepare('SELECT COUNT(*) n FROM memories').get() !== undefined && (db.prepare("SELECT COUNT(*) n FROM memories WHERE content = 'outside record'").get() as { n: number }).n, 0);
+      unlinkSync(join(dir, `link${PACK_EXT}`));
+      unlinkSync(legit);
+
+      // Export: a content-address symlink cannot route a write outside.
+      repo.create({ content: 'symlink write probe', kind: 'fact', project: PROJECT, skipDedup: true, skipConflictDetection: true });
+      // Predict the filename by exporting to a scratch dir first.
+      const scratch = mkdtempSync(join(tmpdir(), 'waykeep-pack-sl-'));
+      try {
+        packExport(db, scratch, PROJECT);
+        const predicted = readdirSync(scratch).filter((f) => f.endsWith(PACK_EXT))[0];
+        symlinkSync(outside, join(dir, predicted));
+        // The export REFUSES loudly rather than writing through the
+        // planted link — and the outside file is untouched.
+        assert.throws(() => packExport(db, dir, PROJECT), /not a regular file/);
+        assert.equal(readFileSync(outside, 'utf-8'), 'ORIGINAL BYTES', 'the outside file is untouched');
+        unlinkSync(join(dir, predicted));
+      } finally { rmSync(scratch, { recursive: true, force: true }); }
+    } finally {
+      rmSync(outside, { force: true });
+    }
+  });
+
+  it('H4: oversized files and oversized aux fields are refused loudly', () => {
+    writeFileSync(join(dir, `big${PACK_EXT}`), '#'.repeat(70_000));
+    writeFileSync(join(dir, `bigaux${PACK_EXT}`), `# waykeep pack record v1\nkind: "fact"\ncontent: "x"\nwhy: ${JSON.stringify('w'.repeat(3000))}\n`);
+    const r = packImport(db, dir, PROJECT);
+    assert.ok(r.errors.some((e) => e.includes('exceeds')), 'file size cap');
+    assert.ok(r.errors.some((e) => e.includes('bounded string')), 'aux cap');
+    assert.equal(r.ingested, 0);
+  });
+
+  it('H6: redactions are loud for metadata fields too, and bulk export fails closed on an unhealthy config', () => {
+    const id = repo.create({ content: 'clean content row', kind: 'fact', project: PROJECT, skipDedup: true, skipConflictDetection: true }).id;
+    db.prepare('UPDATE memories SET tags = ? WHERE id = ?').run(JSON.stringify(['api_key=sk-live-abcdef1234567890abcdef']), id);
+    const r = packExport(db, dir, PROJECT);
+    assert.equal(r.redactions.length, 1, 'a secret resting in TAGS is reported');
+
+    process.env.CAIRN_CONFIG_PATH = join(dir, 'broken.json');
+    writeFileSync(join(dir, 'broken.json'), '{not json');
+    try {
+      resetConfigCacheForTests();
+      assert.throws(() => packExport(db, dir, 'all-shared'), /unhealthy/, 'bulk export refuses fail-closed');
+      packExport(db, dir, PROJECT); // named scope still allowed
+    } finally {
+      delete process.env.CAIRN_CONFIG_PATH;
+      resetConfigCacheForTests();
     }
   });
 
