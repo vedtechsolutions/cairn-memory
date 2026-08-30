@@ -1,11 +1,12 @@
 import { setTimeout as delay } from 'node:timers/promises';
+import { createHash } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
 import Database from 'better-sqlite3';
 import type { SyncEvent } from 'waykeep-contract';
 
 import { OWNER_RPC, SYNC_APPLY } from '../constants/index.js';
-import { applyEventBatch, type ApplyBatchResult } from '../db/sync-apply/index.js';
+import { applyEventBatch, readGeneration, type ApplyBatchResult } from '../db/sync-apply/index.js';
 import { ApplyValidationError, ProtocolInvariantError } from '../db/sync-apply/errors.js';
 import type { SessionCache } from '../hooks/shared/session-cache.js';
 
@@ -52,6 +53,8 @@ interface OwnerRpcDeps {
   db: Database.Database;
   /** In-process cache to bump after a committed batch (D3). */
   cache?: SessionCache;
+  /** Test seam only: body-read budget override. */
+  bodyTimeoutMs?: number;
 }
 
 interface ApplyRequestBody {
@@ -71,12 +74,21 @@ function errorResponse(res: ServerResponse, status: number, code: string, messag
   jsonResponse(res, status, { error: code, message, retryable });
 }
 
-/** Body reader with a STREAMING cap — a body that exceeds the limit is
- *  aborted mid-stream, never buffered to completion first. */
-function readBodyCapped(req: IncomingMessage, maxBytes: number): Promise<string> {
+/** Body reader with a STREAMING cap and its own TIMEOUT — a body that
+ *  exceeds the limit is aborted mid-stream, and a stalled sender is cut
+ *  on the same budget the hook path uses (review C3: without this, a
+ *  slow-loris on the shared socket held a connection and a pending
+ *  promise for Node's 300s default). */
+function readBodyCapped(req: IncomingMessage, maxBytes: number, timeoutMs: number): Promise<string> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     let received = 0;
+    const timer = setTimeout(() => {
+      cleanup();
+      // No destroy here: the caller still writes a structured 400 with
+      // Connection: close, THEN drops the stalled socket.
+      reject(Object.assign(new Error('body read timeout'), { timedOut: true }));
+    }, timeoutMs);
     const onData = (chunk: Buffer): void => {
       received += chunk.length;
       if (received > maxBytes) {
@@ -90,6 +102,7 @@ function readBodyCapped(req: IncomingMessage, maxBytes: number): Promise<string>
     const onEnd = (): void => { cleanup(); resolve(Buffer.concat(chunks).toString('utf-8')); };
     const onError = (err: Error): void => { cleanup(); reject(err); };
     function cleanup(): void {
+      clearTimeout(timer);
       req.off('data', onData);
       req.off('end', onEnd);
       req.off('error', onError);
@@ -125,8 +138,10 @@ export class OwnerRpc {
   private readonly deps: OwnerRpcDeps;
   /** Dedicated apply connection, opened lazily. For an in-memory main
    *  DB (tests, ephemeral runs) a second connection would be a
-   *  DIFFERENT database — the main connection is reused there and the
-   *  busy_timeout=0 isolation property is documented as file-DB only. */
+   *  DIFFERENT database — the main connection is reused there.
+   *  FILE-DB-ONLY properties (untestable on :memory:, do not mistake an
+   *  in-memory test for coverage of them): busy_timeout=0 isolation,
+   *  the BUSY/backoff loop, and hook-vs-apply connection separation. */
   private applyConn: Database.Database | null = null;
 
   constructor(deps: OwnerRpcDeps) {
@@ -189,10 +204,14 @@ export class OwnerRpc {
 
     let raw: string;
     try {
-      raw = await readBodyCapped(req, OWNER_RPC.MAX_BODY_BYTES);
+      raw = await readBodyCapped(req, OWNER_RPC.MAX_BODY_BYTES, this.deps.bodyTimeoutMs ?? OWNER_RPC.BODY_TIMEOUT_MS);
     } catch (err) {
       if ((err as { tooLarge?: boolean }).tooLarge) {
         errorResponse(res, 413, 'TOO_LARGE', `body exceeds ${OWNER_RPC.MAX_BODY_BYTES} bytes`, false);
+      } else if ((err as { timedOut?: boolean }).timedOut) {
+        res.writeHead(400, { 'Content-Type': 'application/json', Connection: 'close' });
+        res.end(JSON.stringify({ error: 'VALIDATION', message: 'body read timeout', retryable: false }));
+        res.once('close', () => req.destroy());
       } else {
         errorResponse(res, 400, 'VALIDATION', `body read failed: ${err}`, false);
       }
@@ -208,30 +227,45 @@ export class OwnerRpc {
     }
 
     const conn = this.connection();
-
-    // Idempotency: a batch_id that already committed returns the
-    // ORIGINAL result — recorded in the same transaction as the batch,
-    // so no crash window can commit one without the other.
-    const prior = conn.prepare('SELECT v FROM sync_state WHERE ns = ? AND k = ?').get(BATCH_NS, body.batch_id) as { v: string } | undefined;
-    if (prior) {
-      jsonResponse(res, 200, { ...JSON.parse(prior.v), replayed: true });
-      return true;
-    }
+    // The events hash binds the batch_id to THIS body (review C4): a
+    // reused id with different events is a loud caller bug, never a
+    // silent no-apply masquerading as a replay.
+    const eventsHash = createHash('sha256').update(JSON.stringify(body.events), 'utf8').digest('hex');
 
     for (let attempt = 1; ; attempt++) {
       try {
-        const result = conn.transaction((): ApplyBatchResult => {
+        // The idempotency check runs INSIDE the immediate transaction
+        // (review C1): an outside read raced a concurrent duplicate
+        // through the backoff window into a UNIQUE-constraint 500 for a
+        // batch that had COMMITTED. Under the write lock the check is
+        // authoritative, and each retry attempt naturally re-checks.
+        const genBefore = readGeneration(conn);
+        const outcome = conn.transaction((): { replayedRecord?: string; result?: ApplyBatchResult } => {
+          const prior = conn.prepare('SELECT v FROM sync_state WHERE ns = ? AND k = ?').get(BATCH_NS, body.batch_id) as { v: string } | undefined;
+          if (prior) return { replayedRecord: prior.v };
           const r = applyEventBatch(conn, body.project, body.events);
           conn.prepare(`
             INSERT INTO sync_state (ns, k, v, updated_at) VALUES (?, ?, ?, datetime('now'))
-          `).run(BATCH_NS, body.batch_id, JSON.stringify({ batch_id: body.batch_id, cursor: r.cursor, generation: r.generation, outcomes: r.outcomes }));
-          return r;
+          `).run(BATCH_NS, body.batch_id, JSON.stringify({ batch_id: body.batch_id, cursor: r.cursor, generation: r.generation, outcomes: r.outcomes, events_hash: eventsHash }));
+          return { result: r };
         }).immediate();
 
-        // In-process peer visibility (D3): the durable generation is
-        // committed; the owner's own session cache learns immediately.
-        this.deps.cache?.bumpMemoryVersion();
-        jsonResponse(res, 200, { batch_id: body.batch_id, cursor: result.cursor, generation: result.generation, outcomes: result.outcomes, replayed: false });
+        if (outcome.replayedRecord !== undefined) {
+          const recorded = JSON.parse(outcome.replayedRecord) as { events_hash?: string };
+          if (recorded.events_hash !== undefined && recorded.events_hash !== eventsHash) {
+            errorResponse(res, 400, 'VALIDATION', `batch_id ${body.batch_id} was committed with a different body`, false);
+            return true;
+          }
+          jsonResponse(res, 200, { ...recorded, replayed: true });
+          return true;
+        }
+        const result = outcome.result!;
+        // In-process peer visibility (D3): bump only when the durable
+        // generation actually moved — outcome labels are not write
+        // evidence (the Y4 lesson), and an all-replay batch must not
+        // flush the owner's own caches (review C5).
+        if (result.generation > genBefore) this.deps.cache?.bumpMemoryVersion();
+        jsonResponse(res, 200, { batch_id: body.batch_id, cursor: result.cursor, generation: result.generation, outcomes: result.outcomes, events_hash: eventsHash, replayed: false });
         return true;
       } catch (err) {
         if (err instanceof ProtocolInvariantError) {

@@ -247,6 +247,7 @@ export const SYNC_APPLY = {
 /** Owner-control RPC bounds and backoff (brief D3). */
 export const OWNER_RPC = {
   MAX_BODY_BYTES: 1_048_576,
+  BODY_TIMEOUT_MS: 5_000,
   BUSY_ATTEMPTS: 3,
   BUSY_BACKOFF_MS: 25,
   CAPABILITY_REVISION: 1,

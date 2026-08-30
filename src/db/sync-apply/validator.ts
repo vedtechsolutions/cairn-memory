@@ -148,6 +148,9 @@ export function validateBatch(events: readonly SyncEvent[]): void {
   }
   const seqs = new Set<number>();
   for (const ev of events) {
+    if (ev === null || typeof ev !== 'object' || Array.isArray(ev)) {
+      throw new ApplyValidationError('event must be an object');
+    }
     if (!isSyncEventType((ev as { type: string }).type)) {
       throw new ApplyValidationError(`unknown event type '${(ev as { type: string }).type}' in the closed vocabulary`);
     }

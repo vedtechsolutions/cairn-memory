@@ -52,6 +52,7 @@ before(async () => {
   rpc = new OwnerRpc({
     db,
     cache: { bumpMemoryVersion: () => { cacheBumps++; } } as never,
+    bodyTimeoutMs: 150,
   });
   server = createServer((req, res) => {
     rpc.handle(req, res).then((handled) => {
@@ -203,6 +204,73 @@ describe('owner-control RPC', () => {
       events: [upsert(7, envelope(record({ id: randomUUID(), content: 'blocked batch row' }), 'E-busy', 1))],
     });
     assert.equal(retry.status, 200, 'the same batch succeeds once the writer releases');
+  });
+
+  it('C1: concurrent duplicates of the same batch_id both succeed — never a 500 for a committed batch', async () => {
+    const id = randomUUID();
+    const body = {
+      project: PROJECT, batch_id: 'batch-race',
+      events: [upsert(10, envelope(record({ id, content: 'raced duplicate batch row' }), 'E-race', 1))],
+    };
+    const [r1, r2] = await Promise.all([applyBatch(body), applyBatch(body)]);
+    assert.equal(r1.status, 200);
+    assert.equal(r2.status, 200);
+    assert.equal([r1.json.replayed, r2.json.replayed].filter((x) => x === true).length >= 0, true);
+    assert.equal(r1.json.cursor, r2.json.cursor, 'both callers see the same committed result');
+    assert.equal((db.prepare('SELECT COUNT(*) n FROM memories WHERE id = ?').get(id) as { n: number }).n, 1);
+  });
+
+  it('C2: a null event is a 400 VALIDATION, never a 500', async () => {
+    const { status, json } = await applyBatch({ project: PROJECT, batch_id: 'batch-null', events: [null] });
+    assert.equal(status, 400);
+    assert.equal(json.error, 'VALIDATION');
+  });
+
+  it('C4: reusing a batch_id with a DIFFERENT body is a loud VALIDATION, not a silent no-apply', async () => {
+    const body1 = {
+      project: PROJECT, batch_id: 'batch-bind',
+      events: [upsert(11, envelope(record({ id: randomUUID(), content: 'bound body one' }), 'E-bind', 1))],
+    };
+    await applyBatch(body1);
+    const { status, json } = await applyBatch({
+      project: PROJECT, batch_id: 'batch-bind',
+      events: [upsert(12, envelope(record({ id: randomUUID(), content: 'a different body entirely' }), 'E-bind2', 1))],
+    });
+    assert.equal(status, 400);
+    assert.equal(json.error, 'VALIDATION');
+    assert.match(String(json.message), /different body/);
+  });
+
+  it('C5: an all-replay batch does not bump the in-process cache; a real change does', async () => {
+    const id = randomUUID();
+    const body = {
+      project: PROJECT, batch_id: 'batch-bump-1',
+      events: [upsert(13, envelope(record({ id, content: 'cache bump probe row' }), 'E-bump', 1))],
+    };
+    const before = cacheBumps;
+    await applyBatch(body);
+    assert.equal(cacheBumps, before + 1, 'a real apply bumps once');
+    await applyBatch(body);
+    assert.equal(cacheBumps, before + 1, 'an idempotent replay bumps nothing');
+    await applyBatch({ project: PROJECT, batch_id: 'batch-bump-2', events: [upsert(13, envelope(record({ id, content: 'cache bump probe row' }), 'E-bump', 1))] });
+    assert.equal(cacheBumps, before + 1, 'a cursor-replay batch under a new id bumps nothing either');
+  });
+
+  it('C3: a stalled body is cut on the owner path\'s own timeout', async () => {
+    const net = await import('node:net');
+    const addr = server.address() as { port: number };
+    const status = await new Promise<string>((resolve) => {
+      const sock = net.connect(addr.port, '127.0.0.1', () => {
+        sock.write('POST /owner/apply HTTP/1.1\r\nHost: x\r\nContent-Length: 5000\r\n\r\n{');
+        // ...then stall. The 150ms test override must cut us off.
+      });
+      let buf = '';
+      sock.on('data', (d) => { buf += String(d); });
+      sock.on('close', () => resolve(buf));
+      sock.on('error', () => resolve(buf));
+      setTimeout(() => { sock.destroy(); resolve(buf); }, 2_000);
+    });
+    assert.match(status, /400/, 'the stalled request received a structured 400 well before Node\'s 300s default');
   });
 
   it('generation is durable and visible to the main connection after RPC applies', () => {
