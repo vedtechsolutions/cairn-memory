@@ -104,6 +104,16 @@ export function learnSections(
       // record, breaking the pack round-trip). Interactive paths keep
       // content-only exactness (metadata enrichment is their point).
       const cleanedTags = section.tags.map((t) => scrubSecrets(sanitize(t)).text.slice(0, LIMITS.MAX_TAG_CHARS)).slice(0, LIMITS.MAX_TAGS);
+      // Context canonicalizes ONCE, exactly as the gateway stores it
+      // (scrubSecrets∘sanitize — writes.ts sanitizeContext), and BOTH
+      // the identity comparison and create() consume the canonical form
+      // (Codex pack close: raw-context comparison never matched the
+      // stored scrubbed bytes, so a secret-bearing `why` re-imported as
+      // an endless-copy path).
+      const cleanedContext = section.context === undefined ? undefined : {
+        ...(section.context.why !== undefined ? { why: scrubSecrets(sanitize(section.context.why)).text } : {}),
+        ...(section.context.how_to_apply !== undefined ? { how_to_apply: scrubSecrets(sanitize(section.context.how_to_apply)).text } : {}),
+      };
       const contentExact = similar !== null && similar.content === content;
       let isExact = contentExact;
       if (options.insertOnly) {
@@ -116,8 +126,8 @@ export function learnSections(
         const wantTags = JSON.stringify([...cleanedTags].sort());
         isExact = sameContent.some((full) =>
           JSON.stringify([...(full.tags ?? [])].sort()) === wantTags
-          && (full.context?.why ?? null) === (section.context?.why ?? null)
-          && (full.context?.how_to_apply ?? null) === (section.context?.how_to_apply ?? null));
+          && (full.context?.why ?? null) === (cleanedContext?.why ?? null)
+          && (full.context?.how_to_apply ?? null) === (cleanedContext?.how_to_apply ?? null));
       }
       if (isExact && !options.reinforceExact) {
         exactDuplicates++;
@@ -138,7 +148,7 @@ export function learnSections(
         // source keyword/concept (review).
         tags: cleanedTags,
         project,
-        context: section.context,
+        context: cleanedContext,
         ...(section.originClient ? { originClient: section.originClient } : {}),
       });
       if (!result.deduplicated) ingested++;
