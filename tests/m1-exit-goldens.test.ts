@@ -94,7 +94,10 @@ describe('M1-exit: the render-wiring guard (AST)', () => {
     'src/hooks/shared/transcript/parse-transcript.ts',
     // `result.content` here is the MCP SAMPLING response envelope (the
     // Socratic reflection reply), not a stored memory row; its output
-    // lands via repo.create — the scrub-on-write layer.
+    // lands via repo.create — the scrub-on-write layer. NOTE (Claude
+    // gate): because the whole file is exempt, a future RENDER of a
+    // memory row from this file would be invisible to the guard — if
+    // decision-reflector ever renders, narrow this to SAFE_SITES.
     'src/hooks/shared/decision-reflector.ts',
   ]);
   // truncate/clip results still need a formatter before rendering — but
@@ -302,6 +305,11 @@ describe('M1-exit: the render-wiring guard (AST)', () => {
       ['assignment', 'let t = ""; t = memory.content; emitToModel(t)'],
       ['append-assignment', 'out += memory.content'],
       ['named-fn-raw-return', 'function getRaw(m) { return m.content; }'],
+      // The Claude gate's 7152d46 blind shapes — closed by the e129fd3
+      // hardening (transparent property assignments + all-alias rule):
+      ['array-indirection', "warnings.push([m.content].join('\\n'))"],
+      ['object-readback', 'const o = { t: m.content }; emitToModel(o.t)'],
+      ['local-helper', 'const get = (m) => m.content; emitToModel(get(m))'],
     ];
     for (const [name, snippet] of plants) {
       assert.ok((await astScan(snippet, name)).length > 0, `${name} must be caught`);
