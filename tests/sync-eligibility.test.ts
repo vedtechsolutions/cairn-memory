@@ -42,6 +42,18 @@ describe('sync eligibility (D10 fail-closed predicate)', () => {
     assert.equal(syncEligibility(row({ share_state: 'local' }), baseCtx()).reason, 'opted-out');
   });
 
+  it('C3: an absolute-path or malformed anchor fails closed — machine-local paths never travel', () => {
+    assert.equal(syncEligibility(row({ ...{}, }), baseCtx()).eligible, true);
+    const abs = { ...row(), anchor: JSON.stringify({ files: ['/opt/cairn/src/x.ts'] }) };
+    assert.equal(syncEligibility(abs, baseCtx()).reason, 'anchor-unresolvable');
+    const win = { ...row(), anchor: JSON.stringify({ files: ['C:\\repo\\x.ts'] }) };
+    assert.equal(syncEligibility(win, baseCtx()).reason, 'anchor-unresolvable');
+    const rel = { ...row(), anchor: JSON.stringify({ files: ['src/x.ts'] }) };
+    assert.equal(syncEligibility(rel, baseCtx()).eligible, true, 'relative anchors travel');
+    const malformed = { ...row(), anchor: '{broken' };
+    assert.equal(syncEligibility(malformed, baseCtx()).reason, 'anchor-unresolvable', 'unknown is not shareable');
+  });
+
   it('owner policy narrows but can never widen the frozen allowlist', () => {
     const narrowed = baseCtx({ ownerAllowedKinds: ['pitfall'] });
     assert.equal(syncEligibility(row({ kind: 'pitfall' }), narrowed).eligible, true);
@@ -157,6 +169,36 @@ describe('durable-generation cache invalidation (D8 item 7)', () => {
       cache.setSkipGate('sk-4', 'cached-output');
       cache.checkDurableGeneration(db);
       assert.ok(cache.getSkipGate('sk-4'), 'stable generation leaves caches intact');
+    } finally {
+      db.close();
+    }
+  });
+
+  it('C1: a NON-missing-table read failure fails CLOSED — both caches flush rather than trust', () => {
+    const db = openDatabase({ dbPath: ':memory:' });
+    try {
+      const cache = new SessionCache();
+      cache.checkDurableGeneration(db);
+      cache.setSkipGate('sk-x', 'cached');
+      cache.setFTSCandidates('fts-x', ['m']);
+      db.exec('ALTER TABLE sync_state RENAME COLUMN v TO vv');
+      cache.checkDurableGeneration(db);
+      assert.equal(cache.getSkipGate('sk-x'), null, 'unknown read state flushes the skip gate');
+      assert.equal(cache.getFTSCandidates('fts-x'), null, 'and the FTS cache');
+    } finally {
+      db.close();
+    }
+  });
+
+  it('C2: fingerprint scores are memory-derived and flush with the rest', () => {
+    const db = openDatabase({ dbPath: ':memory:' });
+    try {
+      const cache = new SessionCache();
+      cache.checkDurableGeneration(db);
+      cache.setFingerprintScore('mem-1', 'fp-key', 0.9);
+      applyEventBatch(db, PROJECT, [upsert(1, envelope(record({ id: randomUUID(), content: 'fingerprint flush probe' }), 'E-fp', 1))]);
+      cache.checkDurableGeneration(db);
+      assert.equal(cache.getFingerprintScore('mem-1', 'fp-key'), undefined, 'stale relevance scores flush on remote applies');
     } finally {
       db.close();
     }

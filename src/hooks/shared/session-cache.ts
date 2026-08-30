@@ -199,21 +199,34 @@ export class SessionCache {
     try {
       const row = db.prepare("SELECT v FROM sync_state WHERE ns = 'memory' AND k = 'generation'").get() as { v: string } | undefined;
       generation = row ? Number(row.v) : 0;
-    } catch {
-      // Pre-v32 schema (no sync_state): nothing replicates, nothing to check.
+    } catch (err) {
+      // ONLY the missing-table case is a legitimate no-op (pre-v32:
+      // nothing replicates, nothing to check). Every OTHER failure —
+      // SQLITE_BUSY, corruption, schema drift — is UNKNOWN state, and
+      // unknown must fail closed: flush rather than trust (review C1 —
+      // the broad catch silently served stale memory after a real
+      // remote apply).
+      if (String((err as Error).message).includes('no such table')) return;
+      this.invalidateMemoryDerived();
       return;
     }
     if (generation === this.lastSeenGeneration) return;
-    if (this.lastSeenGeneration !== -1) {
-      // A remote apply changed memory under us: both memory-derived
-      // caches are stale. memoryVersion++ (directly — never through
-      // bumpMemoryVersion, whose notifier would echo across the socket)
-      // keeps composite keys honest for entries written mid-flight.
-      this.skipGateCache.clear();
-      this.ftsCache.clear();
-      this.memoryVersion++;
-    }
+    if (this.lastSeenGeneration !== -1) this.invalidateMemoryDerived();
     this.lastSeenGeneration = generation;
+  }
+
+  /** Flush every MEMORY-DERIVED cache: the skip gate, the FTS candidate
+   *  cache, and the fingerprint scores — the last is keyed by memoryId
+   *  and a remote edit rewrites the fingerprint bytes it scored (review
+   *  C2). memoryVersion++ directly — never through bumpMemoryVersion,
+   *  whose notifier would push a redundant relay: the durable generation
+   *  IS the shared channel, and every peer discovers the change
+   *  independently on its next read. */
+  private invalidateMemoryDerived(): void {
+    this.skipGateCache.clear();
+    this.ftsCache.clear();
+    this.fingerprintScores.clear();
+    this.memoryVersion++;
   }
 
   /**
