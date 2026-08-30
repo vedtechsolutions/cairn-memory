@@ -244,6 +244,14 @@ export const SYNC_APPLY = {
   MAX_ANCHOR_CHARS: 4_096,
 } as const;
 
+/** Owner-control RPC bounds and backoff (brief D3). */
+export const OWNER_RPC = {
+  MAX_BODY_BYTES: 1_048_576,
+  BUSY_ATTEMPTS: 3,
+  BUSY_BACKOFF_MS: 25,
+  CAPABILITY_REVISION: 1,
+} as const;
+
 export const LIMITS = {
   MAX_TAGS: 5,
   MAX_TAG_CHARS: 50,

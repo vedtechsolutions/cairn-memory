@@ -14,6 +14,7 @@ import { FS_PERMS } from '../constants/index.js';
 import { CLIENT_HEADER } from '../constants/clients.js';
 import { CONTRACT_REVISION } from 'waykeep-contract';
 import type { HookDbClient, CachedHookContext } from '../hooks/shared/db-client.js';
+import { OwnerRpc } from './owner-rpc.js';
 import { normalizeHookInput } from '../hooks/shared/client-adapter.js';
 import { SessionCache } from '../hooks/shared/session-cache.js';
 import { saveTracker } from '../hooks/shared/edit-tracker.js';
@@ -325,6 +326,10 @@ export async function startHookSocket(
   // features like the Layer 1c Socratic reflection in stop-handler).
   const cachedClient: CachedHookContext = { ...client, cache, innerServer };
 
+  // Owner-control RPC (D3): a SEPARATE route registry — never merged
+  // into the hook route table or generated hook wiring.
+  const ownerRpc = new OwnerRpc({ db: client.db, cache });
+
   const startupTime = Date.now();
 
   async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -343,6 +348,14 @@ export async function startHookSocket(
         res.writeHead(200, { 'Content-Type': 'text/plain' });
         res.end('Waykeep: --');
       }
+      return;
+    }
+
+    // Owner-control routes: dispatched before hook routing and before
+    // the generic body read — the RPC enforces its own pre-buffer
+    // Content-Length gate and streaming cap.
+    if (req.url?.startsWith('/owner/')) {
+      await ownerRpc.handle(req, res);
       return;
     }
 

@@ -13,6 +13,8 @@
 
 - Added the free-core sync-apply engine (§6 M1 transitions): untrusted-by-construction event application — neutralize + scrub + shape-validate unconditionally, id-preserving, version-guarded, tombstone-honoring, non-reinforcing — with the entity map, shadow associations (opted-out rows are matched, never written), offline-twin coexistence + alias collapse, fork-preserve on diverged tombstones, deterministic client-minted near-dup conflict sets, a protocol-invariant halt on canonical-hash collisions, and a durable memory generation bumped per committed batch.
 
+- Added the owner-control RPC (`/owner/apply`, `/owner/health`): a separate served-route registry on the hook socket — never part of hook wiring — applying sync-event batches on a dedicated `busy_timeout=0` connection with batch idempotency, strict pre-buffer and streaming body caps, a stable error taxonomy (VALIDATION / PROTOCOL_HALT / BUSY / TOO_LARGE with retryability), and in-process cache invalidation on commit. Free standalone use: bounded local incremental restore.
+
 ### Fixed
 
 - Fixed automatic injection precision (from a live cross-agent evaluation): pitfalls marked RESOLVED and superseded memories are excluded from every automatic context surface; conversational/tasking prompts ("ask/review/evaluate…") can no longer be captured as decisions; proactive warnings are capped at one bounded warning (96 tokens) per correlated turn.
