@@ -183,8 +183,12 @@ describe('M1-exit: the render-wiring guard (AST)', () => {
     // Transparent expression wrappers (Codex 67f6712: parenthesizing or
     // type-asserting is a semantics-preserving refactor, not a new key).
     const unwrap = (e: import('typescript').Expression): import('typescript').Expression => {
+      // The full transparent-wrapper set in the grammar: parens, as,
+      // satisfies, non-null, and the angle-bracket assertion spelling
+      // (Codex 352bc11 #1 — <const>"x" is `as const` in older syntax).
       while (tsm.isParenthesizedExpression(e) || tsm.isAsExpression(e)
-        || tsm.isSatisfiesExpression(e) || tsm.isNonNullExpression(e)) e = e.expression;
+        || tsm.isSatisfiesExpression(e) || tsm.isNonNullExpression(e)
+        || tsm.isTypeAssertionExpression(e)) e = e.expression;
       return e;
     };
     const foldKey = (raw: import('typescript').Expression): string | null => {
@@ -449,6 +453,10 @@ describe('M1-exit: the render-wiring guard (AST)', () => {
       ['template-substitution-key', 'const { [`con${"tent"}`]: text } = memory; emitToModel(text)'],
       ['wrapped-property-fn', 'const local = { formatMemoryContent: ((x) => x) }; emitToModel(local.formatMemoryContent(memory.content))'],
       ['wrapped-receiver-forgery', 'const JSON = { stringify: ((x) => x) }; emitToModel(JSON.stringify(memory.content))'],
+      // Codex 352bc11 — angle-bracket assertion spelling:
+      ['angle-assert-member', 'const local = { [<const>"formatMemoryContent"](x) { return x; } }; emitToModel(local.formatMemoryContent(memory.content))'],
+      ['angle-assert-key', 'const { [<const>"content"]: text } = memory; emitToModel(text)'],
+      ['angle-assert-property-fn', 'const JSON = { stringify: <(x: unknown) => unknown>((x) => x) }; emitToModel(JSON.stringify(memory.content))'],
       // Codex 943d023 #2 — static property-name spellings:
       ['string-key-destructuring', 'const { "content": text } = memory; emitToModel(text)'],
       ['computed-key-destructuring', 'const { ["con" + "tent"]: text } = memory; emitToModel(text)'],
