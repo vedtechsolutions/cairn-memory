@@ -180,8 +180,24 @@ describe('M1-exit: the render-wiring guard (AST)', () => {
     // and `const JSON = { stringify(x){…} }` forges the receiver pin).
     // The ONE exception: the home file's TOP-LEVEL declaration (pack's
     // own clean); a parameter named clean forfeits even there.
+    const foldKey = (e: import('typescript').Expression): string | null => {
+      if (tsm.isStringLiteral(e) || tsm.isNoSubstitutionTemplateLiteral(e)) return e.text;
+      if (tsm.isBinaryExpression(e) && e.operatorToken.kind === tsm.SyntaxKind.PlusToken) {
+        const l = foldKey(e.left); const r = foldKey(e.right);
+        return l !== null && r !== null ? l + r : null;
+      }
+      if (tsm.isParenthesizedExpression(e)) return foldKey(e.expression);
+      return null; // dynamic keys: KNOWN-UNCOVERED, asserted below
+    };
+    // Every STATIC spelling of a member/property name (Codex 19b1a89
+    // #1: quoted and foldable-computed members are not dynamic keys).
+    const staticName = (pn: import('typescript').PropertyName): string | null => {
+      if (tsm.isIdentifier(pn) || tsm.isStringLiteral(pn) || tsm.isNoSubstitutionTemplateLiteral(pn)) return pn.text;
+      if (tsm.isComputedPropertyName(pn)) return foldKey(pn.expression);
+      return null; // PrivateIdentifier cannot collide with a bare call
+    };
     const forfeited = new Set<string>();
-    const forfeit = (nm: string): void => { if (SAFE_CALLEES.has(nm)) forfeited.add(nm); };
+    const forfeit = (nm: string | null): void => { if (nm !== null && SAFE_CALLEES.has(nm)) forfeited.add(nm); };
     // Recurse binding PATTERNS (Codex 5799d4b #1: `function f({
     // formatMemoryContent })` and `const { formatter: fmc } = deps`
     // bind names the flat identifier checks never saw).
@@ -193,12 +209,13 @@ describe('M1-exit: the render-wiring guard (AST)', () => {
     };
     const collect = (n: import('typescript').Node): void => {
       if (tsm.isParameter(n)) forfeitBinding(n.name);
-      if (tsm.isMethodDeclaration(n) && tsm.isIdentifier(n.name)) forfeit(n.name.text);
-      // Class FIELDS too (Codex 5799d4b #1: a method-to-field refactor
-      // must not shed the forfeiture).
-      if (tsm.isPropertyDeclaration(n) && tsm.isIdentifier(n.name)) forfeit(n.name.text);
-      if (tsm.isPropertyAssignment(n) && tsm.isIdentifier(n.name)
-        && (tsm.isArrowFunction(n.initializer) || tsm.isFunctionExpression(n.initializer))) forfeit(n.name.text);
+      // Members in EVERY static spelling, accessors included (Codex
+      // 19b1a89 #1); class FIELDS too (5799d4b #1: a method-to-field
+      // refactor must not shed the forfeiture).
+      if (tsm.isMethodDeclaration(n) || tsm.isPropertyDeclaration(n)
+        || tsm.isGetAccessorDeclaration(n) || tsm.isSetAccessorDeclaration(n)) forfeit(staticName(n.name));
+      if (tsm.isPropertyAssignment(n)
+        && (tsm.isArrowFunction(n.initializer) || tsm.isFunctionExpression(n.initializer))) forfeit(staticName(n.name));
       // Shorthand ({ rerank }) is NOT collected: its value IS the
       // in-scope binding of that name, so it launders only when that
       // binding is itself a shadow — which the recursive param/var/
@@ -221,23 +238,12 @@ describe('M1-exit: the render-wiring guard (AST)', () => {
       if (forfeited.has(name)) return false;
       return true;
     };
-    const foldKey = (e: import('typescript').Expression): string | null => {
-      if (tsm.isStringLiteral(e) || tsm.isNoSubstitutionTemplateLiteral(e)) return e.text;
-      if (tsm.isBinaryExpression(e) && e.operatorToken.kind === tsm.SyntaxKind.PlusToken) {
-        const l = foldKey(e.left); const r = foldKey(e.right);
-        return l !== null && r !== null ? l + r : null;
-      }
-      if (tsm.isParenthesizedExpression(e)) return foldKey(e.expression);
-      return null; // dynamic keys: KNOWN-UNCOVERED, asserted below
-    };
-    // A binding's property name in every static spelling (Codex 943d023
+        // A binding's property name in every static spelling (Codex 943d023
     // #2: identifier, string-literal, and constant-foldable computed).
     const bindsContent = (el: import('typescript').BindingElement): boolean => {
       const pn = el.propertyName;
       if (!pn) return tsm.isIdentifier(el.name) && el.name.text === 'content';
-      if (tsm.isIdentifier(pn) || tsm.isStringLiteral(pn)) return pn.text === 'content';
-      if (tsm.isComputedPropertyName(pn)) return foldKey(pn.expression) === 'content';
-      return false;
+      return staticName(pn) === 'content';
     };
     const visit = (node: import('typescript').Node): void => {
       // Destructured content alias: const { content } = memoryish.
@@ -415,6 +421,10 @@ describe('M1-exit: the render-wiring guard (AST)', () => {
       ['destructured-param-shadow', 'function f({ formatMemoryContent }) { emitToModel(formatMemoryContent(memory.content)); }'],
       ['destructured-var-shadow', 'const { formatter: formatMemoryContent } = deps; emitToModel(formatMemoryContent(memory.content))'],
       ['class-field-shadow', 'class Local { formatMemoryContent = (x) => x; }\nconst local = new Local(); emitToModel(local.formatMemoryContent(memory.content))'],
+      // Codex 19b1a89 #1 — quoted/accessor member spellings:
+      ['quoted-class-field', 'class Local { "formatMemoryContent" = (x) => x; }\nemitToModel(local.formatMemoryContent(memory.content))'],
+      ['quoted-class-method', 'class Local { "formatMemoryContent"(x) { return x; } }\nemitToModel(local.formatMemoryContent(memory.content))'],
+      ['accessor-shadow', 'class Local { get formatMemoryContent() { return (x) => x; } }\nemitToModel(local.formatMemoryContent(memory.content))'],
       // Codex 943d023 #2 — static property-name spellings:
       ['string-key-destructuring', 'const { "content": text } = memory; emitToModel(text)'],
       ['computed-key-destructuring', 'const { ["con" + "tent"]: text } = memory; emitToModel(text)'],
