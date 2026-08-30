@@ -84,6 +84,9 @@ describe('sync eligibility (D10 fail-closed predicate)', () => {
     assert.equal(transmitEligibility(row(), baseCtx(), { ...ok, anchorRelativized: false }).reason, 'anchor-not-relativized');
     // The enqueue-half's refusals pass through unchanged.
     assert.equal(transmitEligibility(row({ share_state: 'local' }), baseCtx(), ok).reason, 'opted-out');
+    // Codex delta: only the literal true proves an assertion.
+    assert.equal(transmitEligibility(row(), baseCtx(), { scrubCompleted: 'yes' as unknown as boolean, anchorRelativized: true }).reason, 'scrub-not-verified');
+    assert.equal(transmitEligibility(row(), baseCtx(), { scrubCompleted: true, anchorRelativized: 1 as unknown as boolean }).reason, 'anchor-not-relativized');
   });
 
   it('N2: a non-array policy mirror is policy-invalid, never an uncaught throw', () => {
@@ -292,14 +295,21 @@ describe('durable-generation cache invalidation (D8 item 7)', () => {
     }
   });
 
-  it('a pre-v32 database (no sync_state) is a silent no-op', () => {
+  it('a PROVEN pre-v32 database no-ops; a v32 database missing sync_state is drift and flushes', () => {
     const db = openDatabase({ dbPath: ':memory:' });
     try {
-      db.exec('DROP TABLE sync_state');
       const cache = new SessionCache();
       cache.setSkipGate('sk-old', 'cached');
+      // v32 schema with the table dropped = drift, not history.
+      db.exec('DROP TABLE sync_state');
       cache.checkDurableGeneration(db);
-      assert.ok(cache.getSkipGate('sk-old'), 'nothing replicates, nothing to check');
+      assert.equal(cache.getSkipGate('sk-old'), null, 'a v32 database that LOST sync_state fails closed');
+
+      // Proven pre-v32: schema_version below 32 → legitimate no-op.
+      db.prepare('UPDATE schema_version SET version = 31').run();
+      cache.setSkipGate('sk-pre', 'cached');
+      cache.checkDurableGeneration(db);
+      assert.ok(cache.getSkipGate('sk-pre'), 'nothing replicates on a proven pre-v32 schema');
     } finally {
       db.close();
     }

@@ -201,13 +201,18 @@ export class SessionCache {
       const row = db.prepare("SELECT v FROM sync_state WHERE ns = 'memory' AND k = 'generation'").get() as { v: string } | undefined;
       generation = row ? Number(row.v) : 0;
     } catch (err) {
-      // ONLY the missing-table case is a legitimate no-op (pre-v32:
-      // nothing replicates, nothing to check). Every OTHER failure —
-      // SQLITE_BUSY, corruption, schema drift — is UNKNOWN state, and
-      // unknown must fail closed: flush rather than trust (review C1 —
-      // the broad catch silently served stale memory after a real
-      // remote apply).
-      if (String((err as Error).message).includes('no such table')) return;
+      // A missing table is a legitimate no-op ONLY when the schema is
+      // PROVEN pre-v32 (Codex delta: a v32 database that LOST
+      // sync_state is drift, not history — nothing distinguishes it
+      // from tampering, and unknown must fail closed). Every other
+      // failure — SQLITE_BUSY, corruption — flushes rather than trusts
+      // (review C1).
+      if (String((err as Error).message).includes('no such table')) {
+        try {
+          const v = db.prepare('SELECT version FROM schema_version LIMIT 1').get() as { version: number } | undefined;
+          if ((v?.version ?? 0) < 32) return; // proven pre-v32: nothing replicates
+        } catch { /* cannot prove — fall through to flush */ }
+      }
       this.invalidateMemoryDerived();
       return;
     }

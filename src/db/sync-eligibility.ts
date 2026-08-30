@@ -151,8 +151,11 @@ export function transmitEligibility(
 ): { eligible: boolean; reason: IneligibleReason | null } {
   const base = syncEligibility(row, ctx);
   if (!base.eligible) return base;
-  if (!assertions.scrubCompleted) return { eligible: false, reason: 'scrub-not-verified' };
-  if (!assertions.anchorRelativized) return { eligible: false, reason: 'anchor-not-relativized' };
+  // STRICT booleans (Codex delta): an assertion is PROVEN only by the
+  // literal true — a truthy 'yes' or 1 from a sloppy caller is an
+  // unproven claim, and unproven fails closed.
+  if (assertions.scrubCompleted !== true) return { eligible: false, reason: 'scrub-not-verified' };
+  if (assertions.anchorRelativized !== true) return { eligible: false, reason: 'anchor-not-relativized' };
   return { eligible: true, reason: null };
 }
 
