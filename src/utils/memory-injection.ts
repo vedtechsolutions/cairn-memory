@@ -79,6 +79,18 @@ export function formatMemoryContent(
   return `[waykeep-team: ${escapeIdentity(memory.author)}${client}] ${cleaned}`;
 }
 
+/** Auxiliary render cleaning (Codex m1s7 delta): context.why /
+ *  how_to_apply and tags are the same untrusted class as content — the
+ *  apply fold turns line-leading markers inline there too — but they
+ *  never carry the provenance label (the row's content line owns it).
+ *  Same strip + defang, no minting. */
+export function formatAuxText(text: string): string {
+  return neutralizeMemoryText(text)
+    .replace(LINE_LEADING_MARKERS, '$1')
+    .replace(INLINE_BRAND_MARKERS, '[\u00B7$1$2')
+    .trim();
+}
+
 /** Shared defense for every automatic context-injection surface. */
 export function isMemoryEligibleForInjection(
   memory: Pick<Memory, 'kind' | 'content' | 'invalidated' | 'superseded_by'>,

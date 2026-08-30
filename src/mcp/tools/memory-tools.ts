@@ -1,5 +1,5 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { formatMemoryContent } from '../../utils/memory-injection.js';
+import { formatMemoryContent , formatAuxText } from '../../utils/memory-injection.js';
 import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import * as z from 'zod/v4';
 import type { MemoryRepository } from '../../db/memory-repository.js';
@@ -203,7 +203,7 @@ export function registerMemoryTools(
       const lines = results.map(({ memory: m, score }) => {
         const scope = m.project ? `[${m.project}]` : '[global]';
         const tags = m.tags.length > 0 ? ` (${m.tags.join(', ')})` : '';
-        const why = m.context?.why ? ` (Why: ${m.context.why})` : '';
+        const why = m.context?.why ? ` (Why: ${formatAuxText(m.context.why)})` : '';
 
         if (mode === 'minimal') {
           return `• ${formatMemoryContent(m)}${why}`;
@@ -526,11 +526,11 @@ export function registerMemoryTools(
           continue;
         }
 
-        const tags = memory.tags.length > 0 ? ` [${memory.tags.join(', ')}]` : '';
+        const tags = memory.tags.length > 0 ? ` [${memory.tags.map(formatAuxText).join(', ')}]` : '';
         const scope = memory.project ? `project=${memory.project}` : 'global';
         lines.push(`[${memory.kind}:${memory.id.slice(0, 8)}] ${formatMemoryContent(memory)}`);
-        if (memory.context?.why) lines.push(`  why: ${memory.context.why}`);
-        if (memory.context?.how_to_apply) lines.push(`  how: ${memory.context.how_to_apply}`);
+        if (memory.context?.why) lines.push(`  why: ${formatAuxText(memory.context.why)}`);
+        if (memory.context?.how_to_apply) lines.push(`  how: ${formatAuxText(memory.context.how_to_apply)}`);
         lines.push(`  conf=${memory.confidence.toFixed(2)} surface=${memory.surface_count} impact=${memory.impact_count} ${scope}${tags}`);
       }
 

@@ -108,6 +108,16 @@ export function parseBlocks(text: string): ParsedBlock[] {
       continue;
     }
 
+    // Read-only provenance metadata (Codex m1s7 delta): renderBlock
+    // emits `  team: <author> via <client>` on team rows; the parser
+    // recognizes and DROPS it — provenance is server-stamped, never
+    // written back through the VFS.
+    if (/^  team: \S/.test(line)) {
+      if (current === null) throw malformed('continuation line before any block start');
+      current.raw.push(line);
+      continue;
+    }
+
     const cont = CONTINUATION.exec(line);
     if (cont) {
       if (current === null) throw malformed('continuation line before any block start');

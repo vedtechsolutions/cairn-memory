@@ -207,6 +207,16 @@ export function renderBlock(record: Memory, prefix: string): string[] {
   if (why) lines.push(`  why: ${JSON.stringify(why)}`);
   if (how) lines.push(`  how: ${JSON.stringify(how)}`);
   if (record.tags.length > 0) lines.push(`  tags: ${JSON.stringify(record.tags)}`);
+  // Out-of-band provenance (Codex m1s7 delta overturning its own
+  // exemption): the VFS is a model-visible inspection surface. CAS
+  // protects the CONTENT bytes (still raw JSON above); this metadata
+  // line is read-only — the parser recognizes and drops it on
+  // write-back, and it appears only on team rows so local-row goldens
+  // are unchanged.
+  if (record.author) {
+    const client = record.origin_client ? ` via ${record.origin_client}` : '';
+    lines.push(`  team: ${record.author}${client}`);
+  }
   return lines;
 }
 
