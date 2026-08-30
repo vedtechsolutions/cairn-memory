@@ -1,0 +1,198 @@
+import { createHash } from 'node:crypto';
+import { mkdirSync, readdirSync, readFileSync, writeFileSync, unlinkSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
+
+import type Database from 'better-sqlite3';
+import { SHAREABLE_KINDS } from 'waykeep-contract';
+
+import { LIMITS } from '../constants/index.js';
+import { MemoryRepository } from '../db/memory-repository.js';
+import { isPrivateProject } from '../config/cairn-config.js';
+import { scrubSecrets, sanitize } from '../utils/index.js';
+import { neutralizeMemoryText } from '../utils/validation.js';
+import { learnSections, type LearnSection } from '../importers/learn-pipeline.js';
+
+/**
+ * Free manual repo-pack (brief D8 item 8 / D12): a deterministic
+ * one-record-per-file codec plus EXPLICIT `waykeep pack export/import`
+ * to a user-chosen, normally-gitignored directory.
+ *
+ * The pack is OBSERVATIONS, not authority: records carry only the
+ * observation fields (kind, content, tags, why, how) — no ids, no
+ * confidence, no timestamps — and import rides the learn pipeline with
+ * `reinforceExact: false`, so re-imports are true no-ops, imported
+ * content is untrusted (neutralize + scrub + caps), and a pack can
+ * NEVER edit or delete an existing row (D12: no edit/delete claims —
+ * deleting a file deletes nothing; renaming a file changes nothing,
+ * because identity is the CONTENT ADDRESS, not the name).
+ *
+ * Determinism: the filename is the content address (sha256 over the
+ * canonical serialized bytes) and the bytes are a canonical fixed-order
+ * serialization of already-scrubbed fields, so export → import into a
+ * fresh store → export reproduces a byte-identical file set.
+ *
+ * Git: NO pack operation ever invokes git — not commit, not push, not
+ * status. The location being gitignored is the USER'S arrangement; the
+ * pack only prints a reminder. (R16b's no-git assertion tests this
+ * module's imports.)
+ */
+
+export const PACK_EXT = '.waykeep.md';
+const PACK_HEADER = '# waykeep pack record v1';
+
+export interface PackRecord {
+  kind: string;
+  content: string;
+  tags: string[];
+  why?: string;
+  how?: string;
+}
+
+const clean = (text: string): string =>
+  scrubSecrets(sanitize(neutralizeMemoryText(text))).text.slice(0, LIMITS.MAX_CONTENT_CHARS);
+
+/** Canonical serialized bytes — fixed field order, one-line JSON values,
+ *  trailing newline. The determinism contract lives here. */
+export function serializePackRecord(r: PackRecord): string {
+  const lines = [PACK_HEADER, `kind: ${JSON.stringify(r.kind)}`, `content: ${JSON.stringify(r.content)}`];
+  if (r.tags.length > 0) lines.push(`tags: ${JSON.stringify(r.tags)}`);
+  if (r.why) lines.push(`why: ${JSON.stringify(r.why)}`);
+  if (r.how) lines.push(`how: ${JSON.stringify(r.how)}`);
+  return lines.join('\n') + '\n';
+}
+
+export function contentAddress(serialized: string): string {
+  return createHash('sha256').update(serialized, 'utf8').digest('hex').slice(0, 24);
+}
+
+/** Untrusted parse: strict shape, bounded fields, unknown keys refused.
+ *  Every failure names the problem — a malformed pack file is skipped
+ *  loudly, never half-imported. */
+export function parsePackRecord(text: string): PackRecord {
+  const lines = text.split('\n').filter((l) => l.length > 0);
+  if (lines[0] !== PACK_HEADER) throw new Error('missing pack record header');
+  const fields = new Map<string, unknown>();
+  for (const line of lines.slice(1)) {
+    const m = /^(kind|content|tags|why|how): (.+)$/.exec(line);
+    if (!m) throw new Error(`unrecognized line: ${line.slice(0, 60)}`);
+    if (fields.has(m[1])) throw new Error(`duplicate field ${m[1]}`);
+    let value: unknown;
+    try {
+      value = JSON.parse(m[2]);
+    } catch {
+      throw new Error(`${m[1]} is not one-line JSON`);
+    }
+    fields.set(m[1], value);
+  }
+  const kind = fields.get('kind');
+  if (typeof kind !== 'string' || !(SHAREABLE_KINDS as readonly string[]).includes(kind)) {
+    throw new Error(`kind must be one of ${SHAREABLE_KINDS.join('/')}`);
+  }
+  const content = fields.get('content');
+  if (typeof content !== 'string' || content.length === 0 || content.length > LIMITS.MAX_CONTENT_CHARS) {
+    throw new Error('content must be a non-empty bounded string');
+  }
+  const tags = fields.get('tags') ?? [];
+  if (!Array.isArray(tags) || tags.length > LIMITS.MAX_TAGS || !tags.every((t) => typeof t === 'string' && t.length <= LIMITS.MAX_TAG_CHARS)) {
+    throw new Error('tags must be a bounded array of bounded strings');
+  }
+  const why = fields.get('why');
+  const how = fields.get('how');
+  if (why !== undefined && typeof why !== 'string') throw new Error('why must be a string');
+  if (how !== undefined && typeof how !== 'string') throw new Error('how must be a string');
+  return { kind, content, tags: tags as string[], why: why as string | undefined, how: how as string | undefined };
+}
+
+export interface PackExportResult {
+  written: number;
+  unchanged: number;
+  pruned: number;
+  /** Rows whose stored bytes changed under the export re-scrub — loud:
+   *  a redaction happening NOW means a secret was resting in the DB. */
+  redactions: Array<{ file: string; excerpt: string }>;
+}
+
+export function packExport(db: Database.Database, dir: string, project: string | null | 'all-shared'): PackExportResult {
+  mkdirSync(dir, { recursive: true });
+  const where = project === 'all-shared'
+    ? "project IS NOT NULL AND invalidated = 0 AND superseded_by IS NULL"
+    : project === null
+      ? 'project IS NULL AND invalidated = 0 AND superseded_by IS NULL'
+      : 'project = ? AND invalidated = 0 AND superseded_by IS NULL';
+  const kindPlaceholders = SHAREABLE_KINDS.map(() => '?').join(',');
+  const sql = `SELECT content, kind, project, tags, context FROM memories WHERE ${where} AND kind IN (${kindPlaceholders}) ORDER BY id`;
+  const args = project === 'all-shared' || project === null ? [...SHAREABLE_KINDS] : [project, ...SHAREABLE_KINDS];
+  const rows = db.prepare(sql).all(...args) as Array<{ content: string; kind: string; project: string | null; tags: string | null; context: string | null }>;
+
+  const result: PackExportResult = { written: 0, unchanged: 0, pruned: 0, redactions: [] };
+  const current = new Set<string>();
+  for (const row of rows) {
+    // Private projects never leave through the bulk form; an explicitly
+    // named private project is the user's deliberate choice.
+    if (project === 'all-shared' && row.project !== null && isPrivateProject(row.project)) continue;
+    const scrubbed = clean(row.content);
+    const ctx = row.context ? (JSON.parse(row.context) as { why?: string; how_to_apply?: string }) : {};
+    const rec: PackRecord = {
+      kind: row.kind,
+      content: scrubbed,
+      tags: row.tags ? (JSON.parse(row.tags) as string[]).map((t) => clean(t).slice(0, LIMITS.MAX_TAG_CHARS)) : [],
+      why: ctx.why ? clean(ctx.why) : undefined,
+      how: ctx.how_to_apply ? clean(ctx.how_to_apply) : undefined,
+    };
+    const serialized = serializePackRecord(rec);
+    const file = `${contentAddress(serialized)}${PACK_EXT}`;
+    if (scrubbed !== row.content) {
+      result.redactions.push({ file, excerpt: scrubbed.slice(0, 60) });
+    }
+    current.add(file);
+    const path = join(dir, file);
+    if (existsSync(path) && readFileSync(path, 'utf-8') === serialized) {
+      result.unchanged++;
+    } else {
+      writeFileSync(path, serialized);
+      result.written++;
+    }
+  }
+  // Prune only files of OUR extension that no longer correspond to a row.
+  for (const entry of readdirSync(dir)) {
+    if (entry.endsWith(PACK_EXT) && !current.has(entry)) {
+      unlinkSync(join(dir, entry));
+      result.pruned++;
+    }
+  }
+  return result;
+}
+
+export interface PackImportResult {
+  ingested: number;
+  exactDuplicates: number;
+  merged: number;
+  errors: string[];
+}
+
+export function packImport(db: Database.Database, dir: string, project: string | null): PackImportResult {
+  const repo = new MemoryRepository(db);
+  const sections: LearnSection[] = [];
+  const errors: string[] = [];
+  for (const entry of readdirSync(dir).sort()) {
+    if (!entry.endsWith(PACK_EXT)) continue;
+    try {
+      const rec = parsePackRecord(readFileSync(join(dir, entry), 'utf-8'));
+      sections.push({
+        kind: rec.kind as LearnSection['kind'],
+        content: rec.content,
+        tags: rec.tags,
+        context: rec.why || rec.how ? { why: rec.why, how_to_apply: rec.how } : undefined,
+      });
+    } catch (err) {
+      errors.push(`${entry}: ${(err as Error).message}`);
+    }
+  }
+  const learned = learnSections(repo, sections, project, { reinforceExact: false });
+  return {
+    ingested: learned.ingested,
+    exactDuplicates: learned.exactDuplicates,
+    merged: learned.merged.length,
+    errors: [...errors, ...learned.errors],
+  };
+}

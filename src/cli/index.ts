@@ -14,6 +14,7 @@ Usage:
   waykeep [serve]          Start the MCP server over stdio (default)
   waykeep report           Tokens-saved report (--days=N, default 30)
   waykeep import           Migrate memories in (--from codex-memories|memory-md|claude-mem)
+  waykeep pack             Manual repo-pack (export|import --dir P [--project ID | --global])
   waykeep migrate-project  Move rows from an old project id to the current one
                            (after a git remote rename; --dry-run to preview)
   waykeep init             Write the client config (--dry-run to preview,
@@ -51,6 +52,21 @@ switch (command) {
       console.error(`waykeep report: failed — ${(err as Error).message}`);
       process.exit(1);
     }
+    break;
+  }
+  case 'pack': {
+    void (async () => {
+      const { runPack } = await import('./pack.js');
+      const packArgs = process.argv.slice(3);
+      const dirIdx = packArgs.indexOf('--dir');
+      const projIdx = packArgs.indexOf('--project');
+      process.exitCode = runPack({
+        command: packArgs[0] ?? '',
+        dir: dirIdx >= 0 ? packArgs[dirIdx + 1] : undefined,
+        project: projIdx >= 0 ? packArgs[projIdx + 1] : undefined,
+        global: packArgs.includes('--global'),
+      });
+    })();
     break;
   }
   case 'import': {

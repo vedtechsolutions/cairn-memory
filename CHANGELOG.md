@@ -19,6 +19,8 @@
 
 - Added the provenance read model and THE single team-content formatter: `Memory` exposes the server-stamped `author` (non-null ⟺ the row arrived through sync), `origin_client`, and `share_state`; every automatic render surface (briefing tiers, prompt recall, pitfall warnings, subagent context) routes content through one formatter that labels team content `[waykeep-team: <account> via <client>]` and strips every content-supplied fake label at render — the label lives inside the ingest neutralizer's protected class, so only the formatter can mint it.
 
+- Added the free manual repo-pack (`waykeep pack export|import --dir P`): a deterministic one-record-per-file codec (content-addressed filenames, byte-identical round-trips) exporting shareable observations to a user-chosen, normally-gitignored directory. Imports ride the learn pipeline as untrusted observations — no edit or delete claims, re-imports are true no-ops, secrets and forged markers are scrubbed, and no pack code path can invoke git (the modules import no process-spawning API). Bulk export excludes private projects; export re-scrubs on write and reports loudly when a redaction fires.
+
 ### Fixed
 
 - Fixed automatic injection precision (from a live cross-agent evaluation): pitfalls marked RESOLVED and superseded memories are excluded from every automatic context surface; conversational/tasking prompts ("ask/review/evaluate…") can no longer be captured as decisions; proactive warnings are capped at one bounded warning (96 tokens) per correlated turn.
