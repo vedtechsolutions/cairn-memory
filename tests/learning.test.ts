@@ -219,6 +219,7 @@ describe('Relevance Scoring', () => {
     return {
       id: 'test-id',
       revision: 1,
+      author: null,
       content: 'Use list not tree in Odoo views',
       kind: 'pitfall',
       project: 'test-proj',

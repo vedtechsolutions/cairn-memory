@@ -30,8 +30,8 @@ export function getHealthMetrics(db: Database.Database): {
   decayCandidates: number;
   neverRecalled: number;
   avgConfidence: number;
-  oldestMemory: { id: string; content: string; created_at: string; project: string | null } | null;
-  mostRecalled: { id: string; content: string; recall_count: number; project: string | null } | null;
+  oldestMemory: { id: string; content: string; created_at: string; project: string | null; author: string | null } | null;
+  mostRecalled: { id: string; content: string; recall_count: number; project: string | null; author: string | null } | null;
 } {
   const dist = db.prepare(`
     SELECT
@@ -58,14 +58,14 @@ export function getHealthMetrics(db: Database.Database): {
   ).get() as { avg: number | null };
 
   const oldest = db.prepare(`
-    SELECT id, content, created_at, project FROM memories
+    SELECT id, content, created_at, project, author FROM memories
     WHERE invalidated = 0 AND kind != 'rule' ORDER BY created_at ASC LIMIT 1
-  `).get() as { id: string; content: string; created_at: string; project: string | null } | undefined;
+  `).get() as { id: string; content: string; created_at: string; project: string | null; author: string | null } | undefined;
 
   const mostRecalledRow = db.prepare(`
-    SELECT id, content, recall_count, project FROM memories
+    SELECT id, content, recall_count, project, author FROM memories
     WHERE invalidated = 0 AND kind != 'rule' ORDER BY recall_count DESC LIMIT 1
-  `).get() as { id: string; content: string; recall_count: number; project: string | null } | undefined;
+  `).get() as { id: string; content: string; recall_count: number; project: string | null; author: string | null } | undefined;
 
   return {
     confidenceDistribution: { high: dist.high ?? 0, medium: dist.medium ?? 0, low: dist.low ?? 0 },

@@ -548,6 +548,7 @@ function runSessionConsolidation(
       fingerprint: row.fingerprint ? JSON.parse(row.fingerprint) : null,
       context: row.context ? JSON.parse(row.context) : null,
       anchor: row.anchor ?? null,
+      author: (row as { author?: string | null }).author ?? null,
       revision: row.revision,
     }));
 

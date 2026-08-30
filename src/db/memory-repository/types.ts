@@ -33,9 +33,12 @@ export interface Memory {
   revision: number;
   /** Provenance read model (v32/D7): `author` is the server-stamped
    *  opaque account id — non-null ⟺ the row arrived through sync-apply
-   *  (TEAM content); locally-created rows are always null. Optional for
-   *  older adapters that construct Memory. */
-  author?: string | null;
+   *  (TEAM content); locally-created rows are always null. REQUIRED
+   *  (exit-gate ruling): an optional author let a reshaped call site
+   *  drop provenance silently — formatMemoryContent({content}) type-
+   *  checked and rendered team content unlabeled. Required closes the
+   *  class at compile time. */
+  author: string | null;
   origin_client?: string;
   share_state?: string | null;
 }

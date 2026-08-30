@@ -32,7 +32,7 @@ function synthMemory(over: Partial<Memory> = {}): Memory {
     id: over.id ?? 'x', content: over.content ?? '', kind: over.kind ?? 'fact',
     project: over.project ?? null, tags: [], confidence: over.confidence ?? 0.6,
     source: over.source ?? 'learned', created_at: over.created_at ?? new Date().toISOString(),
-    last_recalled: null, recall_count: 0, invalidated: 0, surface_count: 0, impact_count: 0, revision: 1,
+    last_recalled: null, recall_count: 0, invalidated: 0, surface_count: 0, impact_count: 0, revision: 1, author: null,
     fingerprint: null, context: null, anchor: null,
   };
 }

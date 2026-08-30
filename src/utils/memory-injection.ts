@@ -53,7 +53,11 @@ const INLINE_BRAND_MARKERS = /\[(\s*)(cairn|waykeep)\b/gi;
 const escapeIdentity = (v: string): string => v.replace(/[^A-Za-z0-9._@-]/g, '_').slice(0, 128);
 
 export function formatMemoryContent(
-  memory: Pick<Memory, 'content'> & { author?: string | null; origin_client?: string },
+  // `author` is REQUIRED (exit-gate ruling): the optional form let
+  // `formatMemoryContent({ content })` typecheck while silently
+  // rendering team content unlabeled — the exact D7 failure, with every
+  // guard green. A caller must now decide the provenance question.
+  memory: Pick<Memory, 'content' | 'author'> & { origin_client?: string },
 ): string {
   // Render-side defense-in-depth: the ingest neutralizer is
   // START-anchored, so a payload can smuggle a line-leading fake label
@@ -64,7 +68,7 @@ export function formatMemoryContent(
     .replace(LINE_LEADING_MARKERS, '$1')
     .replace(INLINE_BRAND_MARKERS, '[\u00B7$1$2')
     .trim();
-  if (memory.author === null || memory.author === undefined) {
+  if (memory.author === null) {
     // OFFSET-0 is a real signal, not an aspiration (review N1): a local
     // row never opens with a bracket — ANY leading bracket defangs, so
     // a homoglyph label (Cyrillic а, future confusables, spellings

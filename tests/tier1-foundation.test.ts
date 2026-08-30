@@ -357,6 +357,7 @@ describe('Memory Consolidation', () => {
     return {
       id: `test-${Math.random().toString(36).slice(2)}`,
       revision: 1,
+      author: null,
       content,
       kind: 'pitfall',
       project: 'test',
@@ -463,6 +464,7 @@ describe('Embedding-Enhanced Consolidation', () => {
     return {
       id: `emb-${Math.random().toString(36).slice(2)}`,
       revision: 1,
+      author: null,
       content,
       kind: 'pitfall',
       project: 'test',

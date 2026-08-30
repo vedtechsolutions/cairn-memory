@@ -298,6 +298,7 @@ function makeMemory(overrides: Partial<Memory>): Memory {
   return {
     id: 'test-id',
     revision: 1,
+    author: null,
     content: 'test pitfall content',
     kind: 'pitfall',
     project: 'test-project',

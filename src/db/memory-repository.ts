@@ -334,8 +334,8 @@ export class MemoryRepository {
     decayCandidates: number;
     neverRecalled: number;
     avgConfidence: number;
-    oldestMemory: { id: string; content: string; created_at: string; project: string | null } | null;
-    mostRecalled: { id: string; content: string; recall_count: number; project: string | null } | null;
+    oldestMemory: { id: string; content: string; created_at: string; project: string | null; author: string | null } | null;
+    mostRecalled: { id: string; content: string; recall_count: number; project: string | null; author: string | null } | null;
   } {
     return stats.getHealthMetrics(this.db);
   }
