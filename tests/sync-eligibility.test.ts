@@ -17,9 +17,19 @@ import { applyEventBatch, hashCanonical } from '../src/db/sync-apply/index.js';
 
 const PROJECT = 'elig-proj';
 
+const snap = (opts?: { healthy?: boolean; privateProjects?: string[] }) => ({
+  config: { scope: { privateProjects: new Set(opts?.privateProjects ?? []) }, report: { rollup: true } },
+  health: {
+    healthy: opts?.healthy ?? true,
+    problem: (opts?.healthy ?? true) ? null : 'test-injected',
+    badSections: [] as string[],
+    path: '/test/config.json',
+  },
+});
+
 const baseCtx = (over?: Partial<EligibilityContext>): EligibilityContext => ({
-  project: PROJECT, enrolled: true, consentSealed: true, configHealthy: true,
-  privateProjects: new Set<string>(), ...over,
+  project: PROJECT, enrolled: true, consentSealed: true,
+  config: snap(), ...over,
 });
 
 const row = (over?: Partial<{ kind: string; project: string | null; share_state: string | null }>) =>
@@ -32,8 +42,8 @@ describe('sync eligibility (D10 fail-closed predicate)', () => {
   });
 
   it('every checkpoint fails closed with its named reason', () => {
-    assert.equal(syncEligibility(row(), baseCtx({ configHealthy: false })).reason, 'config-unhealthy');
-    assert.equal(syncEligibility(row(), baseCtx({ privateProjects: new Set([PROJECT]) })).reason, 'project-private');
+    assert.equal(syncEligibility(row(), baseCtx({ config: snap({ healthy: false }) })).reason, 'config-unhealthy');
+    assert.equal(syncEligibility(row(), baseCtx({ config: snap({ privateProjects: [PROJECT] }) })).reason, 'project-private');
     assert.equal(syncEligibility(row(), baseCtx({ enrolled: false })).reason, 'not-enrolled');
     assert.equal(syncEligibility(row(), baseCtx({ consentSealed: false })).reason, 'consent-not-sealed');
     assert.equal(syncEligibility(row({ project: null }), baseCtx()).reason, 'project-mismatch');
@@ -74,6 +84,30 @@ describe('sync eligibility (D10 fail-closed predicate)', () => {
     assert.equal(transmitEligibility(row(), baseCtx(), { ...ok, anchorRelativized: false }).reason, 'anchor-not-relativized');
     // The enqueue-half's refusals pass through unchanged.
     assert.equal(transmitEligibility(row({ share_state: 'local' }), baseCtx(), ok).reason, 'opted-out');
+  });
+
+  it('N2: a non-array policy mirror is policy-invalid, never an uncaught throw', () => {
+    for (const bad of ['fact', 42, { kinds: [] }, null]) {
+      const ctx = baseCtx({ ownerAllowedKinds: bad as unknown as string[] });
+      assert.equal(syncEligibility(row(), ctx).reason, 'policy-invalid', `${JSON.stringify(bad)} must fail closed, not crash`);
+    }
+  });
+
+  it('N3: unknown anchor shapes and every machine-local path class fail closed', () => {
+    const cases: Array<[string, string]> = [
+      [JSON.stringify({ files: '/abs/x.ts' }), 'non-array files is unknown'],
+      [JSON.stringify({ other: 1 }), 'missing files is unknown'],
+      [JSON.stringify([1]), 'array document is unknown'],
+      [JSON.stringify({ files: [42] }), 'non-string entry is unknown'],
+      [JSON.stringify({ files: ['\\\\host\\share\\x.ts'] }), 'UNC is machine-local'],
+      [JSON.stringify({ files: ['~/secret.ts'] }), 'home-relative is machine-local'],
+      [JSON.stringify({ files: ['../../../etc/passwd'] }), 'parent-escape leaves the root'],
+      [JSON.stringify({ files: ['src/../../x.ts'] }), 'embedded parent-escape too'],
+    ];
+    for (const [anchor, why] of cases) {
+      assert.equal(syncEligibility({ ...row(), anchor }, baseCtx()).reason, 'anchor-unresolvable', why);
+    }
+    assert.equal(syncEligibility({ ...row(), anchor: JSON.stringify({ files: ['src/ok.ts', 'deep/dir/ok.ts'] }) }, baseCtx()).eligible, true);
   });
 
   it('owner policy narrows but can never widen the frozen allowlist', () => {
