@@ -101,6 +101,38 @@ describe('M1-exit: the render-wiring guard (AST)', () => {
   // every production use is INSIDE a formatMemoryContent argument, and
   // a bare truncate-to-sink shows up as the OUTER call being unsafe.
 
+  // LINE-LEVEL exemptions (narrower than EXEMPT_FILES): the exact source
+  // text of a flagged statement, per file, each with a justification. If
+  // the line changes AT ALL the exemption stops matching and the flag
+  // returns — a reviewable, self-expiring allowlist.
+  const SAFE_SITES: Array<{ file: string; snippet: string; why: string }> = [
+    {
+      file: 'src/mcp/tools/governance-tools.ts',
+      snippet: 'const content = elicited.content as Record<string, unknown> | undefined;',
+      why: 'MCP ELICITATION response envelope (confirm/reason dialog), not a stored memory row — same class as decision-reflector\'s sampling envelope.',
+    },
+    {
+      file: 'src/hooks/handlers/error-learning-handler.ts',
+      snippet: 'const contentLower = mem.content.toLowerCase();',
+      why: 'Word-overlap SCORING between a pitfall and an error message — comparison consumer; nothing from this alias is rendered.',
+    },
+    {
+      file: 'src/hooks/shared/briefing/memory-tier-renderers.ts',
+      snippet: 'const prefix = d.content.toLowerCase().replace(/\\s+/g, \' \').slice(0, LIMITS.DECISION_DEDUP_PREFIX);',
+      why: 'Dedup KEY (normalized prefix) used only in a Set membership test; the rendered line on the adjacent path goes through formatMemoryContent.',
+    },
+    {
+      file: 'src/hooks/session-end.ts',
+      snippet: 'content: row.content,',
+      why: 'Consolidation-candidate assembly (row → Memory shape) consumed by scoring + repository writes (scrub-on-write); not a render path.',
+    },
+    {
+      file: 'src/pack/pack.ts',
+      snippet: 'content: rec.content,',
+      why: 'Pack READ assembling PortableRecord data for the learn pipeline, which scrubs+neutralizes on import (canonicalize-once); not a render path.',
+    },
+  ];
+
   function calleeName(node: import('typescript').CallExpression, tsm: typeof import('typescript')): string {
     const e = node.expression;
     if (tsm.isIdentifier(e)) return e.text;
@@ -108,10 +140,17 @@ describe('M1-exit: the render-wiring guard (AST)', () => {
     return '';
   }
 
-  async function astScan(source: string, label: string): Promise<string[]> {
+  async function astScan(source: string, label: string, safeSites: readonly { file: string; snippet: string }[] = []): Promise<string[]> {
     const tsm = (await import('typescript')).default;
     const sf = tsm.createSourceFile(label, source, tsm.ScriptTarget.Latest, true);
+    const siteSnippets = safeSites.filter((x) => x.file === label).map((x) => x.snippet);
     const offenders: string[] = [];
+    const atSafeSite = (n: import('typescript').Node): boolean => {
+      let st: import('typescript').Node = n;
+      while (st.parent && !tsm.isSourceFile(st.parent)) st = st.parent;
+      const text = st.getText();
+      return siteSnippets.some((snip) => text.includes(snip));
+    };
     const visit = (node: import('typescript').Node): void => {
       // Destructured content alias: const { content } = memoryish.
       // PARAMETER destructuring (async ({ content }) => …, the MCP tool
@@ -119,10 +158,13 @@ describe('M1-exit: the render-wiring guard (AST)', () => {
       // only variable-declaration destructuring aliases a row field.
       if (tsm.isObjectBindingPattern(node)
         && tsm.isVariableDeclaration(node.parent)
-        && node.elements.some((el) => tsm.isIdentifier(el.name) && el.name.text === 'content' && !el.propertyName)) {
+        && node.elements.some((el) => tsm.isIdentifier(el.name) && el.name.text === 'content' && !el.propertyName)
+        && !atSafeSite(node)) {
         offenders.push(`${label}: destructured content alias`);
       }
-      if (tsm.isPropertyAccessExpression(node) && node.name.text === 'content') {
+      const isContentAccess = (tsm.isPropertyAccessExpression(node) && node.name.text === 'content')
+        || (tsm.isElementAccessExpression(node) && tsm.isStringLiteral(node.argumentExpression) && node.argumentExpression.text === 'content');
+      if (isContentAccess) {
         // Walk ancestors: safe if any enclosing call is sanctioned; a
         // comparison/typeof/length context is safe; otherwise, reaching
         // a call/template/binary+/assignment/return sink is a finding.
@@ -165,35 +207,58 @@ describe('M1-exit: the render-wiring guard (AST)', () => {
             && [tsm.SyntaxKind.EqualsEqualsEqualsToken, tsm.SyntaxKind.ExclamationEqualsEqualsToken].includes(parent.operatorToken.kind)) {
             verdictSafe = true; break;
           }
+          // Assignment into an existing binding (`t = m.content`,
+          // `s += m.content`) is the alias/concat problem in mutable
+          // form — a sink, same as the declaration alias.
+          if (tsm.isBinaryExpression(parent)
+            && [tsm.SyntaxKind.EqualsToken, tsm.SyntaxKind.PlusEqualsToken].includes(parent.operatorToken.kind)
+            && parent.right === cur) {
+            sink = 'assignment'; break;
+          }
           if (tsm.isTemplateSpan(parent) || (tsm.isBinaryExpression(parent) && parent.operatorToken.kind === tsm.SyntaxKind.PlusToken)) {
             sink = 'template/concat'; break;
           }
-          // Object-literal property assignment ({ content: m.content },
-          // { text: … }) is DATA PLUMBING: the reconstructed object must
-          // still pass a formatter at its render site, where the
-          // required-author signature and this scan enforce the call.
-          if (tsm.isPropertyAssignment(parent)) { verdictSafe = true; break; }
-          // Function boundary: a value used INSIDE a callback does not
-          // flow into the outer call unless it is the arrow's expression
-          // body or a return value — without this, every usage deep in a
-          // tool callback bubbles up to registerTool(...) and flags.
+          // Object-literal property assignment is TRANSPARENT, not safe
+          // (Codex 7152d46 #1: `{ content: [{ text: m.content }] }` IS
+          // the MCP output sink): the object flows onward — keep
+          // walking to wherever the object itself goes.
+          if (tsm.isPropertyAssignment(parent)) { cur = parent; parent = cur.parent; continue; }
+          // A RETURNED value escapes its function (Codex 7152d46 #1:
+          // `async () => { return m.content; }` flowed to registerTool
+          // unseen): jump to the enclosing function-like node and keep
+          // walking from ITS consumer.
+          if (tsm.isReturnStatement(parent)) {
+            let fn: import('typescript').Node | undefined = parent.parent;
+            while (fn && !tsm.isFunctionLike(fn)) fn = fn.parent;
+            if (!fn) { verdictSafe = true; break; } // top-level return: no consumer
+            // A NAMED function returning raw content escapes to every
+            // call site — interprocedural flow this walk cannot follow,
+            // so it fails closed (a raw-content-returning helper is
+            // exactly how a future render site inherits unwired text).
+            if ((tsm.isFunctionDeclaration(fn) || tsm.isMethodDeclaration(fn)) && fn.name) {
+              sink = `returned raw from ${fn.name.getText()}()`; break;
+            }
+            cur = fn; parent = fn.parent; continue;
+          }
+          // Function boundary WITHOUT a return/expression-body escape:
+          // the value is consumed (or discarded) inside; interior sinks
+          // were already judged on the way up.
           if (tsm.isFunctionLike(parent)) {
             if (tsm.isArrowFunction(parent) && parent.body === cur && !tsm.isBlock(parent.body)) { cur = parent; parent = cur.parent; continue; }
             verdictSafe = true; break;
           }
-          if (tsm.isReturnStatement(parent)) { cur = parent; parent = cur.parent; continue; }
-          // Raw alias: ONLY the untransformed `const c = m.content` —
-          // a transformed chain (toLowerCase/slice dedup keys) is data.
-          // Accepted limitation (documented): variable dataflow is not
-          // tracked past the transform; the untransformed alias — the
-          // gate's plant — is caught at the declaration.
-          if (tsm.isVariableDeclaration(parent) && parent.initializer === node) {
-            sink = 'raw alias'; break;
+          // ANY alias declaration is a finding — transformed chains too
+          // (Codex 7152d46 #1: `const t = m.content.slice(); sink(t)`).
+          // Variable dataflow is not tracked, so the declaration itself
+          // fails closed; legitimate data-only sites carry a SAFE_SITES
+          // entry with a per-line justification instead.
+          if (tsm.isVariableDeclaration(parent) && parent.initializer === cur) {
+            sink = 'alias declaration'; break;
           }
           if (tsm.isVariableDeclaration(parent)) { verdictSafe = true; break; }
           cur = parent; parent = cur.parent;
         }
-        if (sink && !verdictSafe) offenders.push(`${label}: .content → ${sink}`);
+        if (sink && !verdictSafe && !atSafeSite(node)) offenders.push(`${label}: .content → ${sink}`);
       }
       tsm.forEachChild(node, visit);
     };
@@ -228,6 +293,15 @@ describe('M1-exit: the render-wiring guard (AST)', () => {
       ['mixed-args', 'warnings.push(formatMemoryContent(a), b.content)'],
       ['destructured', 'const { content } = memory; warnings.push(content)'],
       ['arbitrary-sink', 'emitToModel(memory.content)'],
+      // Codex 7152d46 #1 — the three demonstrated bypasses:
+      ['alias-transform', 'const text = memory.content.slice(); emitToModel(text)'],
+      ['callback-return', 'registerTool("x", async () => { return memory.content; })'],
+      ['mcp-output-object', 'registerTool("x", async () => { return { content: [{ type: "text", text: memory.content }] }; })'],
+      // Self-found classes (closing them before the gate does):
+      ['element-access', 'emitToModel(memory["content"])'],
+      ['assignment', 'let t = ""; t = memory.content; emitToModel(t)'],
+      ['append-assignment', 'out += memory.content'],
+      ['named-fn-raw-return', 'function getRaw(m) { return m.content; }'],
     ];
     for (const [name, snippet] of plants) {
       assert.ok((await astScan(snippet, name)).length > 0, `${name} must be caught`);
@@ -251,7 +325,7 @@ describe('M1-exit: the render-wiring guard (AST)', () => {
       if (EXEMPT_FILES.has(file)) continue;
       const source = readFileSync(join(process.cwd(), file), 'utf-8');
       if (!source.includes('.content')) continue;
-      offenders.push(...await astScan(source, file));
+      offenders.push(...await astScan(source, file, SAFE_SITES));
     }
     assert.deepEqual(offenders, [], `raw content reaching sinks:\n${offenders.join('\n')}`);
   });
