@@ -67,6 +67,7 @@ export function cachedRecallByFingerprint(
   const fpKey = SessionCache.fingerprintKey(queryFp);
   const ftsKey = `${options.kind}|${options.project ?? ''}|${fpKey}|${queryText.slice(0, 160)}|${options.minConfidence.toFixed(2)}|${options.maxResults}`;
 
+  client.cache?.checkDurableGeneration(client.db);
   const cachedIds = client.cache?.getFTSCandidates(ftsKey);
   if (cachedIds) {
     const out: Array<{ memory: Memory; score: number }> = [];

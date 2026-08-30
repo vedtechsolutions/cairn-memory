@@ -116,6 +116,7 @@ export function handlePromptCheck(input: UserPromptSubmitInput, client: CachedHo
     extra: intent,
   }) : null;
   if (skipGateKey && client.cache) {
+    client.cache.checkDurableGeneration(client.db);
     const cached = client.cache.getSkipGate(skipGateKey);
     if (cached && cached.output === null) {
       return { output: null, intent, injections: 0 };

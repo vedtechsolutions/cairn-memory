@@ -28,6 +28,8 @@
  *     guaranteeing a staleness bound of zero for correction→learning edges.
  *   - A 60s hard TTL is the belt-and-braces defense against any missed bump path.
  */
+import type Database from 'better-sqlite3';
+
 import type { EditTracker } from './edit-tracker.js';
 import type { ProjectContext } from '../../utils/project-scanner.js';
 import type { ContextFingerprint } from '../../utils/fingerprint.js';
@@ -92,6 +94,15 @@ export class SessionCache {
   // (tool_name, filePathHash, memoryVersion, sessionStateHash, contextMode).
   // Hit path does zero DB work; miss path falls through to the full handler.
   private skipGateCache = new Map<string, SkipGateEntry>();
+
+  // Durable memory generation last observed (D8 item 7 / X16): -1 =
+  // never checked. Another PROCESS applying remote sync mutations bumps
+  // the durable generation; this process's memoryVersion cannot see
+  // that, so every memory-derived cache read verifies the generation
+  // first and a mismatch invalidates the skip gate AND the FTS
+  // candidate cache (the brief's named gap: only the former was
+  // cleared).
+  private lastSeenGeneration = -1;
 
   // Fired after every bump — set by MCP servers that share an
   // out-of-process hook-socket owner so the invalidation crosses the
@@ -175,6 +186,34 @@ export class SessionCache {
    */
   setBumpNotifier(fn: (() => void) | null): void {
     this.bumpNotifier = fn;
+  }
+
+  /**
+   * D8 item 7: verify the durable memory generation before trusting ANY
+   * memory-derived cache. One indexed point-read per call — inside the
+   * hook latency budget by design; the M1-exit matrix measures it. Call
+   * before getSkipGate/getFTSCandidates consultations.
+   */
+  checkDurableGeneration(db: Database.Database): void {
+    let generation = 0;
+    try {
+      const row = db.prepare("SELECT v FROM sync_state WHERE ns = 'memory' AND k = 'generation'").get() as { v: string } | undefined;
+      generation = row ? Number(row.v) : 0;
+    } catch {
+      // Pre-v32 schema (no sync_state): nothing replicates, nothing to check.
+      return;
+    }
+    if (generation === this.lastSeenGeneration) return;
+    if (this.lastSeenGeneration !== -1) {
+      // A remote apply changed memory under us: both memory-derived
+      // caches are stale. memoryVersion++ (directly — never through
+      // bumpMemoryVersion, whose notifier would echo across the socket)
+      // keeps composite keys honest for entries written mid-flight.
+      this.skipGateCache.clear();
+      this.ftsCache.clear();
+      this.memoryVersion++;
+    }
+    this.lastSeenGeneration = generation;
   }
 
   /**

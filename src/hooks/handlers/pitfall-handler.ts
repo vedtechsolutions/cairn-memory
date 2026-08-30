@@ -133,6 +133,7 @@ export function handlePitfallCheck(input: PreToolUseInput, client: CachedHookCon
     sessionStateHash: sessionStateHash(tracker),
   }) : null;
   if (skipGateKey && client.cache) {
+    client.cache.checkDurableGeneration(client.db);
     const cached = client.cache.getSkipGate(skipGateKey);
     if (cached && cached.output === null) {
       return EMPTY;

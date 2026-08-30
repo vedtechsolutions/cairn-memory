@@ -176,6 +176,48 @@ export function loadCairnConfig(): CairnConfig {
   return config;
 }
 
+/**
+ * Sync-facing config health (brief D8 item 5, D10 — release blocker):
+ * LOCAL reads stay tolerant (fail-open WITH a signal, above), but sync
+ * eligibility treats an unreadable or wrong-shaped config as UNHEALTHY
+ * and fails closed — a broken privacy file must disable upload, never
+ * silently widen it. Absent file = healthy (the default config is a
+ * valid, deliberate state). Consumed by the eligibility predicate and
+ * `waykeep doctor`.
+ */
+export interface CairnConfigHealth {
+  healthy: boolean;
+  /** Human-readable problem when unhealthy; null when healthy. */
+  problem: string | null;
+  path: string;
+}
+
+export function cairnConfigHealth(): CairnConfigHealth {
+  const path = cairnConfigPath();
+  let st: ReturnType<typeof statSync>;
+  try {
+    st = statSync(path, { throwIfNoEntry: false });
+  } catch (err) {
+    return { healthy: false, problem: `config could not be stat'd (${(err as NodeJS.ErrnoException).code ?? 'stat failed'})`, path };
+  }
+  if (!st) return { healthy: true, problem: null, path };
+  let raw: string;
+  try {
+    raw = readFileSync(path, 'utf-8');
+  } catch (err) {
+    return { healthy: false, problem: `config could not be read (${(err as NodeJS.ErrnoException).code ?? 'read failed'})`, path };
+  }
+  try {
+    const parsed = parseConfig(raw);
+    if (parsed.badSections.length > 0) {
+      return { healthy: false, problem: `malformed section(s): ${parsed.badSections.join(', ')}`, path };
+    }
+    return { healthy: true, problem: null, path };
+  } catch {
+    return { healthy: false, problem: 'invalid JSON', path };
+  }
+}
+
 /** True when the project is marked private in the scope config. Null
  *  (global scope) is never private — global visibility is governed at
  *  promote time, not here. */

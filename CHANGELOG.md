@@ -15,6 +15,8 @@
 
 - Added the owner-control RPC (`/owner/apply`, `/owner/health`): a separate served-route registry on the hook socket — never part of hook wiring — applying sync-event batches on a dedicated `busy_timeout=0` connection with batch idempotency, strict pre-buffer and streaming body caps, a stable error taxonomy (VALIDATION / PROTOCOL_HALT / BUSY / TOO_LARGE with retryability), and in-process cache invalidation on commit. Free standalone use: bounded local incremental restore.
 
+- Added the fail-closed sync plumbing: a sync-facing config health surface (`cairnConfigHealth` + a `waykeep doctor` check — local reads stay tolerant, sync treats an unreadable or malformed config as disabled), the shared D10 eligibility predicate with named refusal reasons and an exact-project selector (never project-OR-global), and the durable-generation check in every memory-derived cache reader — a remote create, edit, or tombstone applied by another process now invalidates the skip gate AND the FTS candidate cache before the next read.
+
 ### Fixed
 
 - Fixed automatic injection precision (from a live cross-agent evaluation): pitfalls marked RESOLVED and superseded memories are excluded from every automatic context surface; conversational/tasking prompts ("ask/review/evaluate…") can no longer be captured as decisions; proactive warnings are capped at one bounded warning (96 tokens) per correlated turn.

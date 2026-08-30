@@ -94,6 +94,16 @@ async function checkEmbeddingModel(): Promise<CheckResult> {
   }
 }
 
+async function checkConfigHealth(): Promise<CheckResult> {
+  // Sync-facing health (D10, release blocker): local reads stay
+  // tolerant, but a broken config DISABLES sync fail-closed — doctor is
+  // where the user learns why.
+  const { cairnConfigHealth } = await import('../config/cairn-config.js');
+  const h = cairnConfigHealth();
+  if (h.healthy) return { status: 'ok', detail: `config at ${h.path} is healthy (absent = defaults)` };
+  return { status: 'fail', detail: `config at ${h.path} is unhealthy — ${h.problem}. Local scope settings are INACTIVE and team sync would be DISABLED until fixed` };
+}
+
 async function checkDatabase(): Promise<CheckResult> {
   // Same resolution the server/hooks use, so doctor inspects the same file.
   const path = resolveDbPath(process.env.CAIRN_DB_PATH);
@@ -250,6 +260,7 @@ const CHECKS: Check[] = [
   { name: 'native sqlite', run: checkNativeModules },
   { name: 'hook relay', run: checkRelay },
   { name: 'embedding model', run: checkEmbeddingModel },
+  { name: 'config health', run: checkConfigHealth },
   { name: 'database', run: checkDatabase },
   { name: 'hook socket', run: checkSocket },
   { name: 'codex parity', run: checkCodexParity },
