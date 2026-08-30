@@ -217,7 +217,8 @@ describe('owner-control RPC', () => {
     const [r1, r2] = await Promise.all([applyBatch(body), applyBatch(body)]);
     assert.equal(r1.status, 200);
     assert.equal(r2.status, 200);
-    assert.equal([r1.json.replayed, r2.json.replayed].filter((x) => x === true).length >= 0, true);
+    assert.equal([r1.json.replayed, r2.json.replayed].filter((x) => x === false).length, 1,
+      'exactly one caller performed the fresh apply; the other replayed the committed result');
     assert.equal(r1.json.cursor, r2.json.cursor, 'both callers see the same committed result');
     assert.equal((db.prepare('SELECT COUNT(*) n FROM memories WHERE id = ?').get(id) as { n: number }).n, 1);
   });
