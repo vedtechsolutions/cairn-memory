@@ -173,12 +173,28 @@ describe('M1-exit: the render-wiring guard (AST)', () => {
       const line = sourceLines[sf.getLineAndCharacterOfPosition(n.getStart()).line]?.trim() ?? '';
       return siteSnippets.includes(line);
     };
-    // Local declarations of sanctioned names forfeit redemption in this
-    // file (unless it is the entry's declared home).
-    const localDecls = new Set<string>();
+    // ANY local binding of a sanctioned name forfeits redemption for it
+    // file-wide (Codex 943d023 #1: a PARAMETER, an object-literal
+    // METHOD/function-valued property, or a class member named
+    // formatMemoryContent launders exactly like a shadowing const —
+    // and `const JSON = { stringify(x){…} }` forges the receiver pin).
+    // The ONE exception: the home file's TOP-LEVEL declaration (pack's
+    // own clean); a parameter named clean forfeits even there.
+    const forfeited = new Set<string>();
     const collect = (n: import('typescript').Node): void => {
-      if (tsm.isFunctionDeclaration(n) && n.name && SAFE_CALLEES.has(n.name.text)) localDecls.add(n.name.text);
-      if (tsm.isVariableDeclaration(n) && tsm.isIdentifier(n.name) && SAFE_CALLEES.has(n.name.text)) localDecls.add(n.name.text);
+      const forfeit = (nm: string): void => { if (SAFE_CALLEES.has(nm)) forfeited.add(nm); };
+      if (tsm.isParameter(n) && tsm.isIdentifier(n.name)) forfeit(n.name.text);
+      if (tsm.isMethodDeclaration(n) && tsm.isIdentifier(n.name)) forfeit(n.name.text);
+      if (tsm.isPropertyAssignment(n) && tsm.isIdentifier(n.name)
+        && (tsm.isArrowFunction(n.initializer) || tsm.isFunctionExpression(n.initializer))) forfeit(n.name.text);
+      // Shorthand ({ rerank }) is NOT collected: its value IS the
+      // in-scope binding of that name, so it launders only when that
+      // binding is itself a shadow — which the param/var/function
+      // collectors above already forfeit.
+      if (tsm.isFunctionDeclaration(n) && n.name
+        && !(n.parent === sf && label === SAFE_CALLEES.get(n.name.text)?.home)) forfeit(n.name.text);
+      if (tsm.isVariableDeclaration(n) && tsm.isIdentifier(n.name)
+        && !(n.parent?.parent?.parent === sf && label === SAFE_CALLEES.get(n.name.text)?.home)) forfeit(n.name.text);
       tsm.forEachChild(n, collect);
     };
     collect(sf);
@@ -187,8 +203,26 @@ describe('M1-exit: the render-wiring guard (AST)', () => {
       const entry = SAFE_CALLEES.get(name);
       if (!entry) return false;
       if (entry.receiver && calleeReceiver(call, tsm) !== entry.receiver) return false;
-      if (localDecls.has(name) && label !== entry.home) return false;
+      if (forfeited.has(name)) return false;
       return true;
+    };
+    const foldKey = (e: import('typescript').Expression): string | null => {
+      if (tsm.isStringLiteral(e) || tsm.isNoSubstitutionTemplateLiteral(e)) return e.text;
+      if (tsm.isBinaryExpression(e) && e.operatorToken.kind === tsm.SyntaxKind.PlusToken) {
+        const l = foldKey(e.left); const r = foldKey(e.right);
+        return l !== null && r !== null ? l + r : null;
+      }
+      if (tsm.isParenthesizedExpression(e)) return foldKey(e.expression);
+      return null; // dynamic keys: KNOWN-UNCOVERED, asserted below
+    };
+    // A binding's property name in every static spelling (Codex 943d023
+    // #2: identifier, string-literal, and constant-foldable computed).
+    const bindsContent = (el: import('typescript').BindingElement): boolean => {
+      const pn = el.propertyName;
+      if (!pn) return tsm.isIdentifier(el.name) && el.name.text === 'content';
+      if (tsm.isIdentifier(pn) || tsm.isStringLiteral(pn)) return pn.text === 'content';
+      if (tsm.isComputedPropertyName(pn)) return foldKey(pn.expression) === 'content';
+      return false;
     };
     const visit = (node: import('typescript').Node): void => {
       // Destructured content alias: const { content } = memoryish.
@@ -197,22 +231,10 @@ describe('M1-exit: the render-wiring guard (AST)', () => {
       // only variable-declaration destructuring aliases a row field.
       if (tsm.isObjectBindingPattern(node)
         && tsm.isVariableDeclaration(node.parent)
-        && node.elements.some((el) =>
-          // renamed too: const { content: text } = memory (Codex e129fd3 #3)
-          (el.propertyName ? tsm.isIdentifier(el.propertyName) && el.propertyName.text === 'content'
-            : tsm.isIdentifier(el.name) && el.name.text === 'content'))
+        && node.elements.some(bindsContent)
         && !atSafeSite(node)) {
         offenders.push(`${label}: destructured content alias`);
       }
-      const foldKey = (e: import('typescript').Expression): string | null => {
-        if (tsm.isStringLiteral(e) || tsm.isNoSubstitutionTemplateLiteral(e)) return e.text;
-        if (tsm.isBinaryExpression(e) && e.operatorToken.kind === tsm.SyntaxKind.PlusToken) {
-          const l = foldKey(e.left); const r = foldKey(e.right);
-          return l !== null && r !== null ? l + r : null;
-        }
-        if (tsm.isParenthesizedExpression(e)) return foldKey(e.expression);
-        return null; // dynamic keys: KNOWN-UNCOVERED, asserted below
-      };
       const isContentAccess = (tsm.isPropertyAccessExpression(node) && node.name.text === 'content')
         || (tsm.isElementAccessExpression(node) && foldKey(node.argumentExpression) === 'content');
       if (isContentAccess) {
@@ -369,6 +391,14 @@ describe('M1-exit: the render-wiring guard (AST)', () => {
       ['template-element-key', 'emitToModel(memory[`content`])'],
       ['logical-assignment', 'let out = ""; out ||= memory.content; emitToModel(out)'],
       ['getter-return', 'class X { get raw() { return memory.content; } }'],
+      // Codex 943d023 #1 — local-binding laundering:
+      ['param-shadow', 'function f(formatMemoryContent) { emitToModel(formatMemoryContent(memory.content)); }'],
+      ['object-method-shadow', 'const local = { formatMemoryContent(x) { return x; } }; emitToModel(local.formatMemoryContent(memory.content))'],
+      ['receiver-forgery', 'const JSON = { stringify(x) { return x; } }; emitToModel(JSON.stringify(memory.content))'],
+      ['arrow-property-shadow', 'const o = { clean: (x) => x }; emitToModel(o.clean(memory.content))'],
+      // Codex 943d023 #2 — static property-name spellings:
+      ['string-key-destructuring', 'const { "content": text } = memory; emitToModel(text)'],
+      ['computed-key-destructuring', 'const { ["con" + "tent"]: text } = memory; emitToModel(text)'],
     ];
     for (const [name, snippet] of plants) {
       assert.ok((await astScan(snippet, name)).length > 0, `${name} must be caught`);
@@ -385,6 +415,10 @@ describe('M1-exit: the render-wiring guard (AST)', () => {
       const found = await astScan(snippet, 'safe');
       assert.deepEqual(found, [], `safe form flagged: ${snippet}`);
     }
+    // The home exception covers ONLY the top-level declaration: a
+    // parameter named clean forfeits even inside pack.ts itself.
+    const homeParam = await astScan('function g(clean) { emitToModel(clean(memory.content)); }', 'src/pack/pack.ts', SAFE_SITES);
+    assert.ok(homeParam.length > 0, 'a parameter named clean must forfeit in the home file');
   });
 
   it('SAFE_SITES is line-exact: the benign line shields neither a sink beside it nor one behind a comment (Codex e129fd3 #1)', async () => {
