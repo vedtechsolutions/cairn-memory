@@ -72,11 +72,13 @@ One command each, re-runnable — imports are deduplicated, secret-scrubbed, and
 
 ```bash
 waykeep import --from codex-memories                 # ~/.codex/memories (structured MEMORY.md handbook)
-- `waykeep pack export|import --dir <path>` — manual repo-pack: deterministic per-record files for sharing lessons through your own channel (never runs git; keep the directory gitignored unless you mean to share it)
 waykeep import --from claude-mem                     # ~/.claude-mem archive (live worker safe — snapshot read)
 waykeep import --from memory-md --path ./MEMORY.md   # any MEMORY.md (+ auto-memory topic files)
 waykeep import --from codex-memories --dry-run       # preview without writing
 ```
+
+**Manual repo-pack** — `waykeep pack export|import --dir <path> [--project ID | --global]` writes deterministic one-record-per-file observations for sharing lessons through your own channel. It never runs git; keep the directory gitignored unless you mean to share it. The same owner socket also serves a local `/owner/apply` endpoint for bounded incremental restore (see `waykeep doctor` for socket health).
+
 
 Codex task groups keep their structure: working directories map to project scopes, keywords become tags, failures become pitfalls. Excluded files are excluded **and listed**.
 

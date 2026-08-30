@@ -112,23 +112,52 @@ describe('M1-exit: latency matrix (embedded topology)', () => {
       hookSamples.push(Number(process.hrtime.bigint() - t0) / 1e6);
     }, 5);
 
+    const busyRtts: number[] = [];
     try {
       for (let b = 0; b < 20; b++) {
-        const t0 = process.hrtime.bigint();
-        const health = await fetch(`${baseUrl}/owner/health`);
-        healthSamples.push(Number(process.hrtime.bigint() - t0) / 1e6);
-        assert.equal(health.status, 200);
-
-        const res = await fetch(`${baseUrl}/owner/apply`, {
+        // Health fired WHILE the apply is in flight (Codex exit #4: an
+        // awaited-before health never queued behind apply work — the
+        // criterion is the queue). Both promises race on the same loop.
+        const applyPromise = fetch(`${baseUrl}/owner/apply`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ project: PROJECT, batch_id: `lat-${b}`, events: batch(b * 100 + 1, 50) }),
         });
+        const t0 = process.hrtime.bigint();
+        const healthPromise = fetch(`${baseUrl}/owner/health`).then((h) => {
+          healthSamples.push(Number(process.hrtime.bigint() - t0) / 1e6);
+          return h;
+        });
+        const [res, health] = await Promise.all([applyPromise, healthPromise]);
+        assert.equal(health.status, 200);
         if (res.status === 503) busyResponses++;
         else { assert.equal(res.status, 200); applied++; }
 
-        // Interleave hostile bodies: malformed + oversized declarations.
+        // Hostile bodies: malformed AND oversized-declared (the loop's
+        // comment previously promised both and sent one — Codex #4).
         const bad = await fetch(`${baseUrl}/owner/apply`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: 'not json' });
         assert.equal(bad.status, 400);
+        const big = await fetch(`${baseUrl}/owner/apply`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': String(2_000_000) }, body: 'x' }).catch(() => null);
+        if (big) assert.equal(big.status, 413);
+      }
+
+      // DETERMINISTIC injected BUSY, timed (Codex #4: the probabilistic
+      // writer permits zero BUSY samples): a held immediate lock forces
+      // the BUSY path, and its RTT is a matrix scenario of its own.
+      const blocker = new Database(join(dir, 'lat.db'));
+      blocker.pragma('busy_timeout = 0');
+      blocker.prepare('BEGIN IMMEDIATE').run();
+      try {
+        const t0 = process.hrtime.bigint();
+        const busy = await fetch(`${baseUrl}/owner/apply`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ project: PROJECT, batch_id: 'lat-busy', events: batch(70_001, 10) }),
+        });
+        busyRtts.push(Number(process.hrtime.bigint() - t0) / 1e6);
+        assert.equal(busy.status, 503, 'deterministic BUSY');
+        busyResponses++;
+      } finally {
+        blocker.prepare('ROLLBACK').run();
+        blocker.close();
       }
     } finally {
       clearInterval(hookTimer);
@@ -138,13 +167,16 @@ describe('M1-exit: latency matrix (embedded topology)', () => {
 
     const summary = {
       hook_reads: { n: hookSamples.length, p50: pct(hookSamples, 50).toFixed(3), p95: pct(hookSamples, 95).toFixed(3), max: Math.max(...hookSamples).toFixed(3) },
-      health_rtt: { n: healthSamples.length, p50: pct(healthSamples, 50).toFixed(3), p95: pct(healthSamples, 95).toFixed(3), max: Math.max(...healthSamples).toFixed(3) },
+      health_rtt_concurrent: { n: healthSamples.length, p50: pct(healthSamples, 50).toFixed(3), p95: pct(healthSamples, 95).toFixed(3), max: Math.max(...healthSamples).toFixed(3) },
+      injected_busy_rtt_ms: busyRtts.map((r) => r.toFixed(1)),
       applied, busyResponses,
     };
     console.log(`[m1-exit latency matrix] ${JSON.stringify(summary)}`);
 
     assert.ok(hookSamples.length >= 20, 'enough hook samples under load');
-    assert.ok(applied + busyResponses === 20 && applied >= 15, 'applies completed or returned typed BUSY');
+    assert.ok(applied + busyResponses === 21 && applied >= 15, 'applies completed or returned typed BUSY');
+    assert.equal(busyRtts.length, 1, 'the deterministic BUSY scenario was timed');
+    assert.ok(busyRtts[0] < 500, `BUSY path bounded (${busyRtts[0]}ms — 3 attempts + backoff)`);
     // Generous sanity bounds: the D3 property is no LOCK-WAIT class
     // stalls — CPU sharing on the embedded topology is expected and
     // documented, so bounds sit an order of magnitude above expectation.
