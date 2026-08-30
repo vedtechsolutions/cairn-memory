@@ -1,5 +1,5 @@
 import type Database from 'better-sqlite3';
-import { SHAREABLE_KINDS } from 'waykeep-contract';
+import { SHAREABLE_KINDS, isShareState } from 'waykeep-contract';
 
 /**
  * Shared fail-closed sync-eligibility predicate (brief D8 item 6, D10's
@@ -70,7 +70,8 @@ function anchorUnresolvable(anchor: string | null | undefined): boolean {
 export type IneligibleReason =
   | 'config-unhealthy' | 'project-private' | 'not-enrolled' | 'consent-not-sealed'
   | 'project-mismatch' | 'kind-not-shareable' | 'kind-owner-excluded' | 'opted-out'
-  | 'anchor-unresolvable';
+  | 'anchor-unresolvable' | 'share-state-invalid' | 'policy-invalid'
+  | 'scrub-not-verified' | 'anchor-not-relativized';
 
 /** Fail-closed: the FIRST failing checkpoint names the reason. */
 export function syncEligibility(row: EligibilityRow, ctx: EligibilityContext): { eligible: boolean; reason: IneligibleReason | null } {
@@ -81,11 +82,54 @@ export function syncEligibility(row: EligibilityRow, ctx: EligibilityContext): {
   if (row.project === null || row.project !== ctx.project) return { eligible: false, reason: 'project-mismatch' };
   if (!(SHAREABLE_KINDS as readonly string[]).includes(row.kind)) return { eligible: false, reason: 'kind-not-shareable' };
   if (ctx.ownerAllowedKinds !== undefined) {
+    // A malformed policy mirror is INVALID, never best-effort filtered
+    // (Codex H2): a list carrying non-strings is corrupt state, and
+    // corrupt policy must fail closed, not permit what happens to parse.
+    if (ctx.ownerAllowedKinds.some((k) => typeof k !== 'string')) {
+      return { eligible: false, reason: 'policy-invalid' };
+    }
     const allowed = ctx.ownerAllowedKinds.filter((k) => (SHAREABLE_KINDS as readonly string[]).includes(k));
     if (!allowed.includes(row.kind)) return { eligible: false, reason: 'kind-owner-excluded' };
   }
+  // STRICT tri-state (Codex H1): only null | 'local' | 'team' exist.
+  // Any other value — '', 'bogus', a number from stale/malformed data —
+  // is unknown state, and unknown never uploads.
+  if (row.share_state !== null && !isShareState(row.share_state)) {
+    return { eligible: false, reason: 'share-state-invalid' };
+  }
   if (row.share_state === 'local') return { eligible: false, reason: 'opted-out' };
   if (anchorUnresolvable(row.anchor)) return { eligible: false, reason: 'anchor-unresolvable' };
+  return { eligible: true, reason: null };
+}
+
+/** The worker's TRANSMIT-time assertions — checkpoints the row/scope
+ *  predicate cannot verify itself (D10's remaining items). The caller
+ *  asserts each as a boolean it has PROVEN, and every unproven
+ *  assertion fails closed. */
+export interface TransmitAssertions {
+  /** Outbound scrub ran over the exact bytes being sent. */
+  scrubCompleted: boolean;
+  /** The row's anchor was relativized against the symlink-resolved repo
+   *  root (worktrees against their own root) at transmit time. Rows
+   *  with no anchor pass trivially — the caller asserts true. */
+  anchorRelativized: boolean;
+}
+
+/**
+ * The COMPLETE D10 worker predicate (Codex H2): syncEligibility is the
+ * enqueue-half (row + scope + policy); this composition adds the
+ * transmit-time checkpoints. Only THIS function's true result may be
+ * treated as full D10 eligibility.
+ */
+export function transmitEligibility(
+  row: EligibilityRow,
+  ctx: EligibilityContext,
+  assertions: TransmitAssertions,
+): { eligible: boolean; reason: IneligibleReason | null } {
+  const base = syncEligibility(row, ctx);
+  if (!base.eligible) return base;
+  if (!assertions.scrubCompleted) return { eligible: false, reason: 'scrub-not-verified' };
+  if (!assertions.anchorRelativized) return { eligible: false, reason: 'anchor-not-relativized' };
   return { eligible: true, reason: null };
 }
 

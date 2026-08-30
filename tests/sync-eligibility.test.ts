@@ -10,8 +10,8 @@ import type { SyncEntityEnvelope, SyncEvent, PortableRecord } from 'waykeep-cont
 
 import { openDatabase } from '../src/db/connection.js';
 import { MemoryRepository } from '../src/db/memory-repository.js';
-import { syncEligibility, selectProjectRows, type EligibilityContext } from '../src/db/sync-eligibility.js';
-import { cairnConfigHealth, resetConfigCacheForTests } from '../src/config/cairn-config.js';
+import { syncEligibility, transmitEligibility, selectProjectRows, type EligibilityContext } from '../src/db/sync-eligibility.js';
+import { cairnConfigHealth, cairnConfigSnapshot, resetConfigCacheForTests } from '../src/config/cairn-config.js';
 import { SessionCache } from '../src/hooks/shared/session-cache.js';
 import { applyEventBatch, hashCanonical } from '../src/db/sync-apply/index.js';
 
@@ -52,6 +52,28 @@ describe('sync eligibility (D10 fail-closed predicate)', () => {
     assert.equal(syncEligibility(rel, baseCtx()).eligible, true, 'relative anchors travel');
     const malformed = { ...row(), anchor: '{broken' };
     assert.equal(syncEligibility(malformed, baseCtx()).reason, 'anchor-unresolvable', 'unknown is not shareable');
+  });
+
+  it('H1: only the tri-state exists — any other share_state value is unknown and never uploads', () => {
+    for (const bad of ['', 'bogus', 'LOCAL', 'Team ']) {
+      assert.equal(syncEligibility(row({ share_state: bad }), baseCtx()).reason, 'share-state-invalid', `'${bad}' must fail closed`);
+    }
+    assert.equal(syncEligibility({ ...row(), share_state: 0 as unknown as string }, baseCtx()).reason, 'share-state-invalid');
+    assert.equal(syncEligibility({ ...row(), share_state: false as unknown as string }, baseCtx()).reason, 'share-state-invalid');
+  });
+
+  it('H2: a malformed policy mirror is invalid — corrupt policy never permits what happens to parse', () => {
+    const corrupt = baseCtx({ ownerAllowedKinds: ['fact', 7, 'fact'] as unknown as string[] });
+    assert.equal(syncEligibility(row({ kind: 'fact' }), corrupt).reason, 'policy-invalid');
+  });
+
+  it('H2: transmitEligibility is the complete D10 predicate — unproven scrub or anchor assertions fail closed', () => {
+    const ok = { scrubCompleted: true, anchorRelativized: true };
+    assert.equal(transmitEligibility(row(), baseCtx(), ok).eligible, true);
+    assert.equal(transmitEligibility(row(), baseCtx(), { ...ok, scrubCompleted: false }).reason, 'scrub-not-verified');
+    assert.equal(transmitEligibility(row(), baseCtx(), { ...ok, anchorRelativized: false }).reason, 'anchor-not-relativized');
+    // The enqueue-half's refusals pass through unchanged.
+    assert.equal(transmitEligibility(row({ share_state: 'local' }), baseCtx(), ok).reason, 'opted-out');
   });
 
   it('owner policy narrows but can never widen the frozen allowlist', () => {
@@ -105,6 +127,31 @@ describe('config health surface (D8 item 5)', () => {
 
     writeFileSync(p, JSON.stringify({ scope: { privateProjects: ['secret-proj'] } }));
     assert.equal(cairnConfigHealth().healthy, true);
+  });
+
+  it('H5: the snapshot pairs health and policy from ONE read — healthy can never accompany another version\'s policy', () => {
+    const p = join(dir, 'snap.json');
+    process.env.CAIRN_CONFIG_PATH = p;
+    writeFileSync(p, JSON.stringify({ scope: { privateProjects: ['secret-proj'] } }));
+    const good = cairnConfigSnapshot();
+    assert.equal(good.health.healthy, true);
+    assert.ok(good.config.scope.privateProjects.has('secret-proj'), 'the SAME bytes produced both fields');
+    assert.ok(good.identity, 'file identity recorded');
+
+    writeFileSync(p, '{broken');
+    const bad = cairnConfigSnapshot();
+    assert.equal(bad.health.healthy, false);
+    assert.equal(bad.config.scope.privateProjects.size, 0, 'unhealthy pairs with the EMPTY config, atomically');
+    assert.deepEqual(bad.health.badSections, ['(document)']);
+  });
+
+  it('H6: health names bad sections so doctor can render section-accurate impact', () => {
+    const p = join(dir, 'sections.json');
+    process.env.CAIRN_CONFIG_PATH = p;
+    writeFileSync(p, JSON.stringify({ scope: { privateProjects: ['x'] }, report: { rollups: true } }));
+    const h = cairnConfigHealth();
+    assert.equal(h.healthy, false, 'sync is disabled for ANY unhealthy config');
+    assert.deepEqual(h.badSections, ['report'], 'only the report section is named — scope stays active locally');
   });
 });
 
@@ -188,6 +235,13 @@ describe('durable-generation cache invalidation (D8 item 7)', () => {
     } finally {
       db.close();
     }
+  });
+
+  it('H4: a LOCAL memory-version bump also flushes fingerprint scores (merges enrich fingerprints)', () => {
+    const cache = new SessionCache();
+    cache.setFingerprintScore('mem-l', 'fp-key', 0.8);
+    cache.bumpMemoryVersion();
+    assert.equal(cache.getFingerprintScore('mem-l', 'fp-key'), undefined);
   });
 
   it('C2: fingerprint scores are memory-derived and flush with the rest', () => {

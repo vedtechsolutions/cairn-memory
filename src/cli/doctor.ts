@@ -96,12 +96,18 @@ async function checkEmbeddingModel(): Promise<CheckResult> {
 
 async function checkConfigHealth(): Promise<CheckResult> {
   // Sync-facing health (D10, release blocker): local reads stay
-  // tolerant, but a broken config DISABLES sync fail-closed — doctor is
-  // where the user learns why.
+  // tolerant with SECTION-INDEPENDENT degradation, so the local-impact
+  // wording must be section-accurate (Codex H6 — a report-only typo was
+  // told its scope settings were inactive, which is false). The
+  // sync-disabled clause is unconditional for every unhealthy config.
   const { cairnConfigHealth } = await import('../config/cairn-config.js');
   const h = cairnConfigHealth();
   if (h.healthy) return { status: 'ok', detail: `config at ${h.path} is healthy (absent = defaults)` };
-  return { status: 'fail', detail: `config at ${h.path} is unhealthy — ${h.problem}. Local scope settings are INACTIVE and team sync would be DISABLED until fixed` };
+  const wholeDocument = h.badSections.includes('(document)') || h.badSections.includes('(io)');
+  const localImpact = wholeDocument
+    ? 'ALL local config sections are INACTIVE'
+    : h.badSections.map((sec) => `the ${sec} section is INACTIVE (its defaults apply; other sections still work)`).join('; ');
+  return { status: 'fail', detail: `config at ${h.path} is unhealthy — ${h.problem}. ${localImpact}, and team sync would be DISABLED until fixed` };
 }
 
 async function checkDatabase(): Promise<CheckResult> {

@@ -189,33 +189,90 @@ export interface CairnConfigHealth {
   healthy: boolean;
   /** Human-readable problem when unhealthy; null when healthy. */
   problem: string | null;
+  /** Which sections are malformed: section names, '(document)' for a
+   *  non-object/unparseable file, '(io)' for stat/read failures. */
+  badSections: string[];
   path: string;
 }
 
-export function cairnConfigHealth(): CairnConfigHealth {
+export interface CairnConfigSnapshot {
+  config: CairnConfig;
+  health: CairnConfigHealth;
+  /** File identity of the bytes BOTH fields derive from; null when the
+   *  file is absent. */
+  identity: string | null;
+}
+
+/**
+ * ONE-READ config snapshot (slice-6 Codex H5): health and policy derive
+ * from the SAME bytes, so `healthy: true` can never pair with a policy
+ * from a different file version — the raceable
+ * cairnConfigHealth()-then-loadCairnConfig() pattern produced exactly
+ * the fail-open combination D10 forbids (healthy + empty
+ * privateProjects). A post-read stat detects mid-read replacement:
+ * one retry, then fail CLOSED as unhealthy. Every D10 decision must use
+ * one snapshot; transmit takes a fresh one.
+ */
+export function cairnConfigSnapshot(): CairnConfigSnapshot {
   const path = cairnConfigPath();
-  let st: ReturnType<typeof statSync>;
-  try {
-    st = statSync(path, { throwIfNoEntry: false });
-  } catch (err) {
-    return { healthy: false, problem: `config could not be stat'd (${(err as NodeJS.ErrnoException).code ?? 'stat failed'})`, path };
-  }
-  if (!st) return { healthy: true, problem: null, path };
-  let raw: string;
-  try {
-    raw = readFileSync(path, 'utf-8');
-  } catch (err) {
-    return { healthy: false, problem: `config could not be read (${(err as NodeJS.ErrnoException).code ?? 'read failed'})`, path };
-  }
-  try {
-    const parsed = parseConfig(raw);
-    if (parsed.badSections.length > 0) {
-      return { healthy: false, problem: `malformed section(s): ${parsed.badSections.join(', ')}`, path };
+  for (let attempt = 0; attempt < 2; attempt++) {
+    let st: ReturnType<typeof statSync>;
+    try {
+      st = statSync(path, { throwIfNoEntry: false });
+    } catch (err) {
+      const problem = `config could not be stat'd (${(err as NodeJS.ErrnoException).code ?? 'stat failed'})`;
+      return { config: EMPTY_CONFIG, health: { healthy: false, problem, badSections: ['(io)'], path }, identity: null };
     }
-    return { healthy: true, problem: null, path };
-  } catch {
-    return { healthy: false, problem: 'invalid JSON', path };
+    if (!st) {
+      return { config: EMPTY_CONFIG, health: { healthy: true, problem: null, badSections: [], path }, identity: null };
+    }
+    const identityBefore = `${st.mtimeMs}:${st.size}:${st.ino}`;
+    let raw: string;
+    try {
+      raw = readFileSync(path, 'utf-8');
+    } catch (err) {
+      const problem = `config could not be read (${(err as NodeJS.ErrnoException).code ?? 'read failed'})`;
+      return { config: EMPTY_CONFIG, health: { healthy: false, problem, badSections: ['(io)'], path }, identity: null };
+    }
+    let stAfter: ReturnType<typeof statSync>;
+    try {
+      stAfter = statSync(path, { throwIfNoEntry: false });
+    } catch {
+      stAfter = undefined;
+    }
+    const identityAfter = stAfter ? `${stAfter.mtimeMs}:${stAfter.size}:${stAfter.ino}` : null;
+    if (identityAfter !== identityBefore) {
+      if (attempt === 0) continue;
+      return {
+        config: EMPTY_CONFIG,
+        health: { healthy: false, problem: 'config changed during read — retry produced a second mismatch', badSections: ['(io)'], path },
+        identity: null,
+      };
+    }
+    try {
+      const parsed = parseConfig(raw);
+      if (parsed.badSections.length > 0) {
+        return {
+          config: parsed.config,
+          health: { healthy: false, problem: `malformed section(s): ${parsed.badSections.join(', ')}`, badSections: parsed.badSections, path },
+          identity: identityBefore,
+        };
+      }
+      return { config: parsed.config, health: { healthy: true, problem: null, badSections: [], path }, identity: identityBefore };
+    } catch {
+      return {
+        config: EMPTY_CONFIG,
+        health: { healthy: false, problem: 'invalid JSON', badSections: ['(document)'], path },
+        identity: identityBefore,
+      };
+    }
   }
+  // Unreachable: the loop returns on every path.
+  return { config: EMPTY_CONFIG, health: { healthy: false, problem: 'unreachable', badSections: ['(io)'], path }, identity: null };
+}
+
+export function cairnConfigHealth(): CairnConfigHealth {
+  return cairnConfigSnapshot().health;
 }
 
 /** True when the project is marked private in the scope config. Null

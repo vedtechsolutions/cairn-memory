@@ -170,11 +170,12 @@ export class SessionCache {
    * metric-only and would self-invalidate the hot-path cache.
    */
   bumpMemoryVersion(): void {
-    this.memoryVersion++;
-    // Any bump invalidates every existing skip-gate entry because the composite
-    // key embeds memoryVersion. Wiping the map is O(n) but n is bounded at
-    // MAX_SKIP_GATE_ENTRIES so the cost is trivial and reclaims memory sooner.
-    this.skipGateCache.clear();
+    // ONE invalidator for every memory-derived cache (Codex H4): a local
+    // semantic write can also change fingerprint bytes (storeMemory
+    // merges enrich fingerprints) and FTS-relevant content, so the
+    // skip-gate-only clear left the un-TTL'd fingerprint scores stale
+    // for the life of the process.
+    this.invalidateMemoryDerived();
     this.bumpNotifier?.();
   }
 
