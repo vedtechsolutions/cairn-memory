@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { openDatabase } from '../src/db/connection.js';
 import { MemoryRepository } from '../src/db/memory-repository.js';
-import { classifyAndAdvance, journalConsumptionCursor } from '../src/db/sync-apply/journal-consumer.js';
+import { classifyAndAdvance, reclassifyDeferred, journalConsumptionCursor } from '../src/db/sync-apply/journal-consumer.js';
 
 /**
  * The core-owned §7 consumption handshake (M1-exit C2: the checklist
@@ -67,6 +67,52 @@ describe('journal consumption handshake (§7, core-owned)', () => {
     repo.create({ content: 'other project row', kind: 'fact', project: 'other-proj', skipDedup: true, skipConflictDetection: true });
     const otherId = (db.prepare("SELECT entry_id FROM sync_journal WHERE project = 'other-proj'").get() as { entry_id: number }).entry_id;
     assert.throws(() => classifyAndAdvance(db, PROJECT, [{ entryId: otherId, classification: 'enqueued' }], otherId), /does not exist in project/);
+  });
+
+  it('J5: an eligibility-restored DEFERRED row behind the cursor reclassifies atomically; non-deferred rows are refused', () => {
+    const ids = seedEntries(3);
+    classifyAndAdvance(db, PROJECT, [
+      { entryId: ids[0], classification: 'deferred-pending-eligibility' },
+      { entryId: ids[1], classification: 'enqueued' },
+      { entryId: ids[2], classification: 'deferred-pending-eligibility' },
+    ], ids[2]);
+
+    reclassifyDeferred(db, PROJECT, [{ entryId: ids[0], classification: 'enqueued' }]);
+    const row = db.prepare('SELECT classification, classified_at FROM sync_journal WHERE entry_id = ?').get(ids[0]) as { classification: string; classified_at: string | null };
+    assert.equal(row.classification, 'enqueued', 'J4 → J2 on eligibility restoration');
+    assert.ok(row.classified_at, 'classified_at is stamped');
+
+    // Reconciliation never rewrites non-deferred states.
+    assert.throws(() => reclassifyDeferred(db, PROJECT, [{ entryId: ids[1], classification: 'permanently-ineligible' }]), /touches only J4/);
+    // Unconsumed rows are refused (that is classifyAndAdvance's domain).
+    const more = seedEntries(1).pop()!;
+    assert.throws(() => reclassifyDeferred(db, PROJECT, [{ entryId: more, classification: 'enqueued' }]), /not yet consumed/);
+  });
+
+  it('KILL after a REAL write: a trigger-injected failure on the second row rolls back the first row\'s committed-in-transaction write', () => {
+    const ids = seedEntries(3);
+    classifyAndAdvance(db, PROJECT, ids.map((entryId) => ({ entryId, classification: 'deferred-pending-eligibility' as const })), ids[2]);
+    // The fault fires AFTER the first UPDATE genuinely executed — this
+    // is a mid-transaction failure between real writes, not
+    // pre-transaction validation (Codex exit final #1).
+    db.exec(`CREATE TRIGGER jc_fault AFTER UPDATE ON sync_journal WHEN NEW.entry_id = ${ids[1]} BEGIN SELECT RAISE(ABORT, 'injected-after-write'); END`);
+    try {
+      assert.throws(() => reclassifyDeferred(db, PROJECT, [
+        { entryId: ids[0], classification: 'enqueued' },
+        { entryId: ids[1], classification: 'enqueued' },
+      ]), /injected-after-write/);
+    } finally {
+      db.exec('DROP TRIGGER jc_fault');
+    }
+    const first = db.prepare('SELECT classification FROM sync_journal WHERE entry_id = ?').get(ids[0]) as { classification: string };
+    assert.equal(first.classification, 'deferred-pending-eligibility', "the first row's REAL write rolled back with the injected failure");
+
+    // Replay: the same reconciliation succeeds cleanly afterwards.
+    reclassifyDeferred(db, PROJECT, [
+      { entryId: ids[0], classification: 'enqueued' },
+      { entryId: ids[1], classification: 'enqueued' },
+    ]);
+    assert.equal((db.prepare("SELECT COUNT(*) n FROM sync_journal WHERE classification = 'enqueued'").get() as { n: number }).n, 2);
   });
 
   it('replay from the cursor: a crash before the advance re-reads the same entries (J1 recovery shape)', () => {

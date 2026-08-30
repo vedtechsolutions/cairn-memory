@@ -28,6 +28,45 @@ export type JournalClassification = (typeof JOURNAL_CLASSIFICATIONS)[number];
 
 const CURSOR_NS = 'journal';
 
+/**
+ * §7 J5 — reconciliation of ALREADY-CONSUMED deferred rows (Codex exit
+ * final #1: the cursor-range validation in classifyAndAdvance made this
+ * transition IMPOSSIBLE — a J4 row behind the cursor could never
+ * become J2 when eligibility returned). Atomic; only legal J4
+ * departures are accepted (J4 → enqueued | permanently-ineligible |
+ * stays-deferred per §7 J5); a row that is not currently deferred is
+ * refused — reconciliation never rewrites terminal or pending states.
+ */
+export function reclassifyDeferred(
+  db: Database.Database,
+  project: string,
+  items: readonly ClassificationItem[],
+): void {
+  for (const item of items) {
+    if (!Number.isSafeInteger(item.entryId) || item.entryId <= 0) {
+      throw new ApplyValidationError(`entry id ${item.entryId} is not a positive integer`);
+    }
+    if (!(JOURNAL_CLASSIFICATIONS as readonly string[]).includes(item.classification)) {
+      throw new ApplyValidationError(`unknown classification '${item.classification}'`);
+    }
+  }
+  db.transaction(() => {
+    const cursor = journalConsumptionCursor(db, project);
+    for (const item of items) {
+      if (item.entryId > cursor) {
+        throw new ApplyValidationError(`entry ${item.entryId} is not yet consumed (cursor ${cursor}) — use classifyAndAdvance`);
+      }
+      const changed = db.prepare(`
+        UPDATE sync_journal SET classification = ?, classified_at = datetime('now')
+        WHERE entry_id = ? AND project = ? AND classification = 'deferred-pending-eligibility'
+      `).run(item.classification, item.entryId, project).changes;
+      if (changed !== 1) {
+        throw new ApplyValidationError(`entry ${item.entryId} is not a deferred row in project '${project}' — reconciliation touches only J4`);
+      }
+    }
+  }).immediate();
+}
+
 export function journalConsumptionCursor(db: Database.Database, project: string): number {
   const row = db.prepare('SELECT v FROM sync_state WHERE ns = ? AND k = ?').get(CURSOR_NS, `cursor:${project}`) as { v: string } | undefined;
   return row ? Number(row.v) : 0;
@@ -69,7 +108,7 @@ export function classifyAndAdvance(
         throw new ApplyValidationError(`entry ${item.entryId} lies outside the consumed range (${from}, ${cursorTo}]`);
       }
       const changed = db.prepare(
-        'UPDATE sync_journal SET classification = ? WHERE entry_id = ? AND project = ?',
+        "UPDATE sync_journal SET classification = ?, classified_at = datetime('now') WHERE entry_id = ? AND project = ?",
       ).run(item.classification, item.entryId, project).changes;
       if (changed !== 1) {
         throw new ApplyValidationError(`entry ${item.entryId} does not exist in project '${project}'`);

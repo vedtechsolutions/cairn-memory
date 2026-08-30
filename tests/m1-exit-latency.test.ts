@@ -1,6 +1,6 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { createServer, type Server } from 'node:http';
+import { createServer, request as httpRequest, type Server } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -104,13 +104,28 @@ describe('M1-exit: latency matrix (embedded topology)', () => {
       } catch { try { writer.prepare('ROLLBACK').run(); } catch { /* contended */ } }
     }, 7);
 
-    // Hook-representative reads on a timer: generation check + skip-gate.
-    const hookTimer = setInterval(() => {
-      const t0 = process.hrtime.bigint();
-      cache.checkDurableGeneration(db);
-      cache.getSkipGate('lat-key');
-      hookSamples.push(Number(process.hrtime.bigint() - t0) / 1e6);
-    }, 5);
+    // Hook-representative reads, measured from the INTENDED schedule
+    // time (Codex exit final #3): a sample timed from callback entry
+    // hides exactly the cost under test — the event-loop blockage from
+    // in-process apply work that delays the callback. Self-chaining
+    // schedule; after a blocked stretch the intended time re-baselines
+    // (max) so one blockage is counted once, not compounded forever.
+    const HOOK_PERIOD_MS = 5;
+    let stopHook = false;
+    let intendedAt = performance.now() + HOOK_PERIOD_MS;
+    const scheduleHook = (): void => {
+      if (stopHook) return;
+      setTimeout(() => {
+        if (stopHook) return;
+        cache.checkDurableGeneration(db);
+        cache.getSkipGate('lat-key');
+        const done = performance.now();
+        hookSamples.push(done - intendedAt);
+        intendedAt = Math.max(intendedAt + HOOK_PERIOD_MS, done);
+        scheduleHook();
+      }, Math.max(0, intendedAt - performance.now()));
+    };
+    scheduleHook();
 
     const busyRtts: number[] = [];
     try {
@@ -132,12 +147,21 @@ describe('M1-exit: latency matrix (embedded topology)', () => {
         if (res.status === 503) busyResponses++;
         else { assert.equal(res.status, 200); applied++; }
 
-        // Hostile bodies: malformed AND oversized-declared (the loop's
-        // comment previously promised both and sent one — Codex #4).
+        // Hostile bodies: malformed AND oversized-declared. The 413 is
+        // REQUIRED via a raw http.request (Codex exit final #3: fetch
+        // refuses the mismatched Content-Length client-side, so the old
+        // catch-and-skip asserted nothing).
         const bad = await fetch(`${baseUrl}/owner/apply`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: 'not json' });
         assert.equal(bad.status, 400);
-        const big = await fetch(`${baseUrl}/owner/apply`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': String(2_000_000) }, body: 'x' }).catch(() => null);
-        if (big) assert.equal(big.status, 413);
+        const bigStatus = await new Promise<number>((resolve, reject) => {
+          const req = httpRequest(`${baseUrl}/owner/apply`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Content-Length': String(2_000_000) },
+          }, (res) => { res.resume(); res.on('end', () => { req.destroy(); resolve(res.statusCode ?? 0); }); });
+          req.on('error', reject);
+          req.write('x'); // partial body: the server must answer from the DECLARED length, not wait for bytes
+        });
+        assert.equal(bigStatus, 413, 'oversized declared body → REQUIRED 413');
       }
 
       // DETERMINISTIC injected BUSY, timed (Codex #4: the probabilistic
@@ -160,7 +184,7 @@ describe('M1-exit: latency matrix (embedded topology)', () => {
         blocker.close();
       }
     } finally {
-      clearInterval(hookTimer);
+      stopHook = true;
       clearInterval(writerTimer);
       writer.close();
     }
@@ -218,21 +242,77 @@ describe('M1-exit: latency matrix (embedded topology)', () => {
       }
       console.log(`[m1-exit standalone] apply RTTs ms: ${rtts.map((r) => r.toFixed(1)).join(', ')}`);
 
-      // SIGKILL mid-apply: fire a big batch and kill without waiting.
+      // In-transaction probe: BEGIN IMMEDIATE with busy_timeout=0 from
+      // the parent fails BUSY exactly while the child's write
+      // transaction holds the lock — the synchronization point Codex
+      // exit final #3 required, replacing the fixed 15ms guess. The
+      // probe's own microsecond lock-hold can race the child's BEGIN
+      // (the child's dedicated connection is busy_timeout=0 and would
+      // 503); `refire` re-sends the batch on that collision.
+      const probe = new Database(dbPath);
+      probe.pragma('busy_timeout = 0');
+      const waitForWriteTx = async (isSettled: () => boolean, refire: () => void): Promise<void> => {
+        for (let i = 0; i < 2000; i++) {
+          try {
+            probe.prepare('BEGIN IMMEDIATE').run();
+            probe.prepare('ROLLBACK').run();
+          } catch {
+            return; // BUSY ⇒ the child is inside its write transaction NOW
+          }
+          if (isSettled()) refire();
+          await delay(2);
+        }
+        assert.fail('never observed the child inside a write transaction');
+      };
+      const fatBatch = (batchId: string, seqBase: number, marker: string): string => JSON.stringify({
+        project: PROJECT, batch_id: batchId,
+        events: Array.from({ length: 500 }, (_, i) => ({
+          type: 'upsert' as const, seq: seqBase + i,
+          entity: envelope(record(randomUUID(), `${marker} ${i} ${'y'.repeat(1200)}`), `E-${batchId}-${i}`),
+        })),
+      });
+
+      // QUEUEING FLOOR (Codex exit final #3): health fired while the
+      // apply transaction is PROVEN in flight must queue behind the
+      // owner's blocked loop — its RTT carries the blockage. A lone
+      // standalone health answers in ~1-3ms; the floor is well above.
+      // One body per batch_id, reused on refire: a rebuilt batch would
+      // regenerate row ids and change the canonical digest under the
+      // same batch_id — a VALIDATION refusal, not a retry.
+      const floorBody = fatBatch('sa-floor', 40_000, 'floor row');
+      let floorStatus = 0;
+      const floorApply = fetch(`${url}/owner/apply`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: floorBody,
+      }).then((r) => { floorStatus = r.status; return r.status; });
+      await waitForWriteTx(() => floorStatus !== 0, () => {
+        floorStatus = 0;
+        void fetch(`${url}/owner/apply`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: floorBody }).then((r) => { floorStatus = r.status; });
+      });
+      const tHealth = process.hrtime.bigint();
+      const floorHealth = await fetch(`${url}/owner/health`);
+      const floorRtt = Number(process.hrtime.bigint() - tHealth) / 1e6;
+      assert.equal(floorHealth.status, 200);
+      assert.ok(floorRtt >= 20, `health queued behind the in-flight apply (${floorRtt.toFixed(1)}ms ≥ 20ms floor)`);
+      assert.ok((await floorApply) === 200 || floorStatus === 200, 'the floor apply completed');
+      console.log(`[m1-exit standalone] health-behind-apply RTT: ${floorRtt.toFixed(1)}ms (floor 20ms)`);
+
+      // SIGKILL synchronized to the in-transaction point: kill lands
+      // while the batch's write transaction is open, with an explicit
+      // in-flight assertion — a kill after completion would test nothing.
+      const killBody = fatBatch('sa-kill', 50_000, 'kill row');
+      let killSettled = false;
       const killBatch = fetch(`${url}/owner/apply`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          project: PROJECT, batch_id: 'sa-kill',
-          events: Array.from({ length: 500 }, (_, i) => ({
-            type: 'upsert' as const, seq: 50_000 + i,
-            entity: envelope(record(randomUUID(), `kill row ${i} ${'y'.repeat(300)}`), `E-kill-${i}`),
-          })),
-        }),
-      }).catch(() => null);
-      await delay(15);
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: killBody,
+      }).then((r) => { killSettled = true; return r.status; }).catch(() => { killSettled = true; return null; });
+      await waitForWriteTx(() => killSettled, () => {
+        killSettled = false;
+        void fetch(`${url}/owner/apply`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: killBody }).then(() => { killSettled = true; }).catch(() => { killSettled = true; });
+      });
+      assert.equal(killSettled, false, 'the apply was still in flight at the kill point');
       child.kill('SIGKILL');
-      await killBatch;
-      await delay(100);
+      probe.close();
+      await killBatch; // settles via the socket-death catch
+      await delay(150);
 
       // Reopen: integrity + whole-batches-only.
       const inspect = openDatabase({ dbPath });
