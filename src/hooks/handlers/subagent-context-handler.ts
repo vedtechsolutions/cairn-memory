@@ -11,7 +11,7 @@ import { projectId } from '../../utils/project-id.js';
 import { capabilitiesOf } from '../shared/client-adapter.js';
 import { CROSS_AGENT_CONTEXT_FRAMING } from '../../constants/index.js';
 import { neutralizeMemoryText } from '../../utils/validation.js';
-import { isMemoryEligibleForInjection } from '../../utils/memory-injection.js';
+import { isMemoryEligibleForInjection , formatMemoryContent } from '../../utils/memory-injection.js';
 
 export interface SubagentContextResult {
   /** Context to inject, or null */
@@ -48,7 +48,7 @@ export function handleSubagentContext(input: SubagentStartInput, client: HookDbC
   if (pitfalls.length > 0) {
     lines.push('Pitfalls:');
     for (const p of pitfalls) {
-      lines.push(`  - ${neutralizeMemoryText(p.content)}`);
+      lines.push(`  - ${formatMemoryContent(p)}`);
     }
   }
 
@@ -56,7 +56,7 @@ export function handleSubagentContext(input: SubagentStartInput, client: HookDbC
   if (corrections.length > 0) {
     lines.push('Corrections:');
     for (const c of corrections) {
-      lines.push(`  - ${neutralizeMemoryText(c.content)}`);
+      lines.push(`  - ${formatMemoryContent(c)}`);
     }
   }
 

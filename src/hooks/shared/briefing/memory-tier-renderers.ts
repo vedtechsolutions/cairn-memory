@@ -8,7 +8,7 @@ import { neutralizeMemoryText } from '../../../utils/validation.js';
 import type { ContextFingerprint } from '../../../utils/fingerprint.js';
 import { passesCrossProjectGuard, passesSameProjectRelevance, deriveProjectIdentityTokens, meaningfulTokenCount } from '../../../utils/cross-project-guard.js';
 import type { BriefingContext } from './types.js';
-import { isMemoryEligibleForInjection } from '../../../utils/memory-injection.js';
+import { isMemoryEligibleForInjection , formatMemoryContent } from '../../../utils/memory-injection.js';
 import {
   NARROW_OVERLAP_MIN_MEANINGFUL_TOKENS,
   narrowPolicyExclusions,
@@ -111,7 +111,7 @@ export function renderTier2(
       const eff = computeEffectiveness(d);
       // Neutralize untrusted memory text so it can't impersonate Waykeep's
       // system voice when injected back into the briefing (see H2).
-      const content = neutralizeMemoryText(d.content);
+      const content = formatMemoryContent(d);
       let line: string;
       if (eff >= BRIEFING_ALLOCATION.HIGH_EFFECTIVENESS_THRESHOLD) {
         const why = d.context?.why ? ` — ${neutralizeMemoryText(d.context.why)}` : '';
@@ -195,7 +195,7 @@ export function renderTier3(
   for (const p of renderedPitfalls) {
     const eff = computeEffectiveness(p);
     // Neutralize untrusted memory text before it re-enters model context (H2).
-    const content = neutralizeMemoryText(p.content);
+    const content = formatMemoryContent(p);
     let line: string;
     if (eff >= BRIEFING_ALLOCATION.HIGH_EFFECTIVENESS_THRESHOLD) {
       const why = p.context?.why ? ` (Why: ${neutralizeMemoryText(p.context.why)})` : '';
@@ -243,7 +243,7 @@ export function renderTier4(
   let tokensSoFar = estimateTokensFast('Corrections:');
 
   for (const c of corrections) {
-    const line = `  - ${neutralizeMemoryText(c.content)}`;
+    const line = `  - ${formatMemoryContent(c)}`;
     const lineTokens = estimateTokensFast(line);
     if (tokensSoFar + lineTokens > budget) break;
     lines.push(line);

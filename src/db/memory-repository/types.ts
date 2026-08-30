@@ -31,6 +31,13 @@ export interface Memory {
   /** Structural CAS counter (schema v27) — bumped by trigger on any
    *  rendered-semantic column write; memory-tool edits compare against it. */
   revision: number;
+  /** Provenance read model (v32/D7): `author` is the server-stamped
+   *  opaque account id — non-null ⟺ the row arrived through sync-apply
+   *  (TEAM content); locally-created rows are always null. Optional for
+   *  older adapters that construct Memory. */
+  author?: string | null;
+  origin_client?: string;
+  share_state?: string | null;
 }
 
 export interface CreateMemoryInput {

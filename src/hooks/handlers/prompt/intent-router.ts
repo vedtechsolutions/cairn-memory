@@ -11,7 +11,7 @@ import type { PromptCtx } from './types.js';
 import { originClientOf } from '../../shared/client-adapter.js';
 import { extractDecision, isGoalMemoryStale } from './extractors.js';
 import { extractCorrectionLesson } from './helpers.js';
-import { isMemoryEligibleForInjection } from '../../../utils/memory-injection.js';
+import { isMemoryEligibleForInjection , formatMemoryContent } from '../../../utils/memory-injection.js';
 
 export function routeIntent(ctx: PromptCtx): void {
   const { client, input, prompt, project, fp, mode, intent, previouslyInjected, newlyInjected, budgetAvailable, budgetPush } = ctx;
@@ -67,7 +67,7 @@ export function routeIntent(ctx: PromptCtx): void {
           .filter(r => !previouslyInjected.has(r.memory.id));
         for (const r of relevant) {
           if (!budgetAvailable()) break;
-          budgetPush(`[WAYKEEP] ${r.memory.content}${client.memoryRepo.stalenessMarker(r.memory)}`);
+          budgetPush(`[WAYKEEP] ${formatMemoryContent(r.memory)}${client.memoryRepo.stalenessMarker(r.memory)}`);
           newlyInjected.push(r.memory.id);
         }
       }
@@ -85,7 +85,7 @@ export function routeIntent(ctx: PromptCtx): void {
           .filter(r => !previouslyInjected.has(r.memory.id));
         for (const r of relevantDecisions) {
           if (!budgetAvailable()) break;
-          budgetPush(`[WAYKEEP] ${r.memory.content}${client.memoryRepo.stalenessMarker(r.memory)}`);
+          budgetPush(`[WAYKEEP] ${formatMemoryContent(r.memory)}${client.memoryRepo.stalenessMarker(r.memory)}`);
           newlyInjected.push(r.memory.id);
         }
       }
@@ -109,7 +109,7 @@ export function routeIntent(ctx: PromptCtx): void {
             .filter(r => !isGoalMemoryStale(r.memory))
             .filter(r => !previouslyInjected.has(r.memory.id))[0];
           if (goalHit) {
-            budgetPush(`[WAYKEEP goal] Similar prior goal: ${goalHit.memory.content}`);
+            budgetPush(`[WAYKEEP goal] Similar prior goal: ${formatMemoryContent(goalHit.memory)}`);
             newlyInjected.push(goalHit.memory.id);
           }
         } catch { /* best-effort — goal match is additive */ }
@@ -149,7 +149,7 @@ export function routeIntent(ctx: PromptCtx): void {
           .filter(r => !previouslyInjected.has(r.memory.id));
         for (const r of relevant) {
           if (!budgetAvailable()) break;
-          budgetPush(`[WAYKEEP] ${r.memory.content}${client.memoryRepo.stalenessMarker(r.memory)}`);
+          budgetPush(`[WAYKEEP] ${formatMemoryContent(r.memory)}${client.memoryRepo.stalenessMarker(r.memory)}`);
           newlyInjected.push(r.memory.id);
         }
       }

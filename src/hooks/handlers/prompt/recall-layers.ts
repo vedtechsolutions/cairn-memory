@@ -9,7 +9,7 @@ import { passesCrossProjectGuard } from '../../../utils/cross-project-guard.js';
 import { predictRelated } from '../../../utils/prediction.js';
 import type { PromptCtx } from './types.js';
 import { isGoalMemoryStale } from './extractors.js';
-import { isMemoryEligibleForInjection } from '../../../utils/memory-injection.js';
+import { isMemoryEligibleForInjection , formatMemoryContent } from '../../../utils/memory-injection.js';
 
 export function runRecallLayers(ctx: PromptCtx): void {
   const { client, prompt, project, fp, mode, intent, previouslyInjected, newlyInjected, budgetAvailable, budgetPush } = ctx;
@@ -31,7 +31,7 @@ export function runRecallLayers(ctx: PromptCtx): void {
       .filter(r => !previouslyInjected.has(r.memory.id));
     for (const r of broadRelevant.slice(0, 1)) {
       if (!budgetAvailable()) break;
-      budgetPush(`[WAYKEEP] ${r.memory.kind}: ${r.memory.content}${client.memoryRepo.stalenessMarker(r.memory)}`);
+      budgetPush(`[WAYKEEP] ${r.memory.kind}: ${formatMemoryContent(r.memory)}${client.memoryRepo.stalenessMarker(r.memory)}`);
       newlyInjected.push(r.memory.id);
     }
   }
@@ -57,7 +57,7 @@ export function runRecallLayers(ctx: PromptCtx): void {
         if (!passesCrossProjectGuard(mem, project, fp)) continue;
         if (isGoalMemoryStale(mem)) continue;
         if (surfaced === 0 || preferredKinds.includes(mem.kind)) {
-          budgetPush(`[WAYKEEP] ${mem.kind}: ${mem.content}${client.memoryRepo.stalenessMarker(mem)}`);
+          budgetPush(`[WAYKEEP] ${mem.kind}: ${formatMemoryContent(mem)}${client.memoryRepo.stalenessMarker(mem)}`);
           newlyInjected.push(predId);
           allInjected.add(predId);
           surfaced++;
@@ -101,7 +101,7 @@ export function runRecallLayers(ctx: PromptCtx): void {
 
       for (const r of vectorResults) {
         if (!budgetAvailable()) break;
-        budgetPush(`[WAYKEEP] ${r.memory.kind}: ${r.memory.content}${client.memoryRepo.stalenessMarker(r.memory)}`);
+        budgetPush(`[WAYKEEP] ${r.memory.kind}: ${formatMemoryContent(r.memory)}${client.memoryRepo.stalenessMarker(r.memory)}`);
         newlyInjected.push(r.memory.id);
       }
     } catch { /* best-effort */ }

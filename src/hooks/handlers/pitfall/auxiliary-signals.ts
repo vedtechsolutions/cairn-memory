@@ -9,7 +9,7 @@ import { predictRelated } from '../../../utils/prediction.js';
 import { emptyConditionContext, type ConditionContext } from '../../../utils/condition-evaluator.js';
 import { passesCrossProjectGuard } from '../../../utils/cross-project-guard.js';
 import type { PitfallPassCtx } from './memory-recall.js';
-import { isMemoryEligibleForInjection } from '../../../utils/memory-injection.js';
+import { isMemoryEligibleForInjection , formatMemoryContent } from '../../../utils/memory-injection.js';
 
 /** File-triggered reminders */
 export function applyFileReminders(ctx: PitfallPassCtx): void {
@@ -71,7 +71,7 @@ export function applyPredictivePrefetch(ctx: PitfallPassCtx): void {
         // pitfall must never ride a co-recall edge into another project).
         if (mem && mem.kind === 'pitfall' && isMemoryEligibleForInjection(mem)
           && passesCrossProjectGuard(mem, ctx.project, ctx.queryFp)) {
-          warnings.push(mem.content);
+          warnings.push(formatMemoryContent(mem));
           tracker.injectedMemoryIds = tracker.injectedMemoryIds ?? [];
           if (!tracker.injectedMemoryIds.includes(predId)) {
             tracker.injectedMemoryIds.push(predId);

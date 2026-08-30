@@ -17,6 +17,8 @@
 
 - Added the fail-closed sync plumbing: a sync-facing config health surface (`cairnConfigHealth` + a `waykeep doctor` check — local reads stay tolerant, sync treats an unreadable or malformed config as disabled), the shared D10 eligibility predicate with named refusal reasons and an exact-project selector (never project-OR-global), and the durable-generation check in every memory-derived cache reader — a remote create, edit, or tombstone applied by another process now invalidates the skip gate AND the FTS candidate cache before the next read.
 
+- Added the provenance read model and THE single team-content formatter: `Memory` exposes the server-stamped `author` (non-null ⟺ the row arrived through sync), `origin_client`, and `share_state`; every automatic render surface (briefing tiers, prompt recall, pitfall warnings, subagent context) routes content through one formatter that labels team content `[waykeep-team: <account> via <client>]` and strips every content-supplied fake label at render — the label lives inside the ingest neutralizer's protected class, so only the formatter can mint it.
+
 ### Fixed
 
 - Fixed automatic injection precision (from a live cross-agent evaluation): pitfalls marked RESOLVED and superseded memories are excluded from every automatic context surface; conversational/tasking prompts ("ask/review/evaluate…") can no longer be captured as decisions; proactive warnings are capped at one bounded warning (96 tokens) per correlated turn.

@@ -12,7 +12,7 @@ import type { ContextFingerprint } from '../../../utils/fingerprint.js';
 import { passesCrossProjectGuard, passesSameProjectRelevance } from '../../../utils/cross-project-guard.js';
 import { FINGERPRINT, PROACTIVE, SCORING_PROFILES, type ContextMode } from '../../../constants/index.js';
 import { cachedRecallByFingerprint } from './recall-cache.js';
-import { isMemoryEligibleForInjection } from '../../../utils/memory-injection.js';
+import { isMemoryEligibleForInjection , formatMemoryContent } from '../../../utils/memory-injection.js';
 
 /** Shared per-call state threaded through the recall + signal passes. */
 export interface PitfallPassCtx {
@@ -73,7 +73,7 @@ export function runFingerprintPitfallRecall(ctx: PitfallPassCtx): void {
       client.memoryRepo.incrementSurface(r.memory.id);
       tracker.recentlySurfaced = tracker.recentlySurfaced ?? {};
       tracker.recentlySurfaced[r.memory.id] = now;
-      warnings.push(r.memory.content);
+      warnings.push(formatMemoryContent(r.memory));
       surfacedPitfallIds.push(r.memory.id);
       fingerprintSurfacedIds.add(r.memory.id);
     }
@@ -106,7 +106,7 @@ export function runAnchorPitfallRecall(ctx: PitfallPassCtx): void {
       client.memoryRepo.incrementSurface(m.id);
       tracker.recentlySurfaced = tracker.recentlySurfaced ?? {};
       tracker.recentlySurfaced[m.id] = now;
-      warnings.push(m.content);
+      warnings.push(formatMemoryContent(m));
 
       tracker.surfacedPitfalls[filePath] = tracker.surfacedPitfalls[filePath] ?? [];
       tracker.surfacedPitfalls[filePath].push(m.id);
@@ -131,7 +131,7 @@ export function runAnchorDecisionRecall(ctx: PitfallPassCtx): void {
       if (lastSurfaced && (now - lastSurfaced) < PROACTIVE.SURFACE_COOLDOWN_MS) continue;
       tracker.recentlySurfaced = tracker.recentlySurfaced ?? {};
       tracker.recentlySurfaced[m.id] = now;
-      warnings.push(`Decision: ${m.content}`);
+      warnings.push(`Decision: ${formatMemoryContent(m)}`);
       tracker.injectedMemoryIds = tracker.injectedMemoryIds ?? [];
       if (!tracker.injectedMemoryIds.includes(m.id)) {
         tracker.injectedMemoryIds.push(m.id);
@@ -160,7 +160,7 @@ export function runFingerprintDecisionRecall(ctx: PitfallPassCtx): void {
       .filter(r => passesSameProjectRelevance(r.memory, queryFp, filePath, identityTokens))
       .filter(r => !injectedSet.has(r.memory.id));
     for (const r of relevantDecisions) {
-      warnings.push(`Decision: ${r.memory.content}`);
+      warnings.push(`Decision: ${formatMemoryContent(r.memory)}`);
       tracker.injectedMemoryIds = tracker.injectedMemoryIds ?? [];
       if (!tracker.injectedMemoryIds.includes(r.memory.id)) {
         tracker.injectedMemoryIds.push(r.memory.id);

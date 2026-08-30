@@ -10,6 +10,9 @@ export function rowToMemory(row: MemoryRow): Memory {
   return {
     id: row.id,
     content: row.content,
+    author: (row as { author?: string | null }).author ?? null,
+    origin_client: (row as { origin_client?: string }).origin_client,
+    share_state: (row as { share_state?: string | null }).share_state ?? null,
     kind: row.kind as MemoryKind,
     project: row.project,
     tags: row.tags ? JSON.parse(row.tags) : [],
