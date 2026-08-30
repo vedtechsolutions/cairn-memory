@@ -181,20 +181,35 @@ describe('M1-exit: the render-wiring guard (AST)', () => {
     // The ONE exception: the home file's TOP-LEVEL declaration (pack's
     // own clean); a parameter named clean forfeits even there.
     const forfeited = new Set<string>();
+    const forfeit = (nm: string): void => { if (SAFE_CALLEES.has(nm)) forfeited.add(nm); };
+    // Recurse binding PATTERNS (Codex 5799d4b #1: `function f({
+    // formatMemoryContent })` and `const { formatter: fmc } = deps`
+    // bind names the flat identifier checks never saw).
+    const forfeitBinding = (bn: import('typescript').BindingName): void => {
+      if (tsm.isIdentifier(bn)) { forfeit(bn.text); return; }
+      for (const el of bn.elements) {
+        if (!tsm.isOmittedExpression(el)) forfeitBinding(el.name);
+      }
+    };
     const collect = (n: import('typescript').Node): void => {
-      const forfeit = (nm: string): void => { if (SAFE_CALLEES.has(nm)) forfeited.add(nm); };
-      if (tsm.isParameter(n) && tsm.isIdentifier(n.name)) forfeit(n.name.text);
+      if (tsm.isParameter(n)) forfeitBinding(n.name);
       if (tsm.isMethodDeclaration(n) && tsm.isIdentifier(n.name)) forfeit(n.name.text);
+      // Class FIELDS too (Codex 5799d4b #1: a method-to-field refactor
+      // must not shed the forfeiture).
+      if (tsm.isPropertyDeclaration(n) && tsm.isIdentifier(n.name)) forfeit(n.name.text);
       if (tsm.isPropertyAssignment(n) && tsm.isIdentifier(n.name)
         && (tsm.isArrowFunction(n.initializer) || tsm.isFunctionExpression(n.initializer))) forfeit(n.name.text);
       // Shorthand ({ rerank }) is NOT collected: its value IS the
       // in-scope binding of that name, so it launders only when that
-      // binding is itself a shadow — which the param/var/function
-      // collectors above already forfeit.
+      // binding is itself a shadow — which the recursive param/var/
+      // function collectors forfeit.
       if (tsm.isFunctionDeclaration(n) && n.name
         && !(n.parent === sf && label === SAFE_CALLEES.get(n.name.text)?.home)) forfeit(n.name.text);
-      if (tsm.isVariableDeclaration(n) && tsm.isIdentifier(n.name)
-        && !(n.parent?.parent?.parent === sf && label === SAFE_CALLEES.get(n.name.text)?.home)) forfeit(n.name.text);
+      if (tsm.isVariableDeclaration(n)) {
+        if (tsm.isIdentifier(n.name)) {
+          if (!(n.parent?.parent?.parent === sf && label === SAFE_CALLEES.get(n.name.text)?.home)) forfeit(n.name.text);
+        } else forfeitBinding(n.name); // destructured declarations: no home exception
+      }
       tsm.forEachChild(n, collect);
     };
     collect(sf);
@@ -396,6 +411,10 @@ describe('M1-exit: the render-wiring guard (AST)', () => {
       ['object-method-shadow', 'const local = { formatMemoryContent(x) { return x; } }; emitToModel(local.formatMemoryContent(memory.content))'],
       ['receiver-forgery', 'const JSON = { stringify(x) { return x; } }; emitToModel(JSON.stringify(memory.content))'],
       ['arrow-property-shadow', 'const o = { clean: (x) => x }; emitToModel(o.clean(memory.content))'],
+      // Codex 5799d4b #1 — binding-pattern and class-field shadows:
+      ['destructured-param-shadow', 'function f({ formatMemoryContent }) { emitToModel(formatMemoryContent(memory.content)); }'],
+      ['destructured-var-shadow', 'const { formatter: formatMemoryContent } = deps; emitToModel(formatMemoryContent(memory.content))'],
+      ['class-field-shadow', 'class Local { formatMemoryContent = (x) => x; }\nconst local = new Local(); emitToModel(local.formatMemoryContent(memory.content))'],
       // Codex 943d023 #2 — static property-name spellings:
       ['string-key-destructuring', 'const { "content": text } = memory; emitToModel(text)'],
       ['computed-key-destructuring', 'const { ["con" + "tent"]: text } = memory; emitToModel(text)'],
