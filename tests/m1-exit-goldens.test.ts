@@ -64,23 +64,37 @@ describe('M1-exit: the render-wiring guard (AST)', () => {
   // Per-NODE: each `.content` access is safe only if one of ITS OWN
   // ancestor calls is a sanctioned formatter/predicate — a sibling
   // argument's formatter call sanctions nothing.
-  const SAFE_CALLEES = new Set([
-    'formatMemoryContent', 'formatAuxText',
-  // Canonical serialization (pack export): JSON-escapes newlines, so
-  // LINE_LEADING markers cannot fire; pack files re-enter through the
-  // learn pipeline, which scrubs and neutralizes on import.
-  'stringify', 'clean', 'JSON.stringify', 'safeExcerpt',
-    // Predicates and scoring/dedup consumers — content as INPUT, never output.
-    'isCompletedDecision', 'isCorrectionQuality', 'isMemoryEligibleForInjection',
-    'isResolvedPitfallContent', 'tokeniseForOverlap', 'buildFtsQuery', 'isMetaGoal',
-    'rerank', 'extractWinningPattern', 'generateFingerprint', 'search', 'findSimilarTo',
-    'truncate', 'clip', 'scanForRawContent', 'contentsOppose', 'tokenOverlap', 'embed',
-    'storeVersion', 'isSystemContent', 'extractWhyContext', 'computeEffectiveness',
-    // Repository/storage WRITES — content as ingestion input, never as
-    // rendered output (the write layer scrubs; the render layer labels).
-    'create', 'storeDecision', 'storePitfall', 'storeMemory', 'learnSections', 'update',
-    'push_', // placeholder, never matches
+  // Sanctioned callees: name → constraints. `receiver` pins the call to
+  // a receiver expression (JSON.stringify — 'stringify' alone redeems
+  // nothing). `home` names the ONE file allowed to declare the name
+  // locally (pack's own clean); ANY other file that declares a safe name
+  // locally forfeits redemption for it — a local shadow named
+  // formatMemoryContent must not launder (Codex e129fd3 #2).
+  const SAFE_CALLEES = new Map<string, { receiver?: string; home?: string }>([
+    ['formatMemoryContent', {}], ['formatAuxText', {}],
+    // The neutralization PRIMITIVE itself (marker stripping) — what
+    // formatMemoryContent calls internally; used directly on ingest.
+    ['neutralizeMemoryText', {}],
+    // JSON escaping neutralizes newlines (LINE_LEADING cannot fire);
+    // pack files re-enter through the learn pipeline (scrub-on-import).
+    ['stringify', { receiver: 'JSON' }],
+    ['clean', { home: 'src/pack/pack.ts' }],
+    ['safeExcerpt', {}],
+    // Predicates and scoring/query consumers — content as INPUT only.
+    ['isCompletedDecision', {}], ['isCorrectionQuality', {}], ['isMemoryEligibleForInjection', {}],
+    ['isResolvedPitfallContent', {}], ['tokeniseForOverlap', {}], ['buildFtsQuery', {}], ['isMetaGoal', {}],
+    ['rerank', {}], ['extractWinningPattern', {}], ['generateFingerprint', {}], ['search', {}], ['findSimilarTo', {}],
+    ['scanForRawContent', {}], ['contentsOppose', {}], ['tokenOverlap', {}], ['embed', {}],
+    ['storeVersion', {}], ['isSystemContent', {}], ['extractWhyContext', {}], ['computeEffectiveness', {}],
+    // Repository/storage WRITES — ingestion input (the write layer scrubs).
+    ['create', {}], ['storeDecision', {}], ['storePitfall', {}], ['storeMemory', {}], ['learnSections', {}], ['update', {}],
   ]);
+  // TRANSPARENT callees carry their input VALUE into their result — the
+  // walk continues to the transform's own consumer instead of stopping.
+  // This replaces both truncate/clip-as-safe (they shorten, they do not
+  // make text render-safe — Codex e129fd3 #2) and outerHasSafe (which
+  // redeemed side-effect sinks like rerank(emitToModel(x))).
+  const TRANSPARENT_CALLEES = new Set(['map', 'flatMap', 'truncate', 'clip']);
 
   // Files whose `.content` is NOT memory content (justified exemptions):
   const EXEMPT_FILES = new Set([
@@ -100,10 +114,6 @@ describe('M1-exit: the render-wiring guard (AST)', () => {
     // decision-reflector ever renders, narrow this to SAFE_SITES.
     'src/hooks/shared/decision-reflector.ts',
   ]);
-  // truncate/clip results still need a formatter before rendering — but
-  // every production use is INSIDE a formatMemoryContent argument, and
-  // a bare truncate-to-sink shows up as the OUTER call being unsafe.
-
   // LINE-LEVEL exemptions (narrower than EXEMPT_FILES): the exact source
   // text of a flagged statement, per file, each with a justification. If
   // the line changes AT ALL the exemption stops matching and the flag
@@ -143,16 +153,42 @@ describe('M1-exit: the render-wiring guard (AST)', () => {
     return '';
   }
 
+  function calleeReceiver(node: import('typescript').CallExpression, tsm: typeof import('typescript')): string {
+    const e = node.expression;
+    return tsm.isPropertyAccessExpression(e) ? e.expression.getText() : '';
+  }
+
   async function astScan(source: string, label: string, safeSites: readonly { file: string; snippet: string }[] = []): Promise<string[]> {
     const tsm = (await import('typescript')).default;
     const sf = tsm.createSourceFile(label, source, tsm.ScriptTarget.Latest, true);
-    const siteSnippets = safeSites.filter((x) => x.file === label).map((x) => x.snippet);
+    const siteSnippets = safeSites.filter((x) => x.file === label).map((x) => x.snippet.trim());
     const offenders: string[] = [];
+    const sourceLines = source.split('\n');
+    // LINE-EXACT (Codex e129fd3 #1: the old top-level-statement
+    // `includes` let the benign text shield every sink in the same
+    // function — even from inside a comment): the flagged node's OWN
+    // trimmed line must EQUAL the snippet, so a line that exempts
+    // cannot also contain a sink.
     const atSafeSite = (n: import('typescript').Node): boolean => {
-      let st: import('typescript').Node = n;
-      while (st.parent && !tsm.isSourceFile(st.parent)) st = st.parent;
-      const text = st.getText();
-      return siteSnippets.some((snip) => text.includes(snip));
+      const line = sourceLines[sf.getLineAndCharacterOfPosition(n.getStart()).line]?.trim() ?? '';
+      return siteSnippets.includes(line);
+    };
+    // Local declarations of sanctioned names forfeit redemption in this
+    // file (unless it is the entry's declared home).
+    const localDecls = new Set<string>();
+    const collect = (n: import('typescript').Node): void => {
+      if (tsm.isFunctionDeclaration(n) && n.name && SAFE_CALLEES.has(n.name.text)) localDecls.add(n.name.text);
+      if (tsm.isVariableDeclaration(n) && tsm.isIdentifier(n.name) && SAFE_CALLEES.has(n.name.text)) localDecls.add(n.name.text);
+      tsm.forEachChild(n, collect);
+    };
+    collect(sf);
+    const redeems = (call: import('typescript').CallExpression): boolean => {
+      const name = calleeName(call, tsm);
+      const entry = SAFE_CALLEES.get(name);
+      if (!entry) return false;
+      if (entry.receiver && calleeReceiver(call, tsm) !== entry.receiver) return false;
+      if (localDecls.has(name) && label !== entry.home) return false;
+      return true;
     };
     const visit = (node: import('typescript').Node): void => {
       // Destructured content alias: const { content } = memoryish.
@@ -161,12 +197,24 @@ describe('M1-exit: the render-wiring guard (AST)', () => {
       // only variable-declaration destructuring aliases a row field.
       if (tsm.isObjectBindingPattern(node)
         && tsm.isVariableDeclaration(node.parent)
-        && node.elements.some((el) => tsm.isIdentifier(el.name) && el.name.text === 'content' && !el.propertyName)
+        && node.elements.some((el) =>
+          // renamed too: const { content: text } = memory (Codex e129fd3 #3)
+          (el.propertyName ? tsm.isIdentifier(el.propertyName) && el.propertyName.text === 'content'
+            : tsm.isIdentifier(el.name) && el.name.text === 'content'))
         && !atSafeSite(node)) {
         offenders.push(`${label}: destructured content alias`);
       }
+      const foldKey = (e: import('typescript').Expression): string | null => {
+        if (tsm.isStringLiteral(e) || tsm.isNoSubstitutionTemplateLiteral(e)) return e.text;
+        if (tsm.isBinaryExpression(e) && e.operatorToken.kind === tsm.SyntaxKind.PlusToken) {
+          const l = foldKey(e.left); const r = foldKey(e.right);
+          return l !== null && r !== null ? l + r : null;
+        }
+        if (tsm.isParenthesizedExpression(e)) return foldKey(e.expression);
+        return null; // dynamic keys: KNOWN-UNCOVERED, asserted below
+      };
       const isContentAccess = (tsm.isPropertyAccessExpression(node) && node.name.text === 'content')
-        || (tsm.isElementAccessExpression(node) && tsm.isStringLiteral(node.argumentExpression) && node.argumentExpression.text === 'content');
+        || (tsm.isElementAccessExpression(node) && foldKey(node.argumentExpression) === 'content');
       if (isContentAccess) {
         // Walk ancestors: safe if any enclosing call is sanctioned; a
         // comparison/typeof/length context is safe; otherwise, reaching
@@ -182,20 +230,14 @@ describe('M1-exit: the render-wiring guard (AST)', () => {
           if (tsm.isCallExpression(parent) && parent.expression === cur) {
             cur = parent; parent = cur.parent; continue;
           }
-          if (tsm.isCallExpression(parent) && parent.arguments.some((a) => a === cur || a.getText().includes(node.getText()))
-            && SAFE_CALLEES.has(calleeName(parent, tsm))) { verdictSafe = true; break; }
-          if (tsm.isCallExpression(parent)) {
-            // an UNSANCTIONED call consuming it — keep walking: an outer
-            // sanctioned call still redeems it (e.g. map cb inside rerank).
-            const outerHasSafe = ((): boolean => {
-              let p2: import('typescript').Node | undefined = parent.parent;
-              while (p2) {
-                if (tsm.isCallExpression(p2) && SAFE_CALLEES.has(calleeName(p2, tsm))) return true;
-                p2 = p2.parent;
-              }
-              return false;
-            })();
-            if (outerHasSafe) { verdictSafe = true; break; }
+          if (tsm.isCallExpression(parent) && parent.arguments.includes(cur as import('typescript').Expression)) {
+            if (redeems(parent)) { verdictSafe = true; break; }
+            // TRANSPARENT transform: the value rides the RESULT to the
+            // transform's own consumer. Anything else consuming the
+            // value is a sink RIGHT HERE — no outer redemption (Codex
+            // e129fd3 #2: rerank(emitToModel(x)) must flag at
+            // emitToModel, not be laundered by rerank above it).
+            if (TRANSPARENT_CALLEES.has(calleeName(parent, tsm))) { cur = parent; parent = cur.parent; continue; }
             sink = `call ${calleeName(parent, tsm) || '<expr>'}(…)`;
             break;
           }
@@ -214,7 +256,9 @@ describe('M1-exit: the render-wiring guard (AST)', () => {
           // `s += m.content`) is the alias/concat problem in mutable
           // form — a sink, same as the declaration alias.
           if (tsm.isBinaryExpression(parent)
-            && [tsm.SyntaxKind.EqualsToken, tsm.SyntaxKind.PlusEqualsToken].includes(parent.operatorToken.kind)
+            && [tsm.SyntaxKind.EqualsToken, tsm.SyntaxKind.PlusEqualsToken,
+              tsm.SyntaxKind.BarBarEqualsToken, tsm.SyntaxKind.AmpersandAmpersandEqualsToken,
+              tsm.SyntaxKind.QuestionQuestionEqualsToken].includes(parent.operatorToken.kind)
             && parent.right === cur) {
             sink = 'assignment'; break;
           }
@@ -238,8 +282,12 @@ describe('M1-exit: the render-wiring guard (AST)', () => {
             // call site — interprocedural flow this walk cannot follow,
             // so it fails closed (a raw-content-returning helper is
             // exactly how a future render site inherits unwired text).
-            if ((tsm.isFunctionDeclaration(fn) || tsm.isMethodDeclaration(fn)) && fn.name) {
-              sink = `returned raw from ${fn.name.getText()}()`; break;
+            const named = tsm.isFunctionDeclaration(fn) || tsm.isMethodDeclaration(fn)
+              || tsm.isGetAccessorDeclaration(fn) || tsm.isSetAccessorDeclaration(fn)
+              || tsm.isConstructorDeclaration(fn)
+              || (tsm.isFunctionExpression(fn) && fn.name !== undefined);
+            if (named) {
+              sink = 'returned raw from a named function/accessor'; break;
             }
             cur = fn; parent = fn.parent; continue;
           }
@@ -310,6 +358,17 @@ describe('M1-exit: the render-wiring guard (AST)', () => {
       ['array-indirection', "warnings.push([m.content].join('\\n'))"],
       ['object-readback', 'const o = { t: m.content }; emitToModel(o.t)'],
       ['local-helper', 'const get = (m) => m.content; emitToModel(get(m))'],
+      // Codex e129fd3 #2 — sanctioned-callee laundering:
+      ['truncate-launder', 'emitToModel(truncate(memory.content, 60))'],
+      ['inner-side-effect', 'rerank(emitToModel(memory.content))'],
+      ['shadowed-formatter', 'function formatMemoryContent(x) { return x; }\nemitToModel(formatMemoryContent(memory.content))'],
+      ['bare-stringify', 'emitToModel(stringify(memory.content))'],
+      // Codex e129fd3 #3 — syntactic escapes:
+      ['renamed-destructuring', 'const { content: text } = memory; emitToModel(text)'],
+      ['folded-element-key', 'emitToModel(memory["con" + "tent"])'],
+      ['template-element-key', 'emitToModel(memory[`content`])'],
+      ['logical-assignment', 'let out = ""; out ||= memory.content; emitToModel(out)'],
+      ['getter-return', 'class X { get raw() { return memory.content; } }'],
     ];
     for (const [name, snippet] of plants) {
       assert.ok((await astScan(snippet, name)).length > 0, `${name} must be caught`);
@@ -320,10 +379,37 @@ describe('M1-exit: the render-wiring guard (AST)', () => {
       'const n = m.content.length',
       'rerank(q, results.map((r, i) => ({ id: r.memory.id, text: r.memory.content, rank: i })))',
       'formatMemoryContent({ ...m, content: truncate(m.content, 60) })',
+      'const payload = JSON.stringify(m.content)',
     ];
     for (const snippet of safes) {
       const found = await astScan(snippet, 'safe');
       assert.deepEqual(found, [], `safe form flagged: ${snippet}`);
+    }
+  });
+
+  it('SAFE_SITES is line-exact: the benign line shields neither a sink beside it nor one behind a comment (Codex e129fd3 #1)', async () => {
+    for (const site of SAFE_SITES) {
+      const beside = `function f() {\n${site.snippet}\nemitToModel(memory.content);\n}`;
+      assert.ok((await astScan(beside, site.file, SAFE_SITES)).length > 0,
+        `${site.file}: a sink beside the exempt line must flag`);
+      const comment = `function f() { /* ${site.snippet} */ emitToModel(memory.content); }`;
+      assert.ok((await astScan(comment, site.file, SAFE_SITES)).length > 0,
+        `${site.file}: a comment cannot smuggle the exemption`);
+    }
+  });
+
+  it('KNOWN-UNCOVERED shapes are stated, not implied closed', async () => {
+    // A static per-file walk cannot follow dynamic keys or whole-object
+    // escapes; the handler goldens + the required-author formatter
+    // signature are the semantic backstop on covered paths. If one of
+    // these starts flagging, MOVE it to the plants — do not delete it.
+    const uncovered = [
+      'const k = "content"; emitToModel(memory[k])',
+      'emitToModel(memory)', // the whole row escapes, not the field
+    ];
+    for (const shape of uncovered) {
+      assert.deepEqual(await astScan(shape, 'known-uncovered'), [],
+        `documented limitation changed — reclassify: ${shape}`);
     }
   });
 
