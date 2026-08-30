@@ -18,6 +18,19 @@ import { ApplyValidationError } from './errors.js';
  * transaction rolls back with no cursor or generation movement.
  */
 
+/** Provenance identities are opaque TOKENS, never free text: they are
+ *  interpolated into the trusted render label, so brackets, whitespace,
+ *  and control characters are structurally excluded (Codex m1s7 #5 —
+ *  origin_client carrying "]\n[WAYKEEP]…" minted a forged system line
+ *  THROUGH the genuine label). */
+const IDENTITY_TOKEN = /^[A-Za-z0-9._@-]{1,128}$/;
+
+function assertIdentityToken(v: unknown, label: string): asserts v is string {
+  if (typeof v !== 'string' || !IDENTITY_TOKEN.test(v)) {
+    throw new ApplyValidationError(`${label} must be an identity token ([A-Za-z0-9._@-], 1-128 chars)`);
+  }
+}
+
 const isSafePositiveInt = (v: unknown): v is number =>
   typeof v === 'number' && Number.isSafeInteger(v) && v > 0;
 
@@ -39,12 +52,12 @@ function validateEnvelopeShape(env: unknown, seq: number): SyncEntityEnvelope {
   if (e.canonicalization_version !== CANONICALIZATION_VERSION || e.hash_version !== CONTENT_HASH_VERSION) {
     throw new ApplyValidationError(`seq ${seq}: unsupported canonicalization/hash version`);
   }
-  assertBoundedId(e.author, `seq ${seq}: author`);
+  assertIdentityToken(e.author, `seq ${seq}: author`);
   if (!Array.isArray(e.contributors) || e.contributors.length > SYNC_APPLY.MAX_CONTRIBUTORS
-    || !e.contributors.every((c) => typeof c === 'string' && c.length > 0 && c.length <= SYNC_APPLY.MAX_ID_LENGTH)) {
-    throw new ApplyValidationError(`seq ${seq}: contributors must be a bounded array of account ids`);
+    || !e.contributors.every((c) => typeof c === 'string' && IDENTITY_TOKEN.test(c))) {
+    throw new ApplyValidationError(`seq ${seq}: contributors must be bounded identity tokens`);
   }
-  assertBoundedId(e.origin_client, `seq ${seq}: origin_client`);
+  assertIdentityToken(e.origin_client, `seq ${seq}: origin_client`);
   if (typeof e.created_at !== 'string' || typeof e.updated_at !== 'string') {
     throw new ApplyValidationError(`seq ${seq}: created_at/updated_at must be strings`);
   }

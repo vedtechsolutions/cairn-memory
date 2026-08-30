@@ -37,6 +37,18 @@ export function isResolvedPitfallContent(content: string): boolean {
 // start (formatter review C1).
 const LINE_LEADING_MARKERS = /(^|[\r\n])(?:\s*\[\s*(?:cairn|waykeep)\b[^\]\n]*\]\s*)+/gi;
 
+// Inline brand-marker DEFANG (Codex m1s7 #3/#4): the apply sanitizer
+// collapses newlines, turning line-leading attacks into inline ones, so
+// inline occurrences are the reachable smuggling form — a middle dot
+// breaks the exact-brand match while staying readable, and legitimate
+// quoting degrades gracefully to "[·waykeep…]".
+const INLINE_BRAND_MARKERS = /\[(\s*)(cairn|waykeep)\b/gi;
+
+// Render-side identity escape (defense in depth behind the validator's
+// token charset): whatever reaches the label slot cannot carry bracket,
+// backslash, or line-break structure.
+const escapeIdentity = (v: string): string => v.replace(/[^A-Za-z0-9._@-]/g, '_').slice(0, 128);
+
 export function formatMemoryContent(
   memory: Pick<Memory, 'content'> & { author?: string | null; origin_client?: string },
 ): string {
@@ -45,13 +57,16 @@ export function formatMemoryContent(
   // mid-content past it (newlines survive sanitization). Strip EVERY
   // line-leading [cairn…]/[waykeep…] marker at render — for local and
   // team rows alike — then mint the genuine label fresh.
-  const cleaned = neutralizeMemoryText(memory.content).replace(LINE_LEADING_MARKERS, '$1').trim();
+  const cleaned = neutralizeMemoryText(memory.content)
+    .replace(LINE_LEADING_MARKERS, '$1')
+    .replace(INLINE_BRAND_MARKERS, '[\u00B7$1$2')
+    .trim();
   if (memory.author === null || memory.author === undefined) return cleaned;
-  const client = memory.origin_client ? ` via ${memory.origin_client}` : '';
+  const client = memory.origin_client ? ` via ${escapeIdentity(memory.origin_client)}` : '';
   // The label sits INSIDE the ingest neutralizer's protected class
   // ('waykeep' + word boundary): a payload arriving WITH this exact
   // prefix has it stripped at apply, so only this function mints it.
-  return `[waykeep-team: ${memory.author}${client}] ${cleaned}`;
+  return `[waykeep-team: ${escapeIdentity(memory.author)}${client}] ${cleaned}`;
 }
 
 /** Shared defense for every automatic context-injection surface. */

@@ -1,4 +1,5 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { formatMemoryContent } from '../../utils/memory-injection.js';
 import { canReadPrivate } from '../../config/cairn-config.js';
 import { sessionProjectId } from '../../utils/session-project.js';
 import * as z from 'zod/v4';
@@ -76,12 +77,12 @@ export function registerStatsTools(
         const healthPid = sessionProjectId();
         if (health.oldestMemory) {
           const preview = canReadPrivate(health.oldestMemory.project ?? null, healthPid)
-            ? `"${health.oldestMemory.content.slice(0, 60)}"` : '[private project — content hidden]';
+            ? `"${formatMemoryContent({ ...health.oldestMemory, content: health.oldestMemory.content.slice(0, 60) })}"` : '[private project — content hidden]';
           lines.push(`Oldest: ${preview} (${formatTimestamp(health.oldestMemory.created_at)})`);
         }
         if (health.mostRecalled) {
           const preview = canReadPrivate(health.mostRecalled.project ?? null, healthPid)
-            ? `"${health.mostRecalled.content.slice(0, 60)}"` : '[private project — content hidden]';
+            ? `"${formatMemoryContent({ ...health.mostRecalled, content: health.mostRecalled.content.slice(0, 60) })}"` : '[private project — content hidden]';
           lines.push(`Most recalled: ${preview} (${health.mostRecalled.recall_count}x)`);
         }
 

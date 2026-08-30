@@ -15,6 +15,7 @@
  * updates.
  */
 import type { PostToolUseFailureInput } from '../shared/hook-io.js';
+import { formatMemoryContent } from '../../utils/memory-injection.js';
 import { recordRollup } from '../../db/telemetry-rollup.js';
 import { ROLLUP, ROLLUP_METRICS } from '../../constants/index.js';
 import type { CachedHookContext } from '../shared/db-client.js';
@@ -313,7 +314,7 @@ function handleErrorLearningBusiness(input: PostToolUseFailureInput, client: Cac
   if (result.deduplicated) {
     if (storedMemory && isMemoryEligibleForInjection(storedMemory)) {
       return {
-        output: buildOutputJson('PostToolUseFailure', `[WAYKEEP] Repeated error. Previous lesson: "${storedMemory.content}"`),
+        output: buildOutputJson('PostToolUseFailure', `[WAYKEEP] Repeated error. Previous lesson: "${formatMemoryContent(storedMemory)}"`),
         action: 'learned-deduped',
         sessionCount,
         surfacedProcessed,

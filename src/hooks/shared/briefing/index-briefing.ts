@@ -2,6 +2,7 @@
 // Progressive-disclosure index briefing
 // ---------------------------------------------------------------------------
 import type { MemoryRepository } from '../../../db/memory-repository.js';
+import { formatMemoryContent } from '../../../utils/memory-injection.js';
 import type { PlanRepository, Plan } from '../../../db/plan-repository.js';
 import { BRIEFING_ALLOCATION, BRIEFING_MODE } from '../../../constants/index.js';
 import { estimateTokensFast } from '../../../utils/tokens.js';
@@ -137,7 +138,7 @@ export function compileIndexBriefing(
   if (decisions.length > 0) {
     lines.push(`Decisions (${decisions.length}):`);
     for (const d of decisions) {
-      lines.push(`  [dec:${d.id.slice(0, 8)}] ${truncate(d.content, BRIEFING_MODE.INDEX_LINE_MAX_CHARS)}`);
+      lines.push(`  [dec:${d.id.slice(0, 8)}] ${formatMemoryContent({ ...d, content: truncate(d.content, BRIEFING_MODE.INDEX_LINE_MAX_CHARS) })}`);
       renderedMemoryIds.push(d.id);
     }
   }
@@ -163,7 +164,7 @@ export function compileIndexBriefing(
   if (pitfalls.length > 0) {
     lines.push(`Pitfalls (${pitfalls.length}):`);
     for (const p of pitfalls) {
-      lines.push(`  [pit:${p.id.slice(0, 8)}] ${truncate(p.content, BRIEFING_MODE.INDEX_LINE_MAX_CHARS)}`);
+      lines.push(`  [pit:${p.id.slice(0, 8)}] ${formatMemoryContent({ ...p, content: truncate(p.content, BRIEFING_MODE.INDEX_LINE_MAX_CHARS) })}`);
       includedPitfallIds.push(p.id);
       renderedMemoryIds.push(p.id);
     }
@@ -186,7 +187,7 @@ export function compileIndexBriefing(
   if (corrections.length > 0) {
     lines.push(`Corrections (${corrections.length}):`);
     for (const c of corrections) {
-      lines.push(`  [cor:${c.id.slice(0, 8)}] ${truncate(c.content, BRIEFING_MODE.INDEX_LINE_MAX_CHARS)}`);
+      lines.push(`  [cor:${c.id.slice(0, 8)}] ${formatMemoryContent({ ...c, content: truncate(c.content, BRIEFING_MODE.INDEX_LINE_MAX_CHARS) })}`);
       renderedMemoryIds.push(c.id);
     }
   }

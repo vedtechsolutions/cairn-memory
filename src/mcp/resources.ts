@@ -3,6 +3,7 @@
  * Exposes read-only views of plan state and briefings without token budget constraints.
  */
 import { ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { formatMemoryContent } from '../utils/memory-injection.js';
 import { canReadPrivate } from '../config/cairn-config.js';
 import { sessionProjectId } from '../utils/session-project.js';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -77,7 +78,7 @@ export function registerResources(
         lines.push('', 'Pitfalls:');
         for (const p of pitfalls) {
           const why = p.context?.why ? ` (Why: ${p.context.why})` : '';
-          lines.push(`  - ${p.content}${why}`);
+          lines.push(`  - ${formatMemoryContent(p)}${why}`);
         }
       }
 
@@ -86,7 +87,7 @@ export function registerResources(
       if (corrections.length > 0) {
         lines.push('', 'Corrections:');
         for (const c of corrections) {
-          lines.push(`  - ${c.content}`);
+          lines.push(`  - ${formatMemoryContent(c)}`);
         }
       }
 
@@ -95,7 +96,7 @@ export function registerResources(
       if (decisions.length > 0) {
         lines.push('', 'Recent Decisions:');
         for (const d of decisions) {
-          lines.push(`  - ${d.content}`);
+          lines.push(`  - ${formatMemoryContent(d)}`);
         }
       }
 

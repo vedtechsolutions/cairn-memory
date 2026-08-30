@@ -181,4 +181,7 @@ export interface MemoryRow {
   superseded_by?: string | null;
   superseded_at?: string | null;
   rank?: number;
+  author?: string | null;
+  origin_client?: string;
+  share_state?: string | null;
 }

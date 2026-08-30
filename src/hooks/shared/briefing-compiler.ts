@@ -13,6 +13,7 @@
  * surface (query-fp synthesis, index mode, recovery pass, types).
  */
 import type { MemoryRepository } from '../../db/memory-repository.js';
+import { formatMemoryContent } from '../../utils/memory-injection.js';
 import type { PlanRepository } from '../../db/plan-repository.js';
 import { LIMITS, TOKEN_BUDGET, BRIEFING_ALLOCATION, BRIEFING_MODE } from '../../constants/index.js';
 // NOTE: Briefing compilation runs on the hot path for every session-start. Use
@@ -143,7 +144,7 @@ function appendContradictions(
   if (pairs.length === 0) return out;
   const clip = (s: string) => (s.length > 70 ? s.slice(0, 67) + '...' : s);
   const lines = pairs.slice(0, LIMITS.BRIEFING_CONTRADICTIONS_MAX)
-    .map(p => `  ⚠ "${clip(p.winner.content)}" vs "${clip(p.loser.content)}"`);
+    .map(p => `  ⚠ "${formatMemoryContent({ ...p.winner, content: clip(p.winner.content) })}" vs "${formatMemoryContent({ ...p.loser, content: clip(p.loser.content) })}"`);
   const section = ['[WAYKEEP] Conflicting memories — verify & resolve:', ...lines].join('\n');
   const text = out.text ? `${out.text}\n${section}` : section;
   return { ...out, text, tokenEstimate: estimateTokensFast(text) };

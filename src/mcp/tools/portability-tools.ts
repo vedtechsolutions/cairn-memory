@@ -1,4 +1,5 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { formatMemoryContent } from '../../utils/memory-injection.js';
 import * as z from 'zod/v4';
 import type { MemoryRepository } from '../../db/memory-repository.js';
 import type { SessionCache } from '../../hooks/shared/session-cache.js';
@@ -319,7 +320,7 @@ export function registerPortabilityTools(
       // Scope change can affect which briefing a future inject sees — invalidate.
       sessionCache?.bumpMemoryVersion();
 
-      return { content: [{ type: 'text' as const, text: `promoted to global: "${memory.content.slice(0, 80)}"` }] };
+      return { content: [{ type: 'text' as const, text: `promoted to global: "${formatMemoryContent({ ...memory, content: memory.content.slice(0, 80) })}"` }] };
     },
   );
 }

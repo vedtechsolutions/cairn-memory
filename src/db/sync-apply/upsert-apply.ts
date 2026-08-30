@@ -352,6 +352,11 @@ export function applyUpsert(db: Database.Database, project: string, env: SyncEnt
     if (!isSelf) assertRebindLegal(db, record.id!, project, ph);
     if (!isSelf && db.prepare('SELECT 1 FROM memories WHERE id = ?').get(record.id!) === undefined) {
       insertProjectedRow(db, record.id!, buildInertProjection(env, record));
+    } else if (isSelf) {
+      // Twin adoption of the matched row: stamp provenance so the
+      // now-canonical bytes render as team (Codex m1s7 #9).
+      db.prepare('UPDATE memories SET author = COALESCE(author, ?), origin_client = ? WHERE id = ?')
+        .run(env.author, env.origin_client, record.id!);
     }
     // S6/R22: ph is the hash of the bytes actually stored — on a rebind
     // of a pre-existing row those may not be the incoming payload's
@@ -368,6 +373,12 @@ export function applyUpsert(db: Database.Database, project: string, env: SyncEnt
     // UUID collision fails the batch instead of corrupting the map
     // (slice-4 Codex gate #2). ph is the AS-STORED hash (S6/R22).
     assertRebindLegal(db, record.id!, project, ph);
+    // Adoption stamps provenance (Codex m1s7 #9): the bytes are
+    // byte-identical to the canonical entity, so the row IS team
+    // content — leaving author NULL laundered it as local in the render
+    // label. Stamp only when unstamped; author is immutable once set.
+    db.prepare('UPDATE memories SET author = COALESCE(author, ?), origin_client = ? WHERE id = ?')
+      .run(env.author, env.origin_client, record.id!);
     bindEntity(db, { entityId: env.entity_id, localMemoryId: record.id!, project, version: env.entity_version, canonicalHash: ch, projectionHash: projectionHashOfRow(db, record.id!) ?? ph });
     mergeContributors(db, env.entity_id, env.contributors, env.entity_version);
     return 'replay-noop';
