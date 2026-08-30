@@ -180,15 +180,23 @@ describe('M1-exit: the render-wiring guard (AST)', () => {
     // and `const JSON = { stringify(x){…} }` forges the receiver pin).
     // The ONE exception: the home file's TOP-LEVEL declaration (pack's
     // own clean); a parameter named clean forfeits even there.
-    // Transparent expression wrappers (Codex 67f6712: parenthesizing or
-    // type-asserting is a semantics-preserving refactor, not a new key).
+    // Transparent expression wrappers, by the COMPILER'S definition
+    // (Codex ef30109 #1 ended the hand-rolled enumeration: parens, both
+    // assertion spellings, satisfies, non-null, instantiation
+    // expressions, partially-emitted — whatever TypeScript itself
+    // treats as an outer expression, today and after grammar additions).
+    // skipOuterExpressions is runtime-exported but not in the public
+    // .d.ts; the manual loop is the fallback if an upgrade drops it —
+    // and the instantiation/angle/satisfies PLANTS fail loudly if
+    // either path stops unwrapping a spelling.
+    type Unwrapper = (e: import('typescript').Expression, kinds: number) => import('typescript').Expression;
+    const skipOuter = (tsm as unknown as { skipOuterExpressions?: Unwrapper }).skipOuterExpressions;
     const unwrap = (e: import('typescript').Expression): import('typescript').Expression => {
-      // The full transparent-wrapper set in the grammar: parens, as,
-      // satisfies, non-null, and the angle-bracket assertion spelling
-      // (Codex 352bc11 #1 — <const>"x" is `as const` in older syntax).
+      if (skipOuter) return skipOuter(e, tsm.OuterExpressionKinds.All);
       while (tsm.isParenthesizedExpression(e) || tsm.isAsExpression(e)
         || tsm.isSatisfiesExpression(e) || tsm.isNonNullExpression(e)
-        || tsm.isTypeAssertionExpression(e)) e = e.expression;
+        || tsm.isTypeAssertionExpression(e)
+        || tsm.isExpressionWithTypeArguments(e)) e = e.expression;
       return e;
     };
     const foldKey = (raw: import('typescript').Expression): string | null => {
@@ -457,6 +465,9 @@ describe('M1-exit: the render-wiring guard (AST)', () => {
       ['angle-assert-member', 'const local = { [<const>"formatMemoryContent"](x) { return x; } }; emitToModel(local.formatMemoryContent(memory.content))'],
       ['angle-assert-key', 'const { [<const>"content"]: text } = memory; emitToModel(text)'],
       ['angle-assert-property-fn', 'const JSON = { stringify: <(x: unknown) => unknown>((x) => x) }; emitToModel(JSON.stringify(memory.content))'],
+      // Codex ef30109 — instantiation-expression wrappers:
+      ['instantiation-property-fn', 'const local = { formatMemoryContent: (<T>(x: T): T => x)<unknown> }; emitToModel(local.formatMemoryContent(memory.content))'],
+      ['instantiation-receiver-forgery', 'const JSON = { stringify: (<T>(x: T): T => x)<unknown> }; emitToModel(JSON.stringify(memory.content))'],
       // Codex 943d023 #2 — static property-name spellings:
       ['string-key-destructuring', 'const { "content": text } = memory; emitToModel(text)'],
       ['computed-key-destructuring', 'const { ["con" + "tent"]: text } = memory; emitToModel(text)'],
