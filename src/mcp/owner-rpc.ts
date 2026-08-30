@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
 import Database from 'better-sqlite3';
-import type { SyncEvent } from 'waykeep-contract';
+import { canonicalJson, type SyncEvent } from 'waykeep-contract';
 
 import { OWNER_RPC, SYNC_APPLY } from '../constants/index.js';
 import { applyEventBatch, readGeneration, type ApplyBatchResult } from '../db/sync-apply/index.js';
@@ -231,9 +231,11 @@ export class OwnerRpc {
     // project AND events (reviews C4 + Codex H1): the batch key is
     // global, so a reused id with a different body OR a different
     // project caller is a loud VALIDATION, never a silent no-apply
-    // masquerading as a replay.
+    // masquerading as a replay. CANONICAL JSON, not raw bytes (review
+    // D1): a retry re-serialized with different key order is the SAME
+    // semantic request and must replay, not be told "fix the batch".
     const eventsHash = createHash('sha256')
-      .update(JSON.stringify({ project: body.project, events: body.events }), 'utf8').digest('hex');
+      .update(canonicalJson({ project: body.project, events: body.events }), 'utf8').digest('hex');
 
     for (let attempt = 1; ; attempt++) {
       try {

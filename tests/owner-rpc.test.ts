@@ -306,6 +306,22 @@ describe('owner-control RPC', () => {
     assert.equal(status, 413);
   });
 
+  it('D1: a key-reordered but semantically identical retry REPLAYS — the digest is canonical, not byte-sensitive', async () => {
+    const id = randomUUID();
+    const env30 = envelope(record({ id, content: 'canonical digest row' }), 'E-canon', 1);
+    const first = await applyBatch({ project: PROJECT, batch_id: 'batch-canon', events: [{ type: 'upsert', seq: 30, entity: env30 }] });
+    assert.equal(first.status, 200);
+
+    // Same semantics, different key order at both the event and body level.
+    const res = await fetch(`${baseUrl}/owner/apply`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: `{"batch_id":"batch-canon","events":[{"seq":30,"entity":${JSON.stringify(env30)},"type":"upsert"}],"project":${JSON.stringify(PROJECT)}}`,
+    });
+    const json = (await res.json()) as Record<string, unknown>;
+    assert.equal(res.status, 200, 'a re-serialized retry is the same request');
+    assert.equal(json.replayed, true);
+  });
+
   it('generation is durable and visible to the main connection after RPC applies', () => {
     assert.ok(readGeneration(db) >= 1, 'peer visibility through the durable generation');
   });
