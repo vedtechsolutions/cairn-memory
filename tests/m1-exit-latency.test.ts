@@ -152,6 +152,85 @@ describe('M1-exit: latency matrix (embedded topology)', () => {
     assert.ok(pct(healthSamples, 95) < 1000, `health p95 ${pct(healthSamples, 95)}ms — the socket answers during applies`);
   });
 
+  it('STANDALONE owner: cross-process applies work, SIGKILL mid-apply leaves whole batches only, and a restarted owner continues', async () => {
+    const { spawn } = await import('node:child_process');
+    const { readFileSync: rf, existsSync: ex, rmSync: rm } = await import('node:fs');
+    const sdir = mkdtempSync(join(tmpdir(), 'waykeep-standalone-'));
+    const dbPath = join(sdir, 'standalone.db');
+    const portFile = join(sdir, 'port');
+    const spawnOwner = async () => {
+      const child = spawn(process.execPath, ['tests/fixtures/standalone-owner.mjs', dbPath, portFile], { cwd: process.cwd(), stdio: 'ignore' });
+      for (let i = 0; i < 100 && !ex(portFile); i++) await delay(50);
+      assert.ok(ex(portFile), 'the standalone owner came up');
+      return { child, url: `http://127.0.0.1:${rf(portFile, 'utf-8').trim()}` };
+    };
+
+    let { child, url } = await spawnOwner();
+    try {
+      // Cross-process applies + RTT (the standalone topology's numbers).
+      const rtts: number[] = [];
+      for (let b = 0; b < 3; b++) {
+        const t0 = process.hrtime.bigint();
+        const res = await fetch(`${url}/owner/apply`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            project: PROJECT, batch_id: `sa-${b}`,
+            events: Array.from({ length: 100 }, (_, i) => ({
+              type: 'upsert' as const, seq: b * 1000 + i + 1,
+              entity: envelope(record(randomUUID(), `standalone row ${b * 1000 + i}`), `E-sa-${b}-${i}`),
+            })),
+          }),
+        });
+        rtts.push(Number(process.hrtime.bigint() - t0) / 1e6);
+        assert.equal(res.status, 200);
+      }
+      console.log(`[m1-exit standalone] apply RTTs ms: ${rtts.map((r) => r.toFixed(1)).join(', ')}`);
+
+      // SIGKILL mid-apply: fire a big batch and kill without waiting.
+      const killBatch = fetch(`${url}/owner/apply`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          project: PROJECT, batch_id: 'sa-kill',
+          events: Array.from({ length: 500 }, (_, i) => ({
+            type: 'upsert' as const, seq: 50_000 + i,
+            entity: envelope(record(randomUUID(), `kill row ${i} ${'y'.repeat(300)}`), `E-kill-${i}`),
+          })),
+        }),
+      }).catch(() => null);
+      await delay(15);
+      child.kill('SIGKILL');
+      await killBatch;
+      await delay(100);
+
+      // Reopen: integrity + whole-batches-only.
+      const inspect = openDatabase({ dbPath });
+      try {
+        const check = inspect.pragma('integrity_check') as Array<{ integrity_check: string }>;
+        assert.equal(check[0].integrity_check, 'ok');
+        const killRows = (inspect.prepare("SELECT COUNT(*) n FROM memories WHERE content LIKE 'kill row %'").get() as { n: number }).n;
+        const receipt = inspect.prepare("SELECT 1 FROM sync_state WHERE ns = 'rpc-batch' AND k = 'sa-kill'").get();
+        if (receipt) assert.equal(killRows, 500, 'receipt ⇒ whole batch');
+        else assert.equal(killRows, 0, 'no receipt ⇒ nothing');
+        assert.equal((inspect.prepare("SELECT COUNT(*) n FROM memories WHERE content LIKE 'standalone row %'").get() as { n: number }).n, 300, 'the committed batches are intact');
+      } finally { inspect.close(); }
+
+      // Restart: a fresh owner continues from consistent state.
+      rm(portFile, { force: true });
+      ({ child, url } = await spawnOwner());
+      const after = await fetch(`${url}/owner/apply`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          project: PROJECT, batch_id: 'sa-after',
+          events: [{ type: 'upsert' as const, seq: 60_001, entity: envelope(record(randomUUID(), 'post-restart row'), 'E-after') }],
+        }),
+      });
+      assert.equal(after.status, 200, 'the restarted owner applies normally');
+    } finally {
+      child.kill('SIGKILL');
+      rmSync(sdir, { recursive: true, force: true });
+    }
+  });
+
   it('owner death mid-apply leaves the database consistent — the batch is all-or-nothing with its receipt', async () => {
     // Fire an apply and destroy every socket immediately.
     const controller = new AbortController();

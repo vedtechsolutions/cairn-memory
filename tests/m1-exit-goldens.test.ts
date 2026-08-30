@@ -103,27 +103,60 @@ describe('M1-exit: the render-wiring guard', () => {
     'src/mcp/resources.ts',
     'src/mcp/tools/memory-tools.ts',
     'src/mcp/tools/stats-tool.ts',
+    'src/mcp/tools/portability-tools.ts',
   ];
 
-  it('no render file interpolates raw memory content — every ${…content…} carries a formatter call', () => {
+  // Guard v2 (exit review C1): STATEMENT-level, SINK-based. The v1
+  // per-line ${…} regex was blind to bare pushes (the exact original
+  // pitfall-warning bug), concatenation, aliases, and multi-line
+  // interpolations — all planted and proven invisible by the gate.
+  const SINKS = /\bpush\(|\bbudgetPush\(|\blines\.|\.join\(|\+\s*['"`]|['"`]\s*\+|\$\{|=>\s*[`'"]|return [`'"]/;
+  const SAFE_MARKERS = /formatMemoryContent|formatAuxText|JSON\.stringify|safeExcerpt|\.content\.length|\.content ===|\.content !==|isCompletedDecision|isCorrectionQuality|isMemoryEligible|isResolvedPitfall|tokeniseForOverlap|\.toLowerCase\(|buildFtsQuery|isMetaGoal|rerank|extractWinning|stalenessMarker\(|search\(|findSimilar/;
+
+  function scanForRawContent(source: string, label: string): string[] {
+    const offenders: string[] = [];
+    // Statement chunks: newlines collapsed so multi-line expressions are
+    // one unit; split on ; and { } boundaries to keep chunks small.
+    const flat = source.replace(/\/\/[^\n]*/g, '').replace(/\s+/g, ' ');
+    // Split on ';' ONLY: splitting on braces severed template
+    // interpolations (${…}) from their sinks — the exact multiline
+    // shape the self-test plants.
+    const statements = flat.split(';');
+    for (const st of statements) {
+      if (!st.includes('.content')) continue;
+      if (SAFE_MARKERS.test(st)) continue;
+      if (SINKS.test(st)) offenders.push(`${label}: ${st.trim().slice(0, 90)}`);
+      // Raw ALIAS of content (const c = m.content) — flagged even
+      // without a sink in the same statement: the sink is elsewhere and
+      // untraceable, so the alias itself is the violation.
+      else if (/=\s*[A-Za-z_$][\w.$]*\.content\s*$/.test(st.trim())) offenders.push(`${label} (alias): ${st.trim().slice(0, 90)}`);
+    }
+    return offenders;
+  }
+
+  it('guard self-test: every planted regression shape is caught', () => {
+    const shapes: Array<[string, string]> = [
+      ['barepush', 'warnings.push(r.memory.content)'],
+      ['concat', "warnings.push('- ' + r.memory.content)"],
+      ['alias', 'const c = r.memory.content'],
+      ['multiline', 'lines.push(`x ${\n  m.content\n}`)'],
+      ['interpolation', 'lines.push(`- ${m.content}`)'],
+    ];
+    for (const [name, snippet] of shapes) {
+      assert.ok(scanForRawContent(snippet, name).length > 0, `${name} must be caught`);
+    }
+    // And the safe forms stay silent.
+    assert.equal(scanForRawContent('lines.push(`- ${formatMemoryContent(m)}`)', 'safe').length, 0);
+    assert.equal(scanForRawContent('if (m.content === other.content) return', 'safe').length, 0);
+  });
+
+  it('no render file lets raw memory content reach a sink (statement-level guard)', () => {
     const offenders: string[] = [];
     for (const file of RENDER_FILES) {
       const source = readFileSync(join(process.cwd(), file), 'utf-8');
-      const lines = source.split('\n');
-      lines.forEach((line, i) => {
-        // Interpolations of a content field into a rendered string.
-        const interpolations = line.match(/\$\{[^}]*\.content[^}]*\}/g) ?? [];
-        for (const expr of interpolations) {
-          const safe = expr.includes('formatMemoryContent')
-            || expr.includes('formatAuxText')
-            || expr.includes('JSON.stringify')      // fidelity serialization (materializer class)
-            || expr.includes('.content.length')     // metrics, not content
-            || expr.includes('safeExcerpt');        // pre-import external previews (gate-exempt)
-          if (!safe) offenders.push(`${file}:${i + 1} ${expr.slice(0, 70)}`);
-        }
-      });
+      offenders.push(...scanForRawContent(source, file));
     }
-    assert.deepEqual(offenders, [], `raw content interpolation in render files:\n${offenders.join('\n')}`);
+    assert.deepEqual(offenders, [], `raw content reaching render sinks:\n${offenders.join('\n')}`);
   });
 
   it('the pack CLI import closure reaches no process-spawning module (graph walk, not a fixed list)', () => {
@@ -131,6 +164,11 @@ describe('M1-exit: the render-wiring guard', () => {
     const spawners: string[] = [];
     const resolve = (from: string, spec: string): string | null => {
       if (!spec.startsWith('.')) return null; // package imports: node:/waykeep-contract/better-sqlite3 — checked by name below
+      // KNOWN BLIND SPOTS (exit review, comment-not-condition): a
+      // directory import resolving to foo/index.ts is missed, and
+      // import(variable) is invisible to the literal regex. Neither is
+      // reachable in the current pack closure; if either pattern enters
+      // it, extend this resolver.
       const base = join(from, '..', spec).replace(/\.js$/, '.ts');
       return base;
     };

@@ -1,5 +1,5 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { formatMemoryContent } from '../../utils/memory-injection.js';
+import { formatMemoryContent, formatAuxText } from '../../utils/memory-injection.js';
 import * as z from 'zod/v4';
 import type { MemoryRepository } from '../../db/memory-repository.js';
 import type { SessionCache } from '../../hooks/shared/session-cache.js';
@@ -147,7 +147,7 @@ export function registerPortabilityTools(
           if (result.deduplicated) deduplicated++;
           else ingested++;
         } catch (err) {
-          writeErrors.push(`⚠ record "${record.content.slice(0, 60)}": ${(err as Error).message}`);
+          writeErrors.push(`⚠ record "${formatAuxText(record.content.slice(0, 60))}": ${(err as Error).message}`);
         }
       }
       for (const file of parsed.files) {
