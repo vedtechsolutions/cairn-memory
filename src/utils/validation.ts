@@ -276,6 +276,10 @@ export function sanitize(input: string): string {
 export function neutralizeMemoryText(input: string): string {
   return input
     .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')
+    // Zero-width characters can split the brand token so the marker
+    // pattern misses an otherwise pixel-identical forgery (formatter
+    // review C1): U+200B..U+200D and U+FEFF are stripped everywhere.
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
     .replace(/^(?:\s*\[\s*(?:cairn|waykeep)\b[^\]\n]*\]\s*)+/gi, '')
     .trim();
 }

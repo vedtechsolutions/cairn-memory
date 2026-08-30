@@ -1,4 +1,5 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { formatMemoryContent } from '../../utils/memory-injection.js';
 import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import * as z from 'zod/v4';
 import type { MemoryRepository } from '../../db/memory-repository.js';
@@ -205,9 +206,9 @@ export function registerMemoryTools(
         const why = m.context?.why ? ` (Why: ${m.context.why})` : '';
 
         if (mode === 'minimal') {
-          return `• ${m.content}${why}`;
+          return `• ${formatMemoryContent(m)}${why}`;
         }
-        return `• [${m.kind}] ${m.content}${why} ${scope}${tags} — conf: ${m.confidence.toFixed(2)}, ${labelFor(m.id)}: ${score.toFixed(2)}`;
+        return `• [${m.kind}] ${formatMemoryContent(m)}${why} ${scope}${tags} — conf: ${m.confidence.toFixed(2)}, ${labelFor(m.id)}: ${score.toFixed(2)}`;
       });
 
       return { content: [{ type: 'text', text: [...header, ...lines].join('\n') }] };
@@ -527,7 +528,7 @@ export function registerMemoryTools(
 
         const tags = memory.tags.length > 0 ? ` [${memory.tags.join(', ')}]` : '';
         const scope = memory.project ? `project=${memory.project}` : 'global';
-        lines.push(`[${memory.kind}:${memory.id.slice(0, 8)}] ${memory.content}`);
+        lines.push(`[${memory.kind}:${memory.id.slice(0, 8)}] ${formatMemoryContent(memory)}`);
         if (memory.context?.why) lines.push(`  why: ${memory.context.why}`);
         if (memory.context?.how_to_apply) lines.push(`  how: ${memory.context.how_to_apply}`);
         lines.push(`  conf=${memory.confidence.toFixed(2)} surface=${memory.surface_count} impact=${memory.impact_count} ${scope}${tags}`);
@@ -578,7 +579,7 @@ export function registerMemoryTools(
         const previewPid = sessionProjectId();
         const sample = matches.slice(0, 5).map(m =>
           canReadPrivate(m.project, previewPid)
-            ? `  • [${m.kind}] "${m.content.slice(0, 80)}" (conf: ${m.confidence.toFixed(2)})`
+            ? `  • [${m.kind}] "${formatMemoryContent({ ...m, content: m.content.slice(0, 80) })}" (conf: ${m.confidence.toFixed(2)})`
             : `  • [${m.kind}] [private project — content hidden] (conf: ${m.confidence.toFixed(2)})`
         );
         const lines = [

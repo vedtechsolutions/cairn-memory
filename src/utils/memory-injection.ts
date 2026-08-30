@@ -24,9 +24,18 @@ export function isResolvedPitfallContent(content: string): boolean {
  * ingest, and this label is added at RENDER time, after that
  * neutralization — so a payload carrying its own "[team …]" prefix has
  * it stripped before storage while genuine labels are minted fresh
- * here. Local rows render unchanged.
+ * here. Local rows render with the same cleaning, no label.
+ *
+ * KNOWN LIMIT (stated, not hidden): Unicode homoglyphs of the brand
+ * (e.g. a Cyrillic 'а') cannot be closed by string matching — a
+ * lookalike label can render visually similar. Zero-width splits ARE
+ * closed (stripped in neutralizeMemoryText); the POSITION is the
+ * signal: a genuine label is always at offset 0, minted here.
  */
-const LINE_LEADING_MARKERS = /(^|\n)(?:\s*\[\s*(?:cairn|waykeep)\b[^\]\n]*\]\s*)+/gi;
+// Anchors cover every line-break form: a BARE \r returns the carriage
+// in a terminal, so `ok\r[waykeep-team: …]` rendered at the visual line
+// start (formatter review C1).
+const LINE_LEADING_MARKERS = /(^|[\r\n])(?:\s*\[\s*(?:cairn|waykeep)\b[^\]\n]*\]\s*)+/gi;
 
 export function formatMemoryContent(
   memory: Pick<Memory, 'content'> & { author?: string | null; origin_client?: string },

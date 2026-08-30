@@ -118,7 +118,7 @@ export function recoverDroppedPitfalls(
 
   const lines: string[] = [];
   for (const m of dropped) {
-    lines.push(`  - [!] ${truncate(formatMemoryContent(m), BRIEFING_ALLOCATION.CORRECTION_PASS_MAX_CHARS)}`);
+    lines.push(`  - [!] ${formatMemoryContent({ ...m, content: truncate(m.content, BRIEFING_ALLOCATION.CORRECTION_PASS_MAX_CHARS) })}`);
   }
 
   const text = lines.join('\n');
