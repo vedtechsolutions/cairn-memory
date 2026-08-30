@@ -46,6 +46,12 @@ export interface LearnResult {
   errors: string[];
 }
 
+/** RULE (four bugs in one slice earned this line): every identity
+ *  comparison happens in the CANONICAL domain — canonicalize once, then
+ *  compare and store the SAME bytes. Raw-vs-stored mismatches (byte
+ *  order, tag order, unscrubbed context) each produced endless-copy or
+ *  false-reject behavior. If you add a compared field, canonicalize it
+ *  here first. */
 export interface LearnOptions {
   /** Exact repeats: false (default — bulk CLI imports) makes them TRUE
    *  no-ops (idempotent re-runs never inflate confidence or mutate
