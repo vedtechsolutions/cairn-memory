@@ -26,6 +26,12 @@
 - Fixed automatic injection precision (from a live cross-agent evaluation): pitfalls marked RESOLVED and superseded memories are excluded from every automatic context surface; conversational/tasking prompts ("ask/review/evaluate…") can no longer be captured as decisions; proactive warnings are capped at one bounded warning (96 tokens) per correlated turn.
 - Fixed `npm publish` leaving a hollowed `dist/` behind (`strip:publish` removed benchmark output that incremental builds never re-emitted, failing three test files until a clean rebuild): a `postpublish` script now restores the full build.
 
+## [5.5.1] - 2026-08-30
+
+### Fixed
+
+- Fixed the fresh-install dead end under npm >= 11.5, which blocks dependency install scripts by default and leaves `better-sqlite3` without its native binding: `waykeep doctor` now recognizes the missing-addon state and prints the working one-shot fix (`npm install -g waykeep --allow-scripts=better-sqlite3,onnxruntime-node,sharp,protobufjs`), and README + docs/INSTALL.md document it directly under the install command (npm's own suggested fix omits the package name and errors). Released from `release/5.5.1` (v5.5.0 + the fix); the sync-foundation work under [Unreleased] was not included.
+
 ## [5.5.0] - 2026-08-29
 
 ### Changed
