@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [5.5.1] - 2026-08-30
+
+### Fixed
+
+- Fixed the fresh-install dead end under npm >= 11.5, which blocks dependency install scripts by default and leaves `better-sqlite3` without its native binding: `waykeep doctor` now recognizes the missing-addon state and prints the working one-shot fix (`npm install -g waykeep --allow-scripts=better-sqlite3,onnxruntime-node,sharp,protobufjs`), and README + docs/INSTALL.md document it directly under the install command (npm's own suggested fix omits the package name and errors).
+
 ## [5.5.0] - 2026-08-29
 
 ### Changed
