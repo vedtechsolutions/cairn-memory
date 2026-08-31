@@ -9,8 +9,8 @@
 # deadlock signature. On trip: kill, retry once. A run that passes
 # startup gets RUN_TIMEOUT total before being killed as a lost cause.
 set -u
-STARTUP_TIMEOUT=90
-RUN_TIMEOUT=2400
+STARTUP_TIMEOUT="${CODEX_STARTUP_TIMEOUT:-90}"
+RUN_TIMEOUT="${CODEX_RUN_TIMEOUT:-2400}"
 
 SESS_DIR="$HOME/.codex/sessions/$(date +%Y/%m/%d)"
 

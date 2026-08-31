@@ -27,6 +27,12 @@ waykeep init                    # wires MCP + hooks + StatusLine for your agents
 waykeep doctor                  # health check
 ```
 
+> npm ≥ 11.5 may warn that install scripts were **blocked** for
+> `better-sqlite3` and friends — that leaves the SQLite addon unbuilt.
+> `waykeep doctor` detects it; the fix is in
+> [docs/INSTALL.md](docs/INSTALL.md#1-install-the-package)
+> (`npm install -g waykeep --allow-scripts=better-sqlite3,onnxruntime-node,sharp,protobufjs`).
+
 Then, instead of `waykeep init`, you can wire your agent through its plugin marketplace — this repository is one (the npm package from the first step is still required — **waykeep >= 5.5.0** — the plugins are thin):
 
 ```text

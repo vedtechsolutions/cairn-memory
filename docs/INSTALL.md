@@ -9,6 +9,26 @@ with the package; pick the wiring that matches your agent(s).
 npm install -g waykeep
 ```
 
+> **npm ≥ 11.5 blocks native install scripts by default.** If the
+> install warns that scripts were blocked for `better-sqlite3`,
+> `onnxruntime-node`, `sharp`, or `protobufjs`, the SQLite addon was
+> NOT built and `waykeep` will fail at first use. Re-run with the
+> scripts allowed (note: npm's own suggested command omits the
+> package name and errors — use this one):
+>
+> ```bash
+> npm install -g waykeep --allow-scripts=better-sqlite3,onnxruntime-node,sharp,protobufjs
+> ```
+>
+> or allow them once for all global installs, then reinstall:
+>
+> ```bash
+> npm config set allow-scripts=better-sqlite3,onnxruntime-node,sharp,protobufjs --location=user
+> npm install -g waykeep
+> ```
+>
+> `waykeep doctor` detects the broken-addon state and prints this fix.
+
 Coming from `cairn-memory`? Uninstall it first — npm refuses to hand
 the `cairn` bin from one package name to another (`EEXIST` otherwise):
 
