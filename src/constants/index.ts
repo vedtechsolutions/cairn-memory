@@ -429,7 +429,7 @@ export type SessionStartMatcher = (typeof SESSION_START_MATCHERS)[number];
  *  (npm `version` lifecycle) and pinned by a test — a "keep in sync"
  *  comment alone let the MCP handshake advertise 5.1.0 on a 5.3.1
  *  install (step-6 validation finding). */
-export const VERSION = '5.5.0';
+export const VERSION = '5.5.1';
 
 // --- DB Config --------------------------------------------------------------
 

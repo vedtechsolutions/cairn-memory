@@ -1,6 +1,6 @@
 {
   "name": "waykeep",
-  "version": "5.5.0",
+  "version": "5.5.1",
   "description": "Local-first shared memory for AI coding agents. Formerly cairn. This plugin wires the MCP tools (recall, learn, plan). For the full passive experience (briefings, pitfall warnings, auto-capture), install the runtime and wire hooks once: npm install -g waykeep (requires >= 5.5.0) && waykeep init — then run /hooks in Codex and trust the Waykeep entries.",
   "author": {
     "name": "VedTech Solutions"
