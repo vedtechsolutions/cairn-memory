@@ -59,7 +59,21 @@ async function checkNativeModules(): Promise<CheckResult> {
       db.close();
     }
   } catch (err) {
-    return { status: 'fail', detail: `native SQLite stack failed to load: ${(err as Error).message}` };
+    const msg = (err as Error).message;
+    // npm >= 11.5 blocks dependency install scripts by default
+    // (allowScripts); better-sqlite3 then ships with no native binding
+    // and fails exactly here on a fresh global install. npm's own
+    // warning suggests a fix command that OMITS the package name (it
+    // ENOENTs in an empty cwd), so print the working one.
+    if (/better_sqlite3\.node|bindings file|No native build|different Node\.js version|ERR_DLOPEN/i.test(msg)) {
+      return {
+        status: 'fail',
+        detail:
+          `native SQLite addon missing (npm likely blocked its install script): ${msg.split('\n')[0]} — ` +
+          `fix: npm install -g waykeep --allow-scripts=better-sqlite3,onnxruntime-node,sharp,protobufjs`,
+      };
+    }
+    return { status: 'fail', detail: `native SQLite stack failed to load: ${msg}` };
   }
 }
 
