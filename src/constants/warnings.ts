@@ -104,3 +104,11 @@ export const ESCALATION_TOOL_ALTERNATIVES: Record<string, string> = {
   Write: 'Check that the target directory exists and the path is correct.',
   Bash: 'The command failed identically — try a different approach entirely.',
 } as const;
+
+/** Actionable pitfalls the StopFailure hook stores per API failure type
+ *  (keys are Claude Code's StopFailure matchers). Failure types without an
+ *  entry are only counted in telemetry — there is nothing to advise. */
+export const API_FAILURE_PITFALLS: Record<string, string> = {
+  max_output_tokens: 'Break large tasks into smaller steps — the response hit the output token limit. Use plan mode for multi-step work.',
+  rate_limit: 'Rate limited — reduce parallel tool calls and batch operations when possible.',
+} as const;
