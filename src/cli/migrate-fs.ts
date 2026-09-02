@@ -64,8 +64,6 @@ export function tableManifest(dbPath: string): Map<string, number> {
   } finally { db.close(); }
 }
 
-interface FkViolationRow { table: string; rowid: number | null; parent: string; fkid: number; }
-
 /** Every `PRAGMA foreign_key_check` row for a store opened READ-ONLY, as a SORTED
  *  list of stable `(table, rowid, parent, fkid)` keys. SQLite does NOT enforce
  *  foreign keys by default, so a real store carries dangling references (orphaned
@@ -76,12 +74,14 @@ interface FkViolationRow { table: string; rowid: number | null; parent: string; 
 export function fkViolationKeys(dbPath: string): string[] {
   const db = new Database(dbPath, { readonly: true });
   try {
-    // JSON.stringify (not a delimiter join) so the encoding is INJECTIVE — a table
-    // or parent name containing the delimiter can't collide with another tuple
-    // (codex review: `("a|1",2,"p",0)` and `("a",1,"2|p",0)` must not both serialize
-    // to `a|1|2|p|0`).
-    return (db.prepare('PRAGMA foreign_key_check').all() as FkViolationRow[])
-      .map((v) => JSON.stringify([v.table, v.rowid, v.parent, v.fkid]))
+    // safeIntegers so a 64-bit rowid comes back as BigInt, not a float64 that would
+    // collapse rowids past 2^53 (e.g. 9007199254740992 and …993) into one key (codex
+    // review). JSON.stringify (not a delimiter join) keeps the encoding INJECTIVE — a
+    // table/parent name containing a delimiter can't collide two distinct tuples; the
+    // BigInt rowid is encoded as its exact decimal string.
+    const stmt = db.prepare('PRAGMA foreign_key_check').safeIntegers(true);
+    return (stmt.all() as { table: string; rowid: bigint | null; parent: string; fkid: bigint }[])
+      .map((v) => JSON.stringify([v.table, v.rowid === null ? null : v.rowid.toString(), v.parent, Number(v.fkid)]))
       .sort();
   } finally { db.close(); }
 }

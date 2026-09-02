@@ -97,8 +97,9 @@ function configBackups(dir: string): string[] {
 function fkKeys(dbPath: string): string[] {
   const db = new Database(dbPath, { readonly: true });
   try {
-    return (db.prepare('PRAGMA foreign_key_check').all() as { table: string; rowid: number | null; parent: string; fkid: number }[])
-      .map((v) => JSON.stringify([v.table, v.rowid, v.parent, v.fkid])).sort();
+    const stmt = db.prepare('PRAGMA foreign_key_check').safeIntegers(true);
+    return (stmt.all() as { table: string; rowid: bigint | null; parent: string; fkid: bigint }[])
+      .map((v) => JSON.stringify([v.table, v.rowid === null ? null : v.rowid.toString(), v.parent, Number(v.fkid)])).sort();
   } finally { db.close(); }
 }
 
@@ -484,9 +485,9 @@ describe('waykeep migrate (Phase B2, rehearsed on a copy)', () => {
 
     const currentDir = join(home, DATA_DIR_NAME);
     assert.equal(
-      readdirSync(currentDir).filter((f) => f.startsWith('.tmp-') || f === '.migrate.lock').length,
+      readdirSync(currentDir).filter((f) => f.startsWith('.tmp-') || f.startsWith('.migrating-') || f === '.migrate.lock').length,
       0,
-      'no temp files or lock file must remain after a successful migration',
+      'no temp/stage files or lock file must remain after a successful migration',
     );
   });
 });

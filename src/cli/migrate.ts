@@ -31,8 +31,9 @@
  * The migration takes effect only after the agent/daemon RESTARTS. For a clean
  * copy the daemon should be STOPPED first; the command says both.
  */
-import { renameSync, chmodSync, readFileSync } from 'node:fs';
+import { renameSync, chmodSync, readFileSync, unlinkSync } from 'node:fs';
 import { join, dirname } from 'node:path';
+import { randomBytes } from 'node:crypto';
 import Database from 'better-sqlite3';
 import { LEGACY_NAMESPACES, DATA_DIR_NAME, DB_FILENAME } from 'waykeep-contract';
 import { MIGRATION_MARKER, FILES, realHomeDataDir } from '../constants/paths.js';
@@ -133,7 +134,6 @@ export async function runMigrate(opts: MigrateOptions = {}): Promise<number> {
     return 1;
   }
   let guard: InstanceType<typeof Database> | null = null;
-  let targetGuard: InstanceType<typeof Database> | null = null;
   try {
     // Re-check under the lock: a concurrent migration may have just published.
     if (isRegularFile(markerPath)) {
@@ -170,45 +170,88 @@ export async function runMigrate(opts: MigrateOptions = {}): Promise<number> {
       console.log(`  moved a pre-existing ${currentDb} aside to ${asideBase}`);
     }
 
-    // WAL-safe online backup from a READ-ONLY source. Collapses WAL+SHM into the
-    // single destination file.
-    const src = new Database(legacyDb, { readonly: true });
-    try { await src.backup(currentDb); } finally { src.close(); }
-    try { chmodSync(currentDb, FS_PERMS.FILE); } catch { /* best-effort; the 0700 dir is the access boundary */ }
-
-    // Symmetric to the source guard: hold a connection on the COPY and capture its
-    // data_version, so a concurrent write to the target during the migration window —
-    // a content change even a row-count manifest can't see (codex review V2/V3) — is
-    // caught before the marker. We never commit to the copy after this, so it trips
-    // only on an external writer.
-    targetGuard = new Database(currentDb, { readonly: true });
-    const targetDataVersionBefore = targetGuard.pragma('data_version', { simple: true }) as number;
-
-    // Verify BEFORE the marker: integrity, foreign keys, and a per-table manifest.
-    const verify = new Database(currentDb, { readonly: true });
-    let integrity: string;
+    // WAL-safe online backup from a READ-ONLY source to a PRIVATE, unpublished stage
+    // path. Its random name is known to nothing external, so the copy's content is stable
+    // through verification — closing the race where a writer commits to the KNOWN target
+    // path between the backup and a post-hoc guard baseline (codex). Published atomically.
+    const stageDb = join(currentDir, `.migrating-${randomBytes(8).toString('hex')}.db`);
+    const cleanupStage = (): void => {
+      for (const s of DB_SUFFIXES) { try { unlinkSync(stageDb + s); } catch { /* not present */ } }
+    };
+    let targetMemories = 0;
     try {
-      integrity = (verify.prepare('PRAGMA integrity_check').get() as { integrity_check: string }).integrity_check;
-    } finally { verify.close(); }
-    if (integrity !== 'ok') {
-      console.error(`✗ migration ABORTED — the copied database failed its integrity check (${integrity}). No marker written; ${legacyDir} stays authoritative.`);
-      return 1;
+      const src = new Database(legacyDb, { readonly: true });
+      try { await src.backup(stageDb); } finally { src.close(); }
+
+      // Collapse the stage to a SINGLE self-contained file: `.backup()` inherits the
+      // source's WAL mode, so opening the copy spawns -wal/-shm sidecars. A rollback
+      // journal checkpoints all content into the main file and drops them, so the atomic
+      // rename publishes ONE complete inode, nothing orphaned (the daemon re-enables WAL).
+      const collapse = new Database(stageDb);
+      try { collapse.pragma('journal_mode = DELETE'); } finally { collapse.close(); }
+
+      // Verify the private stage: integrity, foreign-key fidelity, per-table manifest.
+      const verify = new Database(stageDb, { readonly: true });
+      let integrity: string;
+      try { integrity = (verify.prepare('PRAGMA integrity_check').get() as { integrity_check: string }).integrity_check; }
+      finally { verify.close(); }
+      if (integrity !== 'ok') {
+        console.error(`✗ migration ABORTED — the copied database failed its integrity check (${integrity}). No marker written; ${legacyDir} stays authoritative.`);
+        cleanupStage();
+        return 1;
+      }
+      // Foreign-key fidelity: the copy must carry the IDENTICAL set of FK violations as
+      // the source (SQLite doesn't enforce FKs, so pre-existing dangling refs are normal
+      // data). The full (table, rowid, parent, fkid) set — not just the count — also
+      // catches a count-preserving swap (one orphan resolved, a different row orphaned).
+      const sourceFk = fkViolationKeys(legacyDb);
+      const stageFk = fkViolationKeys(stageDb);
+      if (sourceFk.length !== stageFk.length || sourceFk.some((k, i) => k !== stageFk[i])) {
+        console.error(`✗ migration ABORTED — the copy's foreign-key violation set differs from the source's (source ${sourceFk.length}, copy ${stageFk.length}) — the copy is not faithful. No marker written; ${legacyDir} stays authoritative.`);
+        cleanupStage();
+        return 1;
+      }
+      // Per-table row-count parity, source vs the stage.
+      const sourceManifest = tableManifest(legacyDb);
+      const stageManifest = tableManifest(stageDb);
+      const drift = [...new Set([...sourceManifest.keys(), ...stageManifest.keys()])]
+        .filter((t) => (sourceManifest.get(t) ?? 0) !== (stageManifest.get(t) ?? 0))
+        .map((t) => `${t} (legacy ${sourceManifest.get(t) ?? 0}, copy ${stageManifest.get(t) ?? 0})`);
+      if (drift.length > 0) {
+        console.error(`✗ migration ABORTED — row-count mismatch after the copy: ${drift.join(', ')}. No marker written; ${legacyDir} stays authoritative.`);
+        cleanupStage();
+        return 1;
+      }
+      targetMemories = stageManifest.get('memories') ?? 0;
+      if (stageFk.length > 0) {
+        console.log(`  note: ${stageFk.length} pre-existing foreign-key violation(s) in ${legacyDir} (SQLite does not enforce FKs) copied faithfully — identical set, not introduced by the migration.`);
+      }
+
+      // The SOURCE must not have changed during backup+verify — data_version on the held
+      // source connection, as the LAST source read before we commit. (The stage needs no
+      // such guard: its path is private, so nothing external can have written to it.)
+      if ((guard.pragma('data_version', { simple: true }) as number) !== dataVersionBefore) {
+        console.error(`✗ migration ABORTED — the legacy store was modified during the copy (a writer committed a change, including a possibly value-only one). Stop all agents/daemons and re-run. No marker written; ${legacyDir} stays authoritative.`);
+        cleanupStage();
+        return 1;
+      }
+
+      // Durability, then ATOMIC PUBLISH: fsync the verified stage's content, then rename
+      // it into place — a single atomic step, so the published inode IS the verified one
+      // and no writer can have touched the target path before publication.
+      try { chmodSync(stageDb, FS_PERMS.FILE); } catch { /* best-effort; the 0700 dir is the access boundary */ }
+      try { fsyncStrict(stageDb); }
+      catch (err) {
+        console.error(`✗ migration ABORTED — could not durably fsync the copy (${(err as Error).message}); it is not on disk. No marker written; ${legacyDir} stays authoritative.`);
+        cleanupStage();
+        return 1;
+      }
+      renameSync(stageDb, currentDb);
+    } catch (err) {
+      cleanupStage();
+      throw err;
     }
-    // Foreign-key fidelity: the copy must carry the IDENTICAL set of FK violations as
-    // the source. SQLite does not enforce FKs, so pre-existing dangling references are
-    // normal data (not corruption) and a faithful backup preserves the exact set.
-    // Comparing the full (table, rowid, parent, fkid) set — not just the count — also
-    // catches a count-preserving corruption (one orphan resolved while a different row
-    // is orphaned), which a count comparison would miss (codex review).
-    const sourceFk = fkViolationKeys(legacyDb);
-    const targetFk = fkViolationKeys(currentDb);
-    if (sourceFk.length !== targetFk.length || sourceFk.some((k, i) => k !== targetFk[i])) {
-      console.error(`✗ migration ABORTED — the copy's foreign-key violation set differs from the source's (source ${sourceFk.length}, copy ${targetFk.length}) — the copy is not faithful. No marker written; ${legacyDir} stays authoritative.`);
-      return 1;
-    }
-    if (targetFk.length > 0) {
-      console.log(`  note: ${targetFk.length} pre-existing foreign-key violation(s) in ${legacyDir} (SQLite does not enforce FKs) copied faithfully — identical set, not introduced by the migration.`);
-    }
+
     // Carry the config as one coherent unit with the db (recomputed under the lock
     // — a foreign writer may have created the target config since the preview, and
     // the legacy privacy config must never be silently dropped for a fork's).
@@ -224,51 +267,15 @@ export async function runMigrate(opts: MigrateOptions = {}): Promise<number> {
       }
     }
 
-    // Durability before authority: the db AND its directory entry MUST be on disk
-    // before the marker flips authority — a swallowed EIO/ENOSPC on either would
-    // let a crash persist the marker over an absent/hollow store. (The config's own
-    // durability is enforced inside its no-replace publish, and above for identical.)
+    // The published db entry + config entry must be durable before the marker flips
+    // authority (the db CONTENT is already durable from the stage fsync); a swallowed
+    // EIO/ENOSPC would let a crash persist the marker over a not-yet-durable rename.
     try {
-      fsyncStrict(currentDb);
       fsyncStrict(currentDir);
     } catch (err) {
-      console.error(`✗ migration ABORTED — could not durably fsync the copy (${(err as Error).message}); it is not on disk. No marker written; ${legacyDir} stays authoritative.`);
+      console.error(`✗ migration ABORTED — could not durably fsync ${currentDir} (${(err as Error).message}). No marker written; ${legacyDir} stays authoritative.`);
       return 1;
     }
-
-    // FINAL quiescence checks, ordered so `data_version` is the LAST db access before
-    // the marker. First a fresh per-table manifest re-confirms the copy is byte-complete
-    // (a readonly re-read — it does not itself bump data_version). THEN re-read
-    // data_version: it catches ANY concurrent commit — the detectable daemon OR a
-    // PID-less DB opener — including value-only UPDATEs the row counts can't see, AND
-    // including one that lands DURING the (potentially long) manifest re-read above,
-    // because data_version is read after it (codex round-5). A memory or a status change
-    // committed post-snapshot thus can never hide behind the marker. (Residual: a writer
-    // that both starts AND commits in the microsecond between this read and the atomic
-    // publish — only pure-JS marker construction sits between them; a store-use lock
-    // honored by every opener would close it, a deliberate out-of-B2 change, and the
-    // legacy store is preserved regardless.)
-    const finalSource = tableManifest(legacyDb);
-    const finalTarget = tableManifest(currentDb); // fresh — not a stale capture (codex V3)
-    const drift = [...new Set([...finalSource.keys(), ...finalTarget.keys()])]
-      .filter((t) => (finalSource.get(t) ?? 0) !== (finalTarget.get(t) ?? 0))
-      .map((t) => `${t} (legacy ${finalSource.get(t) ?? 0}, copy ${finalTarget.get(t) ?? 0})`);
-    if (drift.length > 0) {
-      console.error(`✗ migration ABORTED — row-count mismatch after the copy: ${drift.join(', ')}. No marker written; ${legacyDir} stays authoritative.`);
-      return 1;
-    }
-    // data_version LAST on BOTH the source AND the copy — catches any concurrent commit
-    // to either (value-only content changes a manifest can't see, included) up to the
-    // final microsecond before the atomic publish.
-    if ((guard.pragma('data_version', { simple: true }) as number) !== dataVersionBefore) {
-      console.error(`✗ migration ABORTED — the legacy store was modified during the copy (a writer committed a change, including a possibly value-only one). Stop all agents/daemons and re-run. No marker written; ${legacyDir} stays authoritative.`);
-      return 1;
-    }
-    if ((targetGuard.pragma('data_version', { simple: true }) as number) !== targetDataVersionBefore) {
-      console.error(`✗ migration ABORTED — the copy at ${currentDb} was modified during the migration (a concurrent writer on the new store). Stop all agents/daemons and re-run. No marker written; ${legacyDir} stays authoritative.`);
-      return 1;
-    }
-    const targetMemories = finalTarget.get('memories') ?? 0;
 
     const marker = {
       schema: MARKER_SCHEMA,
@@ -287,7 +294,6 @@ export async function runMigrate(opts: MigrateOptions = {}): Promise<number> {
     return 0;
   } finally {
     if (guard) { try { guard.close(); } catch { /* already closed */ } }
-    if (targetGuard) { try { targetGuard.close(); } catch { /* already closed */ } }
     releaseLock(currentDir, lockFd);
   }
 }
