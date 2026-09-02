@@ -10,16 +10,18 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, symlinkSync, mkdirSync, chmodSync, writeFileSync, statSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdtempSync, readFileSync, rmSync, symlinkSync, mkdirSync, chmodSync, writeFileSync, statSync, existsSync } from 'node:fs';
+import { tmpdir, userInfo } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { waykeepHooks } from '../src/cli/init.js';
 import { VERSION } from '../src/constants/index.js';
-import { RELAY_PROBE_SENTINEL, RELAY_PROBE_FLAG, MCP_SERVER_NAME } from 'waykeep-contract';
+import { RELAY_PROBE_SENTINEL, RELAY_PROBE_FLAG, MCP_SERVER_NAME, DATA_DIR_NAME, LEGACY_NAMESPACES } from 'waykeep-contract';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+/** Home-relative dirs the plugin launcher may cache under: current, then the retired ones. */
+const LAUNCHER_CACHE_DIRS = [DATA_DIR_NAME, ...LEGACY_NAMESPACES.map(ns => `.${ns}`)];
 const PLUGIN_RELAY = '${CLAUDE_PLUGIN_ROOT}/bin/waykeep-relay.sh';
 const read = (rel: string): string => readFileSync(join(REPO_ROOT, rel), 'utf-8');
 const readJson = (rel: string): Record<string, unknown> => JSON.parse(read(rel)) as Record<string, unknown>;
@@ -135,18 +137,35 @@ describe('thin-plugin packaging', () => {
     }
   });
 
-  it('hook launcher refuses to cache without a trustworthy directory (no HOME)', () => {
+  it('hook launcher refuses to cache when NO absolute home is resolvable (no HOME, no passwd home)', () => {
     // ${HOME:-/tmp} put the cache in a world-writable dir: a planted
     // /tmp/${DATA_DIR_NAME}/plugin-hook-dir got EXECUTED by the next hook
-    // (review, demonstrated). No HOME and no plugin-data = no cache.
+    // (review, demonstrated). No home and no plugin-data = no cache.
+    //
+    // HERMETICITY: with HOME merely unset the launcher resolves the passwd
+    // home — a real, trusted directory — so an earlier form of this test
+    // cached a dead /tmp sim path into the developer's REAL ~/.waykeep
+    // (found 2026-09-02). A fake `id` first on PATH names a user that
+    // does not exist, so `~user` expansion fails (dash, bash, busybox ash
+    // all leave the word unexpanded — review) and the launcher takes its
+    // fail-closed no-cache branch; the real-home guard below proves
+    // nothing leaked. A shell that runs `id` as a built-in applet without
+    // consulting PATH (busybox in standalone mode) would bypass the fake
+    // and cache into the real home, so the launcher is only spawned once
+    // /bin/sh demonstrably runs OUR `id` (review). (The passwd-home branch
+    // itself needs a fake passwd database to exercise and is deliberately
+    // NOT covered here.)
     const sim = mkdtempSync(join(tmpdir(), 'cairn-nohome-sim-'));
     const priorMode = statSync(CLI_JS).mode;
+    const realCachesBefore = realHomeCacheSnapshot();
     try {
       mkdirSync(join(sim, 'bin'), { recursive: true });
       mkdirSync(join(sim, 'lib', 'node_modules'), { recursive: true });
       symlinkSync(REPO_ROOT, join(sim, 'lib', 'node_modules', 'cairn-memory'));
       symlinkSync('../lib/node_modules/cairn-memory/dist/src/cli/index.js', join(sim, 'bin', 'cairn'));
       chmodSync(CLI_JS, 0o755);
+      writeFileSync(join(sim, 'bin', 'id'), '#!/bin/sh\necho "waykeep-no-such-user-$$"\n');
+      chmodSync(join(sim, 'bin', 'id'), 0o755);
       // NO /tmp planting: any check-then-write against a SHARED path
       // races concurrent writers (TOCTOU), and cleanup can unlink a
       // file someone else replaced (review). The same property is
@@ -158,8 +177,21 @@ describe('thin-plugin packaging', () => {
       assert.ok(!launcherCode.includes('/tmp'),
         'the launcher CODE must never reference /tmp (the comment documenting the removed fallback may)');
       const env: Record<string, string> = { PATH: `${join(sim, 'bin')}:/usr/bin:/bin` };
-      const r = spawnSync(LAUNCHER, [RELAY_PROBE_FLAG], { encoding: 'utf-8', env });
-      assert.equal(r.stdout.trim(), RELAY_PROBE_SENTINEL, 'still works — just uncached');
+      // Refuse BEFORE any write when this /bin/sh (the launcher's shebang)
+      // would not run the planted `id`: the launcher would then resolve
+      // the real passwd home and the guard below could only detect the leak.
+      const idProbe = spawnSync('/bin/sh', ['-c', 'id -un'], { encoding: 'utf-8', env });
+      assert.match(idProbe.stdout, /^waykeep-no-such-user-/u,
+        `this /bin/sh runs \`id\` without consulting PATH (busybox standalone applets?) — the launcher would cache into the REAL home; not spawning it (got: ${idProbe.stdout.trim()})`);
+      // cwd = sim so a hypothetical CWD-relative fallback would land HERE, where
+      // the next assertion sees it, instead of somewhere the test cannot check.
+      const r = spawnSync(LAUNCHER, [RELAY_PROBE_FLAG], { encoding: 'utf-8', env, cwd: sim });
+      assert.equal(r.stdout.trim(), RELAY_PROBE_SENTINEL, `still works — just uncached (stderr=${r.stderr})`);
+      for (const dir of LAUNCHER_CACHE_DIRS) {
+        assert.equal(existsSync(join(sim, dir)), false, `no cache dir minted relative to cwd (${dir})`);
+      }
+      assert.deepEqual(realHomeCacheSnapshot(), realCachesBefore,
+        'the launcher wrote a cache into the REAL home — the test is no longer hermetic');
     } finally {
       chmodSync(CLI_JS, priorMode);
       rmSync(sim, { recursive: true, force: true });
@@ -192,6 +224,24 @@ describe('thin-plugin packaging', () => {
 
   const LAUNCHER = join(REPO_ROOT, 'plugins/claude/waykeep/bin/waykeep-relay.sh');
   const CLI_JS = join(REPO_ROOT, 'dist/src/cli/index.js');
+
+  /** Content (or absence) of the launcher caches in the REAL home — the
+   *  passwd home (`userInfo()`, which ignores HOME the way the launcher's
+   *  `~user` lookup does), not `homedir()`. No passwd entry at all means the
+   *  launcher cannot resolve a home either, so there is nothing to guard.
+   *  Read-only: a before/after guard that a hermetic test stayed hermetic. */
+  function realHomeCacheSnapshot(): Record<string, string | null> {
+    let home: string;
+    try { home = userInfo().homedir; } catch { return {}; }
+    const snapshot: Record<string, string | null> = {};
+    for (const dir of LAUNCHER_CACHE_DIRS) {
+      const path = join(home, dir, 'plugin-hook-dir');
+      // A single read, not exists-then-read: the file may legitimately be
+      // rewritten by a live launcher between the two calls (review).
+      try { snapshot[path] = readFileSync(path, 'utf-8'); } catch { snapshot[path] = null; }
+    }
+    return snapshot;
+  }
 
   /** Run the launcher with an isolated PATH + plugin-data cache dir. */
   function runLauncher(args: string[], binDir: string, dataDir: string): { stdout: string; stderr: string; status: number | null } {

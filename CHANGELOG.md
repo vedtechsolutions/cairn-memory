@@ -40,6 +40,7 @@
 
 ### Fixed
 
+- Fixed the plugin-launcher no-HOME test writing a dead temp path into the developer's REAL `~/.waykeep/plugin-hook-dir`: with HOME unset the launcher (correctly) resolves the passwd home, so the test now fakes an unresolvable user to exercise the fail-closed no-cache branch hermetically (refusing to spawn the launcher under a shell that would not honor the fake), and guards that the real home's caches are untouched.
 - Fixed recall ranking letting a query-independent confidence/source prior overrule relevance (the incident-class inversion): relevance now blends token overlap with FTS5's BM25 signal and carries most of the score range, so a distilled lesson outranks high-confidence raw pastes on every retrieval path — 33 of 40 LongMemEval FTS metrics improved, none regressed.
 - Fixed the pitfall warning cache serving stale scores and stale eligibility: cache hits now recompute scores from live fields and reapply the confidence floor, so a weakened memory stops warning immediately.
 - Fixed the briefing corrections tier starving when high-confidence junk filled its confidence-ordered window: candidates are filtered for eligibility before the display limit.
