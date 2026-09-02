@@ -289,8 +289,13 @@ describe('thin-plugin packaging', () => {
     try {
       mkdirSync(join(sim, 'bin'), { recursive: true });
       const shim = join(sim, 'bin', 'cairn');
+      // A real shim (volta, pnpm) execs ITS OWN node by absolute path. The
+      // launcher's PATH here is `sim/bin:/usr/bin:/bin`, and on the GitHub
+      // runner node lives in the toolcache — a bare `exec node` found
+      // nothing there and this test was red in CI while a system node on
+      // /usr/bin masked it locally.
       writeFileSync(shim, `#!/bin/sh
-exec node "${CLI_JS}" "$@"
+exec "${process.execPath}" "${CLI_JS}" "$@"
 `);
       chmodSync(shim, 0o755);
       const r = runLauncher([RELAY_PROBE_FLAG], join(sim, 'bin'), join(sim, 'data'));
