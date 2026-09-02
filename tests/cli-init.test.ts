@@ -35,6 +35,11 @@ function init(settingsPath: string, args: string[] = []): SpawnSyncReturns<strin
       // init WRITES the Codex dir now — must stay hermetic even when this
       // file is run directly without the hermetic-env preload.
       [ENV.CODEX_DIR]: process.env[ENV.CODEX_DIR] ?? `${settingsPath}.codex-hermetic`,
+      // …and reads ~/.claude.json + shells out to `claude mcp`: neither may
+      // reach the real ones on a direct run either (an absent CLI path makes
+      // init print the commands instead of spawning anything).
+      [ENV.CLAUDE_CONFIG]: process.env[ENV.CLAUDE_CONFIG] ?? `${settingsPath}.claude-json-hermetic`,
+      [ENV.CLAUDE_BIN]: process.env[ENV.CLAUDE_BIN] ?? `${settingsPath}.claude-cli-absent`,
     },
   }) as SpawnSyncReturns<string>;
 }
@@ -54,9 +59,12 @@ describe('cairn init CLI', () => {
     const result = init(path);
     assert.equal(result.status, 0, result.stdout + result.stderr);
     const s = read(path);
-    assert.ok(s.mcpServers?.[MCP_SERVER_NAME], 'cairn MCP server written');
+    // Claude Code never reads mcpServers from settings.json — the server is
+    // registered through `claude mcp` (tests/cli-init-claude-mcp.test.ts).
+    assert.equal(s.mcpServers, undefined, 'no inert mcpServers block in settings.json');
+    assert.match(result.stdout, /Claude Code MCP registry/u, 'the registry step ran');
     assert.ok(s.statusLine, 'statusLine written');
-    // All 14 hook events present.
+    // All 12 wired hook events present (FileChanged is deliberately not wired).
     const events = Object.keys(s.hooks ?? {});
     for (const e of ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse',
       'PostToolUseFailure', 'PreCompact', 'PostCompact', 'SessionEnd', 'SubagentStart',
@@ -79,7 +87,8 @@ describe('cairn init CLI', () => {
     assert.equal(result.status, 0, result.stdout + result.stderr);
     const s = read(path);
     assert.equal(s.mcpServers?.[legacy], undefined, 'retired-namespace alias of THIS install removed');
-    assert.ok(s.mcpServers?.[MCP_SERVER_NAME], 'waykeep server added');
+    assert.equal(s.mcpServers, undefined, 'the emptied (inert) block is dropped, not left as {}');
+    assert.match(result.stdout, /inert here/u, 'the sweep says WHY the block goes');
   });
 
   it('KEEPS + WARNS on a legacy `cairn` server at a DIFFERENT install path (never deletes foreign)', () => {
@@ -131,7 +140,7 @@ describe('cairn init CLI', () => {
     const s = read(path);
     assert.equal(s.model, 'opus', 'unrelated setting kept');
     assert.ok(s.mcpServers?.other, 'other MCP server kept');
-    assert.ok(s.mcpServers?.[MCP_SERVER_NAME], 'cairn MCP server added');
+    assert.equal(s.mcpServers?.[MCP_SERVER_NAME], undefined, 'never written to settings.json (inert there)');
     assert.equal(s.statusLine?.command, 'my-custom-statusline', 'non-Cairn StatusLine untouched');
     const ss = s.hooks!.SessionStart;
     assert.ok(ss.some(e => e.hooks.some(h => h.command === 'user-own-hook')), 'user hook preserved');
@@ -236,7 +245,8 @@ describe('statusline-only migration sweep (review N4)', () => {
     assert.equal(first.status, 0, first.stderr);
     const before = JSON.parse(readFileSync(settingsPath, 'utf8')) as Settings;
     assert.ok(Object.keys(before.hooks ?? {}).length >= 10, 'sanity: fully wired');
-    assert.ok(before.mcpServers?.[MCP_SERVER_NAME], 'sanity: MCP wired');
+    // The inert MCP block a pre-fix init wrote (current init no longer does).
+    before.mcpServers = { [MCP_SERVER_NAME]: { command: 'node', args: [SERVER] } };
     // Add a foreign hook that must survive the sweep.
     before.hooks!.SessionStart!.push({ hooks: [{ command: 'users-own-hook' }] });
     writeFileSync(settingsPath, JSON.stringify(before));
@@ -244,7 +254,7 @@ describe('statusline-only migration sweep (review N4)', () => {
     const r = init(settingsPath, ['--statusline-only']);
     assert.equal(r.status, 0, r.stderr);
     const after = JSON.parse(readFileSync(settingsPath, 'utf8')) as Settings;
-    assert.equal(after.mcpServers?.[MCP_SERVER_NAME], undefined, 'Cairn MCP removed — the plugin provides it');
+    assert.equal(after.mcpServers, undefined, 'the inert MCP block is swept (and the emptied key dropped)');
     const allCommands = JSON.stringify(after.hooks ?? {});
     assert.ok(!allCommands.includes('dist/src/hooks'), 'no settings-wired Cairn hooks remain (double-fire closed)');
     assert.ok(allCommands.includes('users-own-hook'), 'foreign hooks survive');

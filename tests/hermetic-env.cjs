@@ -41,7 +41,8 @@ const E = ID.ENV || {};
 // then be undefined, `process.env[undefined]` would set the literal key
 // "undefined", the real override would stay unset, and the suite would run
 // against the real home while passing. Validate before using any of them.
-for (const key of ['DIR', 'STATE_PATH', 'QUERY_CWD', 'CODEX_DIR', 'CONFIG_PATH', 'ALLOW_TMP_TRANSCRIPTS']) {
+for (const key of ['DIR', 'STATE_PATH', 'QUERY_CWD', 'CODEX_DIR', 'CONFIG_PATH', 'ALLOW_TMP_TRANSCRIPTS',
+  'CLAUDE_SETTINGS', 'CLAUDE_CONFIG', 'CLAUDE_BIN']) {
   if (typeof E[key] !== 'string' || !E[key]) {
     throw new Error(
       `hermetic preload: ${IDENTITY_PATH} is missing ENV.${key} — stale or partial generator output. ` +
@@ -90,6 +91,15 @@ if (!process.env[E.QUERY_CWD]) process.env[E.QUERY_CWD] = '/x';
 // Parity step 5: `cairn init`/`doctor` read and WRITE the Codex config dir —
 // point it at the hermetic temp dir so a test can never touch ~/.codex.
 if (!process.env[E.CODEX_DIR]) process.env[E.CODEX_DIR] = join(dir, '.codex');
+
+// `waykeep init` writes ~/.claude/settings.json and shells out to the `claude`
+// CLI to edit ~/.claude.json. Point the settings file and the registry into
+// the hermetic dir, and the CLI at a path that does not exist, so a test that
+// runs init can never rewire the developer's real Claude Code — nor spawn the
+// real CLI against it. Tests that need a CLI plant their own fake.
+if (!process.env[E.CLAUDE_SETTINGS]) process.env[E.CLAUDE_SETTINGS] = join(dir, '.claude', 'settings.json');
+if (!process.env[E.CLAUDE_CONFIG]) process.env[E.CLAUDE_CONFIG] = join(dir, '.claude.json');
+if (!process.env[E.CLAUDE_BIN]) process.env[E.CLAUDE_BIN] = join(dir, 'claude-cli-absent');
 
 // Phase 1 step 3: scope policy reads ~/.cairn/config.json — point it at a
 // (nonexistent) hermetic path so a developer's real scope config can never

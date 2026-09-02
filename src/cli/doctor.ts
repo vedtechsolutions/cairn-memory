@@ -26,10 +26,13 @@ import {
   countTrustedHooksIn, hasWaykeepMcpServer, waykeepCommandSet,
   LEGACY_POST_TOOL_ROUTE, type CodexHooksFile,
 } from './codex-init.js';
+import { claudeMcpHealth } from './claude-health.js';
 
 const MIN_NODE_MAJOR = 20;
 /** Hook dir relative to this module: dist/src/cli/ → dist/src/hooks. */
 const HOOK_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'hooks');
+/** This install's server.js — the path `waykeep init` registers with Claude Code. */
+const SERVER = join(HOOK_DIR, '..', 'mcp', 'server.js');
 
 type CheckStatus = 'ok' | 'warn' | 'fail';
 interface CheckResult { status: CheckStatus; detail: string; }
@@ -285,6 +288,7 @@ const CHECKS: Check[] = [
   { name: 'config health', run: checkConfigHealth },
   { name: 'database', run: checkDatabase },
   { name: 'hook socket', run: checkSocket },
+  { name: 'claude mcp', run: () => claudeMcpHealth(SERVER) },
   { name: 'codex parity', run: checkCodexParity },
 ];
 

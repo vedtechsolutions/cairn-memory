@@ -150,7 +150,7 @@ returns to advisory-only Slice B behavior.
 Or configure Claude Code automatically instead of editing `settings.json` by hand:
 
 ```bash
-waykeep init            # merge Waykeep's MCP + StatusLine + hooks into ~/.claude/settings.json
+waykeep init            # StatusLine + hooks into ~/.claude/settings.json; MCP server via `claude mcp add-json`
 waykeep init --dry-run          # preview the changes without writing
 waykeep init --migrate-routes   # modernize deprecated hook routes (one re-trust in Codex)
 ```

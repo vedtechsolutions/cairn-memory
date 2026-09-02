@@ -7,6 +7,7 @@
  */
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 
@@ -26,5 +27,18 @@ describe('hermetic test environment', () => {
       process.env[ENV.STATE_PATH],
       join(homedir(), '.claude', 'cairn-state.json'),
     );
+  });
+
+  it('Claude Code wiring targets are overridden away from the real home, and the real CLI is unreachable', () => {
+    // `waykeep init` writes settings.json and drives `claude mcp` against
+    // ~/.claude.json; a test running init with these unset would rewire the
+    // developer's real Claude Code (the same hazard class as the plugin
+    // launcher's real-home cache leak).
+    assert.ok(process.env[ENV.CLAUDE_SETTINGS], 'preload must set the settings override');
+    assert.notEqual(process.env[ENV.CLAUDE_SETTINGS], join(homedir(), '.claude', 'settings.json'));
+    assert.ok(process.env[ENV.CLAUDE_CONFIG], 'preload must set the registry override');
+    assert.notEqual(process.env[ENV.CLAUDE_CONFIG], join(homedir(), '.claude.json'));
+    assert.ok(process.env[ENV.CLAUDE_BIN], 'preload must set the CLI override');
+    assert.equal(existsSync(process.env[ENV.CLAUDE_BIN] as string), false, 'the CLI override must point at nothing');
   });
 });

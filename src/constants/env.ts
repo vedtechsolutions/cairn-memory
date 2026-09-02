@@ -33,6 +33,10 @@ export const ENV = {
   NODE: envName('NODE'),
   /** Override for `~/.claude/settings.json`. Hermetic in tests. */
   CLAUDE_SETTINGS: envName('CLAUDE_SETTINGS'),
+  /** Override for `~/.claude.json` — Claude Code's MCP registry. Hermetic in tests. */
+  CLAUDE_CONFIG: envName('CLAUDE_CONFIG'),
+  /** Path of the `claude` CLI that `waykeep init` shells out to (default: `claude` on PATH). Hermetic in tests. */
+  CLAUDE_BIN: envName('CLAUDE_BIN'),
   /** Override for `~/.codex`. Hermetic in tests. */
   CODEX_DIR: envName('CODEX_DIR'),
   /** Override for the Codex rollout-session directory. */

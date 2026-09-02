@@ -1,12 +1,15 @@
 /**
  * `waykeep init` — write Waykeep's client configuration.
  *
- * Replaces the manual settings.json editing the README documents: it resolves
- * this install's absolute paths, generates the canonical Claude Code config
- * (MCP server + StatusLine + the full hook set), and merges it idempotently
- * into ~/.claude/settings.json (preserving everything else, backing up first).
- * Other MCP-capable clients are detected and reported, not auto-edited, since
- * their config formats differ. `--dry-run` previews without writing.
+ * Replaces the manual editing the README used to document: it resolves this
+ * install's absolute paths, merges the StatusLine and the full hook set
+ * idempotently into ~/.claude/settings.json (preserving everything else,
+ * backing up first), and registers the MCP server through the `claude mcp`
+ * CLI — Claude Code reads MCP servers from ~/.claude.json, never from
+ * settings.json, so the `mcpServers` block earlier versions wrote there was
+ * inert and is swept (see claude-mcp.ts). Codex is wired by codex-init.ts;
+ * other MCP-capable clients are detected and reported, not auto-edited,
+ * since their config formats differ. `--dry-run` previews without writing.
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, renameSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -14,11 +17,12 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { resolveRelay, relayBinaryPath, relayShellPath } from './relay.js';
 import { runCodexInit } from './codex-init.js';
+import { registerClaudeMcp, claudeSettingsPath } from './claude-mcp.js';
+import { looksLikeWaykeepServer, sweepLegacyMcpServers } from './mcp-entry.js';
 import { isWaykeepHookCommand } from '../constants/index.js';
-import { ENV } from '../constants/env.js';
 import { BACKUP_SUFFIX } from '../constants/paths.js';
 import { MCP_SERVER_NAME } from '../constants/mcp.js';
-import { LEGACY_NAMESPACES } from 'waykeep-contract';
+import { CLAUDE_CODE } from '../constants/claude-code.js';
 
 /** Package root: dist/src/cli/ → the install root that holds dist/. */
 const PKG_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
@@ -62,10 +66,6 @@ export function waykeepHooks(relayCmd: string): HookMap {
   };
 }
 
-function waykeepMcpServer(): Record<string, unknown> {
-  return { command: 'node', args: [SERVER], env: { [ENV.LOG_LEVEL]: 'info' } };
-}
-
 function waykeepStatusLine(): Record<string, unknown> {
   return { type: 'command', command: `node ${join(HOOK_DIR, 'statusline.js')}` };
 }
@@ -95,64 +95,46 @@ function sweepWaykeepHandlers(entries: HookMatcher[]): { kept: HookMatcher[] | n
   return { kept: kept.length > 0 ? kept : null, swept };
 }
 
-/** The `args` strings of an mcpServers entry (empty for a malformed one). */
-function serverArgs(entry: unknown): string[] {
-  if (!entry || typeof entry !== 'object') return [];
-  const args = (entry as { args?: unknown }).args;
-  return Array.isArray(args) ? args.filter((a): a is string => typeof a === 'string') : [];
-}
-
-const normalizePath = (p: string): string => p.replace(/\\/g, '/');
-
 /**
- * True when an entry launches OUR EXACT server.js — THIS install's absolute
- * path. This is the only case safe to auto-remove: an in-place pre-rename alias
- * of the very server we are installing. A foreign server, OR the same product
- * installed at a different path, is never our exact path, so a suffix match
- * (which could delete `…/other-project/dist/src/mcp/server.js`) is unsafe
- * (codex B1 review). Windows backslashes are normalized on both sides.
+ * Sweep the INERT `mcpServers` entries earlier inits wrote into settings.json.
+ * Claude Code never reads that key from settings.json (only ~/.claude.json,
+ * .mcp.json and plugins), so a Waykeep entry here only misleads — it looks
+ * wired while nothing is. Our own key goes whenever it launches a waykeep
+ * server (any install: it was ours to write and does nothing); a legacy key
+ * goes only for OUR exact server.js, a look-alike at another path is reported
+ * (never ours to delete). This is deliberately looser than the ~/.claude.json
+ * planner, which re-points rather than deletes and touches only exact paths:
+ * entries THERE are live registrations, entries HERE never did anything.
+ * Returns the swept map, or null when nothing changed.
  */
-function referencesOurServer(entry: unknown): boolean {
-  const target = normalizePath(SERVER);
-  return serverArgs(entry).some(a => normalizePath(a) === target);
-}
-
-/** True when an entry launches SOME waykeep/cairn server.js (any install) —
- *  used only to WARN, never to delete. */
-function looksLikeWaykeepServer(entry: unknown): boolean {
-  return serverArgs(entry).some(a => normalizePath(a).endsWith('/dist/src/mcp/server.js'));
-}
-
-/**
- * Categorize stale legacy-namespace MCP keys (e.g. `cairn`). `removed` are keys
- * launching OUR exact server (auto-deleted — the pre-rename alias of this
- * install). `suspect` are keys launching a waykeep/cairn server at a DIFFERENT
- * path (a relocated old install, OR a foreign one we must not delete): left in
- * place and reported so the operator can remove them by hand. Everything else
- * is untouched. Removed with the legacy namespace at Phase D.
- */
-function sweepLegacyMcpServers(servers: Record<string, unknown>): { removed: string[]; suspect: string[] } {
-  const removed: string[] = [];
-  const suspect: string[] = [];
-  for (const ns of LEGACY_NAMESPACES) {
-    if (servers[ns] === undefined) continue;
-    if (referencesOurServer(servers[ns])) {
-      delete servers[ns];
-      removed.push(ns);
-    } else if (looksLikeWaykeepServer(servers[ns])) {
-      suspect.push(ns);
-    }
+function sweepSettingsMcpServers(existing: Settings, changed: string[], skipped: string[]): Record<string, unknown> | null {
+  const servers = { ...(existing.mcpServers ?? {}) };
+  let swept = false;
+  const inert = `inert here — Claude Code reads MCP servers from ~/${CLAUDE_CODE.CONFIG_FILENAME}, not settings.json`;
+  if (looksLikeWaykeepServer(servers[MCP_SERVER_NAME])) {
+    delete servers[MCP_SERVER_NAME];
+    swept = true;
+    changed.push(`mcpServers.${MCP_SERVER_NAME} removed (${inert})`);
   }
-  return { removed, suspect };
+  const legacy = sweepLegacyMcpServers(servers, SERVER);
+  for (const ns of legacy.removed) {
+    swept = true;
+    changed.push(`mcpServers.${ns} removed (${inert}; retired namespace — replaced by ${MCP_SERVER_NAME})`);
+  }
+  for (const ns of legacy.suspect) {
+    skipped.push(`mcpServers.${ns} left in place (${inert}) — it launches a waykeep server at a DIFFERENT install path, not this install's to delete; remove it by hand if that install is retired`);
+  }
+  return swept ? servers : null;
 }
 
 interface MergePlan { changed: string[]; skipped: string[]; result: Settings }
 
 /**
  * Merge Waykeep's config into existing settings without clobbering the user's:
- * the `waykeep` MCP server is set (other servers kept, stale legacy keys swept);
- * each hook event gets Waykeep's entries with any prior Waykeep entries replaced
- * and non-Waykeep entries preserved; StatusLine is set only when absent or Waykeep's.
+ * inert `mcpServers` entries are swept (the server is registered through
+ * `claude mcp` instead — see runInit); each hook event gets Waykeep's entries
+ * with any prior Waykeep entries replaced and non-Waykeep entries preserved;
+ * StatusLine is set only when absent or Waykeep's.
  */
 function mergeSettings(existing: Settings, relayCmd: string, statuslineOnly = false): MergePlan {
   const changed: string[] = [];
@@ -167,6 +149,16 @@ function mergeSettings(existing: Settings, relayCmd: string, statuslineOnly = fa
   } else {
     skipped.push('statusLine (a non-Waykeep StatusLine is already set — left untouched)');
   }
+
+  // Both modes: the settings-wired MCP block never worked, and under the
+  // plugin a stale one still misleads (an upgraded install may also carry
+  // the retired-name entry; codex B1 review). An emptied map is dropped.
+  const sweptServers = sweepSettingsMcpServers(existing, changed, skipped);
+  if (sweptServers !== null) {
+    if (Object.keys(sweptServers).length > 0) result.mcpServers = sweptServers;
+    else delete result.mcpServers;
+  }
+
   if (statuslineOnly) {
     // The flag MEANS "the plugin manages hooks + MCP", so settings.json
     // must not keep a parallel set: an existing user who ran a full
@@ -187,41 +179,9 @@ function mergeSettings(existing: Settings, relayCmd: string, statuslineOnly = fa
       result.hooks = hooks;
       changed.push(`hooks (${sweptEvents} event(s) of settings-wired Waykeep hooks removed — the plugin provides them)`);
     }
-    // Sweep BOTH the current server key and any stale legacy key (e.g.
-    // `cairn`) that references our server — a --statusline-only run under the
-    // plugin must not leave a settings-wired server double-registered, and an
-    // upgraded install may still carry the retired-name entry (codex B1 review).
-    const servers = { ...(existing.mcpServers ?? {}) };
-    let removedServer = false;
-    if (referencesOurServer(servers[MCP_SERVER_NAME])) {
-      delete servers[MCP_SERVER_NAME];
-      removedServer = true;
-      changed.push(`mcpServers.${MCP_SERVER_NAME} removed (the plugin provides it)`);
-    }
-    const swept = sweepLegacyMcpServers(servers);
-    for (const ns of swept.removed) {
-      removedServer = true;
-      changed.push(`mcpServers.${ns} removed (retired namespace — the plugin provides it)`);
-    }
-    for (const ns of swept.suspect) {
-      skipped.push(`mcpServers.${ns} left in place — launches a waykeep server at a DIFFERENT install path; remove it by hand if that install is retired`);
-    }
-    if (removedServer) result.mcpServers = servers;
     skipped.push('hooks + MCP wiring (plugin-managed — --statusline-only)');
     return { changed, skipped, result };
   }
-
-  const servers = { ...(existing.mcpServers ?? {}) };
-  servers[MCP_SERVER_NAME] = waykeepMcpServer();
-  const swept = sweepLegacyMcpServers(servers);
-  for (const ns of swept.removed) {
-    changed.push(`mcpServers.${ns} removed (retired namespace — replaced by ${MCP_SERVER_NAME})`);
-  }
-  for (const ns of swept.suspect) {
-    skipped.push(`mcpServers.${ns} left in place — launches a waykeep server at a DIFFERENT install path; remove it by hand if that install is retired`);
-  }
-  result.mcpServers = servers;
-  changed.push(`mcpServers.${MCP_SERVER_NAME}`);
 
   const hooks: HookMap = { ...(existing.hooks ?? {}) };
   const desired = waykeepHooks(relayCmd);
@@ -255,10 +215,6 @@ const OTHER_CLIENTS: Array<{ name: string; dir: string }> = [
   { name: 'Gemini CLI', dir: '.gemini' },
   { name: 'Windsurf', dir: '.codeium' },
 ];
-
-function claudeSettingsPath(): string {
-  return process.env[ENV.CLAUDE_SETTINGS] ?? join(homedir(), '.claude', 'settings.json');
-}
 
 function readSettings(path: string): Settings {
   if (!existsSync(path)) return {};
@@ -324,8 +280,15 @@ export function runInit(options: InitOptions = {}): number {
     console.log(`  ✓ wrote ${path}`);
   }
 
-  // --statusline-only touches ONLY the StatusLine — Codex wiring is a
-  // separate concern the flag's user did not ask about.
+  // The MCP server itself goes through `claude mcp`, in BOTH modes: a
+  // --statusline-only run removes our user-scope entry (the plugin's
+  // .mcp.json provides the server; two registrations run two servers).
+  const claude = registerClaudeMcp(SERVER, {
+    dryRun: options.dryRun ?? false, pluginManaged: options.statuslineOnly ?? false,
+  });
+
+  // --statusline-only touches ONLY Claude's wiring — Codex is a separate
+  // concern the flag's user did not ask about.
   if (!options.statuslineOnly) {
     runCodexInit(relay.command, SERVER, options.dryRun ?? false, options.migrateRoutes ?? false);
   }
@@ -340,6 +303,15 @@ export function runInit(options: InitOptions = {}): number {
     console.log(`  (each client's MCP config format differs, so init does not edit them automatically)`);
   }
 
-  console.log(`\nwaykeep init: done${options.dryRun ? ' (dry run)' : ''}. Run \`waykeep doctor\` to verify.`);
-  return 0;
+  // A registration init could not perform is repeated LAST, where a reader
+  // who only sees the end of the output cannot mistake it for done (review).
+  if (claude.outcome === 'pending') {
+    console.log('\n  ACTION REQUIRED — the Claude Code MCP server is NOT registered yet. Run:');
+    for (const line of claude.pending) console.log(`      ${line}`);
+  }
+  const outcome = claude.outcome === 'failed' ? 'finished with errors (see ✗ above)'
+    : claude.outcome === 'pending' ? 'done, 1 action required (above)'
+      : 'done';
+  console.log(`\nwaykeep init: ${outcome}${options.dryRun ? ' (dry run)' : ''}. Run \`waykeep doctor\` to verify.`);
+  return claude.outcome === 'failed' ? 1 : 0;
 }

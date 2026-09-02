@@ -70,7 +70,8 @@ plugin, or `waykeep init`.
 
 Switching an EXISTING `waykeep init` setup to the plugin? The same
 command migrates you: `waykeep init --statusline-only` removes Waykeep's
-settings-wired hooks and MCP server (your own entries are untouched)
+settings-wired hooks and its user-scope MCP registration (it runs
+`claude mcp remove waykeep -s user`; your own entries are untouched)
 and keeps only the StatusLine.
 
 ### Claude Code — no plugin
@@ -79,9 +80,23 @@ and keeps only the StatusLine.
 waykeep init
 ```
 
-Writes the MCP server, hooks, and StatusLine into
-`~/.claude/settings.json` (idempotent; your other settings are
-preserved, with a backup written first).
+Writes the hooks and StatusLine into `~/.claude/settings.json`
+(idempotent; your other settings are preserved, with a backup written
+first) and registers the MCP server at user scope by running
+`claude mcp add-json -s user waykeep …`. Claude Code reads MCP servers
+from `~/.claude.json` — never from `settings.json`, where an `mcpServers`
+key is silently ignored — so init drives the `claude` CLI instead of
+editing that file (an inert block left by an older init is swept). Init
+finds `claude` on PATH or in the usual install locations (the native
+installer's `~/.local/bin`, Homebrew, `/usr/local/bin`, the newest nvm
+version); if it still cannot, it prints the exact command to run, repeats
+it at the end as an action required, and `waykeep doctor`'s `claude mcp`
+check keeps warning until the server is registered — or point
+`WAYKEEP_CLAUDE_BIN` at the binary and re-run. Re-running after a move
+(an nvm version switch, for example) re-points the entry. Upgrading from
+`cairn-memory`: a `cairn` entry in `~/.claude.json` that launches this
+install's server is removed; one that launches another install is
+reported with the removal command, never deleted.
 
 ### Codex CLI
 
@@ -118,7 +133,8 @@ waykeep doctor
 ```
 
 One health check for everything: Node, SQLite, relay, hooks, database,
-socket. It diagnoses; it never mutates.
+socket, and whether the MCP server is actually registered with Claude
+Code (at user scope or through the plugin). It diagnoses; it never mutates.
 
 Note for GUI-launched agents: the CODEX plugin's MCP entry runs the
 bare `waykeep` command, which must be on the launching app's PATH — if a

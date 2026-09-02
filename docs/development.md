@@ -69,21 +69,18 @@
 
 ### 2. Configure MCP Server
 
-Add to your Claude Code settings (`~/.claude/settings.json`):
+Register the server at user scope with the `claude` CLI. Claude Code reads
+MCP servers from `~/.claude.json` (or `$CLAUDE_CONFIG_DIR/.claude.json`) —
+an `mcpServers` key in `~/.claude/settings.json` is silently ignored, that
+file only carries MCP *policy* keys:
 
-```json
-{
-  "mcpServers": {
-    "waykeep": {
-      "command": "node",
-      "args": ["/path/to/waykeep/dist/src/mcp/server.js"],
-      "env": {
-        "WAYKEEP_LOG_LEVEL": "info"
-      }
-    }
-  }
-}
+```bash
+claude mcp add-json -s user waykeep '{"type":"stdio","command":"node","args":["/path/to/waykeep/dist/src/mcp/server.js"],"env":{"WAYKEEP_LOG_LEVEL":"info"}}'
 ```
+
+`add-json` refuses a name that already exists; to re-point a moved install,
+run `claude mcp remove waykeep -s user` first. (`waykeep init` does exactly
+this, and prints the command when `claude` is not on PATH.)
 
 ### 3. Configure Hooks And StatusLine
 
@@ -211,6 +208,10 @@ Test-environment overrides (all set automatically by `tests/hermetic-env.cjs`):
 | `WAYKEEP_ALLOW_TMP_TRANSCRIPTS` | Admits the OS tmpdir into the transcript-path allowlist (tests only) |
 | `WAYKEEP_TAILER` | `0` disables the daemon's Codex rollout tailer (capture fallback) |
 | `WAYKEEP_CODEX_SESSIONS_DIR` | Overrides `~/.codex/sessions` for the rollout tailer (tests) |
+| `WAYKEEP_CODEX_DIR` | Overrides `~/.codex` for `waykeep init`/`doctor` |
+| `WAYKEEP_CLAUDE_SETTINGS` | Overrides `~/.claude/settings.json` for `waykeep init` |
+| `WAYKEEP_CLAUDE_CONFIG` | Overrides `~/.claude.json` (the MCP registry `waykeep init` reads) |
+| `WAYKEEP_CLAUDE_BIN` | Path of the `claude` CLI `waykeep init` runs (also useful when it is installed off-PATH) |
 
 
 
