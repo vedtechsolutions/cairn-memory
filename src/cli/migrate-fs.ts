@@ -76,8 +76,12 @@ interface FkViolationRow { table: string; rowid: number | null; parent: string; 
 export function fkViolationKeys(dbPath: string): string[] {
   const db = new Database(dbPath, { readonly: true });
   try {
+    // JSON.stringify (not a delimiter join) so the encoding is INJECTIVE — a table
+    // or parent name containing the delimiter can't collide with another tuple
+    // (codex review: `("a|1",2,"p",0)` and `("a",1,"2|p",0)` must not both serialize
+    // to `a|1|2|p|0`).
     return (db.prepare('PRAGMA foreign_key_check').all() as FkViolationRow[])
-      .map((v) => `${v.table}|${v.rowid ?? ''}|${v.parent}|${v.fkid}`)
+      .map((v) => JSON.stringify([v.table, v.rowid, v.parent, v.fkid]))
       .sort();
   } finally { db.close(); }
 }

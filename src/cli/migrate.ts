@@ -133,6 +133,7 @@ export async function runMigrate(opts: MigrateOptions = {}): Promise<number> {
     return 1;
   }
   let guard: InstanceType<typeof Database> | null = null;
+  let targetGuard: InstanceType<typeof Database> | null = null;
   try {
     // Re-check under the lock: a concurrent migration may have just published.
     if (isRegularFile(markerPath)) {
@@ -175,6 +176,14 @@ export async function runMigrate(opts: MigrateOptions = {}): Promise<number> {
     try { await src.backup(currentDb); } finally { src.close(); }
     try { chmodSync(currentDb, FS_PERMS.FILE); } catch { /* best-effort; the 0700 dir is the access boundary */ }
 
+    // Symmetric to the source guard: hold a connection on the COPY and capture its
+    // data_version, so a concurrent write to the target during the migration window —
+    // a content change even a row-count manifest can't see (codex review V2/V3) — is
+    // caught before the marker. We never commit to the copy after this, so it trips
+    // only on an external writer.
+    targetGuard = new Database(currentDb, { readonly: true });
+    const targetDataVersionBefore = targetGuard.pragma('data_version', { simple: true }) as number;
+
     // Verify BEFORE the marker: integrity, foreign keys, and a per-table manifest.
     const verify = new Database(currentDb, { readonly: true });
     let integrity: string;
@@ -200,9 +209,6 @@ export async function runMigrate(opts: MigrateOptions = {}): Promise<number> {
     if (targetFk.length > 0) {
       console.log(`  note: ${targetFk.length} pre-existing foreign-key violation(s) in ${legacyDir} (SQLite does not enforce FKs) copied faithfully — identical set, not introduced by the migration.`);
     }
-    const targetManifest = tableManifest(currentDb);
-    const targetMemories = targetManifest.get('memories') ?? 0;
-
     // Carry the config as one coherent unit with the db (recomputed under the lock
     // — a foreign writer may have created the target config since the preview, and
     // the legacy privacy config must never be silently dropped for a fork's).
@@ -243,17 +249,26 @@ export async function runMigrate(opts: MigrateOptions = {}): Promise<number> {
     // honored by every opener would close it, a deliberate out-of-B2 change, and the
     // legacy store is preserved regardless.)
     const finalSource = tableManifest(legacyDb);
-    const drift = [...new Set([...finalSource.keys(), ...targetManifest.keys()])]
-      .filter((t) => (finalSource.get(t) ?? 0) !== (targetManifest.get(t) ?? 0))
-      .map((t) => `${t} (legacy ${finalSource.get(t) ?? 0}, copy ${targetManifest.get(t) ?? 0})`);
+    const finalTarget = tableManifest(currentDb); // fresh — not a stale capture (codex V3)
+    const drift = [...new Set([...finalSource.keys(), ...finalTarget.keys()])]
+      .filter((t) => (finalSource.get(t) ?? 0) !== (finalTarget.get(t) ?? 0))
+      .map((t) => `${t} (legacy ${finalSource.get(t) ?? 0}, copy ${finalTarget.get(t) ?? 0})`);
     if (drift.length > 0) {
       console.error(`✗ migration ABORTED — row-count mismatch after the copy: ${drift.join(', ')}. No marker written; ${legacyDir} stays authoritative.`);
       return 1;
     }
+    // data_version LAST on BOTH the source AND the copy — catches any concurrent commit
+    // to either (value-only content changes a manifest can't see, included) up to the
+    // final microsecond before the atomic publish.
     if ((guard.pragma('data_version', { simple: true }) as number) !== dataVersionBefore) {
       console.error(`✗ migration ABORTED — the legacy store was modified during the copy (a writer committed a change, including a possibly value-only one). Stop all agents/daemons and re-run. No marker written; ${legacyDir} stays authoritative.`);
       return 1;
     }
+    if ((targetGuard.pragma('data_version', { simple: true }) as number) !== targetDataVersionBefore) {
+      console.error(`✗ migration ABORTED — the copy at ${currentDb} was modified during the migration (a concurrent writer on the new store). Stop all agents/daemons and re-run. No marker written; ${legacyDir} stays authoritative.`);
+      return 1;
+    }
+    const targetMemories = finalTarget.get('memories') ?? 0;
 
     const marker = {
       schema: MARKER_SCHEMA,
@@ -272,6 +287,7 @@ export async function runMigrate(opts: MigrateOptions = {}): Promise<number> {
     return 0;
   } finally {
     if (guard) { try { guard.close(); } catch { /* already closed */ } }
+    if (targetGuard) { try { targetGuard.close(); } catch { /* already closed */ } }
     releaseLock(currentDir, lockFd);
   }
 }

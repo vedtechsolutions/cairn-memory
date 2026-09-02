@@ -98,7 +98,7 @@ function fkKeys(dbPath: string): string[] {
   const db = new Database(dbPath, { readonly: true });
   try {
     return (db.prepare('PRAGMA foreign_key_check').all() as { table: string; rowid: number | null; parent: string; fkid: number }[])
-      .map((v) => `${v.table}|${v.rowid ?? ''}|${v.parent}|${v.fkid}`).sort();
+      .map((v) => JSON.stringify([v.table, v.rowid, v.parent, v.fkid])).sort();
   } finally { db.close(); }
 }
 
@@ -450,6 +450,28 @@ describe('waykeep migrate (Phase B2, rehearsed on a copy)', () => {
     assert.ok(existsSync(join(home, DATA_DIR_NAME, MIGRATION_MARKER)), 'the marker is written despite the pre-existing violation');
     assert.deepEqual(fkKeys(currentDb), fkKeys(legacyDb), 'the copy preserves the EXACT set of pre-existing violations (identical rows, not just a matching count)');
     assert.equal(rowCount(currentDb), 3, 'memories are copied');
+  });
+
+  it('the FK-set comparison catches a count-preserving swap — different rowid yields a different key set (codex)', () => {
+    // Two stores each with ONE violation but at a DIFFERENT orphaned rowid: the counts
+    // match, so a count check would pass, but the migration compares the exact key set,
+    // which must differ → abort. Validates the swap case at the comparison the code uses.
+    const orphanAt = (rowid: number): string[] => {
+      const p = join(tempHome(), 'fk.db');
+      const db = new Database(p);
+      try {
+        db.pragma('foreign_keys = OFF');
+        db.exec('CREATE TABLE p(id INTEGER PRIMARY KEY)');
+        db.exec('CREATE TABLE c(id INTEGER PRIMARY KEY, pid INTEGER REFERENCES p(id))');
+        db.prepare('INSERT INTO c(id, pid) VALUES (?, 999)').run(rowid); // orphan at an explicit rowid
+      } finally { db.close(); }
+      return fkKeys(p);
+    };
+    const a = orphanAt(1);
+    const b = orphanAt(2);
+    assert.equal(a.length, 1);
+    assert.equal(b.length, 1);
+    assert.notDeepEqual(a, b, 'same count but a different orphaned rowid must yield a DIFFERENT key set → the migration aborts');
   });
 
   it('leaves no temp-file litter behind on success', async () => {
