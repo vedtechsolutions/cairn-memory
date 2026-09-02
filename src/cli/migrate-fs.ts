@@ -64,14 +64,22 @@ export function tableManifest(dbPath: string): Map<string, number> {
   } finally { db.close(); }
 }
 
-/** Number of `PRAGMA foreign_key_check` rows in a store opened READ-ONLY. SQLite
- *  does NOT enforce foreign keys by default, so a real store can carry dangling
- *  references (orphaned rows) that are pre-existing data, not corruption — the
- *  migration compares this between source and copy rather than requiring zero. */
-export function fkViolationCount(dbPath: string): number {
+interface FkViolationRow { table: string; rowid: number | null; parent: string; fkid: number; }
+
+/** Every `PRAGMA foreign_key_check` row for a store opened READ-ONLY, as a SORTED
+ *  list of stable `(table, rowid, parent, fkid)` keys. SQLite does NOT enforce
+ *  foreign keys by default, so a real store carries dangling references (orphaned
+ *  rows) that are pre-existing data, not corruption. A faithful `.backup()` yields
+ *  the IDENTICAL set on source and copy; the migration requires exact set equality,
+ *  so even a count-preserving corruption (one orphan resolved while a different row
+ *  is orphaned) is caught — a plain count comparison would miss it (codex review). */
+export function fkViolationKeys(dbPath: string): string[] {
   const db = new Database(dbPath, { readonly: true });
-  try { return (db.prepare('PRAGMA foreign_key_check').all() as unknown[]).length; }
-  finally { db.close(); }
+  try {
+    return (db.prepare('PRAGMA foreign_key_check').all() as FkViolationRow[])
+      .map((v) => `${v.table}|${v.rowid ?? ''}|${v.parent}|${v.fkid}`)
+      .sort();
+  } finally { db.close(); }
 }
 
 /** Two files compared byte-for-byte; false if either is unreadable. */

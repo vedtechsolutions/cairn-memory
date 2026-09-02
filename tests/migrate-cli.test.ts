@@ -92,11 +92,14 @@ function configBackups(dir: string): string[] {
   return readdirSync(dir).filter((f) => f.startsWith(`${FILES.CONFIG}.pre-migrate-`));
 }
 
-/** `PRAGMA foreign_key_check` row count for a store opened READ-ONLY. */
-function fkCount(dbPath: string): number {
+/** Sorted stable keys of every `PRAGMA foreign_key_check` row (a store opened
+ *  READ-ONLY) — the exact violation SET, so a copy can be compared for fidelity. */
+function fkKeys(dbPath: string): string[] {
   const db = new Database(dbPath, { readonly: true });
-  try { return (db.prepare('PRAGMA foreign_key_check').all() as unknown[]).length; }
-  finally { db.close(); }
+  try {
+    return (db.prepare('PRAGMA foreign_key_check').all() as { table: string; rowid: number | null; parent: string; fkid: number }[])
+      .map((v) => `${v.table}|${v.rowid ?? ''}|${v.parent}|${v.fkid}`).sort();
+  } finally { db.close(); }
 }
 
 /** Resolve the state root under a controlled HOME, in-process. `resolveStateRoot`
@@ -439,13 +442,13 @@ describe('waykeep migrate (Phase B2, rehearsed on a copy)', () => {
       seed.exec('CREATE TABLE fk_child(id INTEGER PRIMARY KEY, pid INTEGER REFERENCES fk_parent(id))');
       seed.prepare('INSERT INTO fk_child(pid) VALUES (?)').run(999); // orphan → 1 FK violation
     } finally { seed.close(); }
-    assert.equal(fkCount(legacyDb), 1, 'the seed must carry exactly one pre-existing FK violation');
+    assert.equal(fkKeys(legacyDb).length, 1, 'the seed must carry exactly one pre-existing FK violation');
 
     assert.equal(await runMigrate({ home }), 0, 'a pre-existing FK violation must NOT block the migration');
 
     const currentDb = join(home, DATA_DIR_NAME, DB_FILENAME);
     assert.ok(existsSync(join(home, DATA_DIR_NAME, MIGRATION_MARKER)), 'the marker is written despite the pre-existing violation');
-    assert.equal(fkCount(currentDb), 1, 'the copy faithfully preserves the pre-existing violation (7==7 on the real store)');
+    assert.deepEqual(fkKeys(currentDb), fkKeys(legacyDb), 'the copy preserves the EXACT set of pre-existing violations (identical rows, not just a matching count)');
     assert.equal(rowCount(currentDb), 3, 'memories are copied');
   });
 
