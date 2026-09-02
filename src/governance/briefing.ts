@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { lstatSync, realpathSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { resolve } from 'node:path';
 import type Database from 'better-sqlite3';
 import {
   resolveCapabilityStatus, type GovernanceClientCapabilityRow,
@@ -11,6 +11,7 @@ import {
   type CapabilityDegradationReason, type ShadowResult, type ShadowVerdictReason,
 } from './verdict-types.js';
 import { sanitize } from '../utils/validation.js';
+import { gatesPath } from '../constants/paths.js';
 
 export interface GovernanceBriefingSection {
   rules: string[];
@@ -67,7 +68,7 @@ function capabilityRow(row: ClientRow | undefined): GovernanceClientCapabilityRo
 
 function configPresent(projectRoot: string): boolean {
   try {
-    lstatSync(join(realpathSync.native(resolve(projectRoot)), '.cairn', 'gates.json'));
+    lstatSync(gatesPath(realpathSync.native(resolve(projectRoot))));
     return true;
   } catch {
     return false;

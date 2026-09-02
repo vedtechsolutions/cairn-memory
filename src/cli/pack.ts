@@ -11,6 +11,7 @@ import { resolve } from 'node:path';
 import { openDatabase } from '../db/connection.js';
 import { resolveDbPath } from '../db/db-path.js';
 import { packExport, packImport } from '../pack/pack.js';
+import { ENV } from '../constants/env.js';
 
 export interface PackCliOptions {
   command: string;
@@ -29,7 +30,7 @@ export function runPack(opts: PackCliOptions): number {
     return 1;
   }
   const dir = resolve(opts.dir);
-  const db = openDatabase({ dbPath: resolveDbPath(process.env.CAIRN_DB_PATH) });
+  const db = openDatabase({ dbPath: resolveDbPath(process.env[ENV.DB_PATH]) });
   try {
     if (opts.command === 'export') {
       // Bulk export covers every non-private project; a single project

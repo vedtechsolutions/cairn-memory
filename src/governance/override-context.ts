@@ -10,6 +10,17 @@ import {
 } from './shadow-evaluator-runtime.js';
 import { captureWorktreeDigestV2 } from './worktree-digest.js';
 
+/**
+ * Wall-clock budget for assembling override context. The window spans a
+ * filesystem walk and a git subprocess, so it is load-sensitive: an overrun
+ * surfaces as an evaluator fault (`self_error`), not a timeout, which makes
+ * it easy to misread as a logic bug under CI contention.
+ *
+ * Equal to WORKTREE_DIGEST_HARD_CEILING_MS by coincidence, not by contract —
+ * they bound different work and should be tunable apart.
+ */
+export const OVERRIDE_CONTEXT_DEADLINE_MS = 1_000;
+
 export interface OverrideContextInput {
   projectRoot: string;
   sessionId: string;
@@ -28,7 +39,7 @@ export async function deriveGovernanceOverrideContext(
   });
   const config = loadGateConfig(identity.projectRoot);
   const started = performance.now();
-  const deadline = new ShadowDeadline(started, () => performance.now(), 1_000);
+  const deadline = new ShadowDeadline(started, () => performance.now(), OVERRIDE_CONTEXT_DEADLINE_MS);
   const repository = new GovernanceRepository(db);
   deadline.check('snapshot');
   const snapshot = repository.readShadowSnapshot({

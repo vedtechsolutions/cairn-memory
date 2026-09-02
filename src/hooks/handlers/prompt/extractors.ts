@@ -36,7 +36,18 @@ export function isGoalMemoryStale(mem: Memory, nowMs: number = Date.now()): bool
 /** Detect an explicit user decision (choice verb + rationale) in a prompt.
  *  Exported for tests — prompt-check.test.ts previously asserted against
  *  private regex copies that could never catch a real regression. */
+import { isPastedShape, isRejectedSentence, splitSentences, stripPrependedContext } from '../../shared/capture-shapes.js';
+
 export function extractDecision(prompt: string): string | null {
+  // Prepended IDE-context blocks are removed first: what remains is the
+  // user's authored message (recheck finding — the tag and the trailing text
+  // often share one unpunctuated "sentence").
+  prompt = stripPrependedContext(prompt);
+  // Pasted material (attribution envelopes, transcript glyphs) is checked
+  // against the WHOLE prompt: an envelope in sentence 1 must not launder a
+  // clean-looking sentence 2 (step-1 review, block 2).
+  if (isPastedShape(prompt)) return null;
+
   const lower = prompt.toLowerCase();
 
   // Precision-first auto-capture: requests for agent work and conversational
@@ -61,9 +72,38 @@ export function extractDecision(prompt: string): string | null {
 
   if (!decisionPatterns.some(p => p.test(lower))) return null;
 
-  let decision = prompt.replace(/\s+/g, ' ').trim();
-  if (decision.length > 200) {
-    decision = decision.slice(0, 197) + '...';
+  const normalized = prompt.replace(/\s+/g, ' ').trim();
+
+  // Short prompts keep the historical whole-capture semantics: a short
+  // message that trips the trigger IS the decision.
+  // Short prompts capture whole — UNLESS an IDE-context block is present, in
+  // which case they use the same sentence selection as long prompts: the
+  // block's sentence is ineligible, the user's own trailing sentence is not.
+  // (Blanket-rejecting short prompts here suppressed genuine decisions after
+  // a <=200-char IDE prelude — recheck finding.)
+  if (normalized.length <= 200 && !isRejectedSentence(normalized)) {
+    return normalized;
   }
-  return decision;
+
+  // Long prompts: the trigger may be buried anywhere, and storing the prompt
+  // PREFIX persisted 83 unrelated fragments as "decisions" in the live store
+  // (one an <ide_opened_file> IDE injection). Capture the SENTENCE that
+  // carries the trigger — and require its rationale in the SAME sentence, so
+  // an unrelated "because" elsewhere cannot launder a non-decision — or
+  // capture nothing at all. The prefix is never an acceptable output.
+  // Split the RAW prompt: normalizing first fuses unpunctuated paste lines
+  // into their neighbors, so the captured "sentence" drags log lines along.
+  for (const rawSentence of splitSentences(prompt)) {
+    const sentence = rawSentence.replace(/\s+/g, ' ').trim();
+    const sLower = sentence.toLowerCase();
+    if (!decisionPatterns.some(p => p.test(sLower))) continue;
+    if (!/\b(because|since|so\s+that|reason\s+is|due\s+to)\b/.test(sLower)) continue;
+    if (isRejectedSentence(sentence)) continue;
+    // A "sentence" that exceeds the cap is a run-on or an unterminated paste
+    // fragment — slicing it would reintroduce exactly the mid-thought
+    // truncation this gate exists to end. Skip it and keep looking.
+    if (sentence.length > 200) continue;
+    return sentence;
+  }
+  return null;
 }

@@ -16,13 +16,14 @@
 import type Database from 'better-sqlite3';
 import { loadCairnConfig } from '../config/cairn-config.js';
 import { ROLLUP, ROLLUP_METRICS } from '../constants/index.js';
+import { ENV } from '../constants/env.js';
 
 export type RollupMetric = (typeof ROLLUP_METRICS)[keyof typeof ROLLUP_METRICS];
 
 export function rollupEnabled(): boolean {
   // '0' matches the CAIRN_TAILER convention; 'false' is accepted because
   // it is the obvious guess and silently ignoring it breaks the opt-out.
-  const env = process.env.CAIRN_ROLLUP;
+  const env = process.env[ENV.ROLLUP];
   if (env === '0' || env === 'false') return false;
   return loadCairnConfig().report.rollup !== false;
 }

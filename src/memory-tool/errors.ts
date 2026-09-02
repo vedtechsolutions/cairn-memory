@@ -13,6 +13,9 @@
  * describe the restored store — never an ephemeral in-transaction state.
  */
 
+import { TOOL } from '../constants/mcp.js';
+import { FREE_FORM_LIMITS, MAX_FILE_LINES, formatLimit, formatBytes } from './limits.js';
+
 export const ERR = {
   // block-parser
   malformedBlock: (detail: string): string =>
@@ -48,16 +51,16 @@ export const ERR = {
   updateFailed: (id: string): string => `record ${id} could not be updated — view the file again before editing`,
 
   // free-form store
-  fileTooLarge: (): string => 'file exceeds the 64KB memory-file limit',
-  storeFullFiles: (): string => 'memory store is full (256 files)',
-  storeFullBytes: (): string => 'memory store is full (16MB aggregate limit)',
+  fileTooLarge: (): string => `file exceeds the ${formatBytes(FREE_FORM_LIMITS.FILE_BYTES)} memory-file limit`,
+  storeFullFiles: (): string => `memory store is full (${FREE_FORM_LIMITS.MAX_FILES} files)`,
+  storeFullBytes: (): string => `memory store is full (${formatBytes(FREE_FORM_LIMITS.AGGREGATE_BYTES)} aggregate limit)`,
   oldStrNotFound: (oldStr: string, path: string): string =>
     `No replacement was performed, old_str \`${oldStr}\` did not appear verbatim in ${path}.`,
   oldStrMultiple: (oldStr: string, lineNumbers: string): string =>
     `No replacement was performed. Multiple occurrences of old_str \`${oldStr}\` in lines: ${lineNumbers}. Please ensure it is unique`,
 
   // view renderer
-  lineLimitExceeded: (path: string): string => `File ${path} exceeds maximum line limit of 999,999 lines.`,
+  lineLimitExceeded: (path: string): string => `File ${path} exceeds maximum line limit of ${formatLimit(MAX_FILE_LINES)} lines.`,
   invalidViewRange: (a: number, b: number, lineCount: number): string =>
     `Invalid \`view_range\` parameter: [${a}, ${b}]. It should be within the range of lines of the file: [1, ${lineCount}]`,
   invalidViewRangeShape: (raw: unknown): string =>
@@ -69,7 +72,7 @@ export const ERR = {
   nonexistent: (path: string): string => `The path ${path} does not exist. Please provide a valid path.`,
   isDirectory: (path: string): string => `The path ${path} is a directory`,
   alreadyExists: (path: string): string => `File ${path} already exists`,
-  readOnlyPlan: (path: string): string => `${path} is read-only — manage the plan via the cairn_plan tool`,
+  readOnlyPlan: (path: string): string => `${path} is read-only — manage the plan via the ${TOOL.PLAN} tool`,
   createTokenless: (): string => 'create takes token-less blocks only — tokened blocks belong to str_replace edits',
   insertTokenless: (): string => 'insert takes token-less blocks only — edit existing records with str_replace',
   oldStrMustBeTokened: (): string => 'old_str must contain only rendered (tokened) record blocks',

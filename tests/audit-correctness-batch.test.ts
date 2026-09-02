@@ -24,7 +24,7 @@ describe('H3 — JS vector fallback scan is capped', () => {
     const source = readFileSync(join(process.cwd(), 'src/db/memory-repository/vector-search.ts'), 'utf-8');
     const fallbackStart = source.indexOf('// JS fallback');
     assert.ok(fallbackStart > 0, 'JS fallback block must exist');
-    const fallbackBlock = source.slice(fallbackStart, fallbackStart + 900);
+    const fallbackBlock = source.slice(fallbackStart, fallbackStart + 1600); // window covers the step-6 decision comment + the SQL
     assert.match(fallbackBlock, /ORDER BY confidence DESC/, 'fallback must rank before capping');
     assert.match(fallbackBlock, /LIMIT \?/, 'fallback must be LIMIT-bounded');
     assert.match(fallbackBlock, /VECTOR_FALLBACK_SCAN_LIMIT/, 'cap must come from constants');

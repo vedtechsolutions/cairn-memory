@@ -18,6 +18,7 @@ import {
   measureLines,
   type TierResult,
 } from './render-helpers.js';
+import { TOOL } from '../../../constants/mcp.js';
 
 /** Tier 1: Fixed context — header, project, git, user, plan, goal, files, approach */
 export function renderTier1(
@@ -219,7 +220,7 @@ export function renderTier1(
 
   // Interrupted session warning
   if (ctx.interrupted) {
-    lines.push('[interrupted] Previous session ended unexpectedly. Call cairn_plan(get) for full state.');
+    lines.push(`[interrupted] Previous session ended unexpectedly. Call ${TOOL.PLAN}(get) for full state.`);
   }
 
   // Approach (compact only — last section of T1)

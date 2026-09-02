@@ -54,6 +54,10 @@ export function routeIntent(ctx: PromptCtx): void {
       if (mode !== 'minimal') {
         const limit = mode === 'compact' ? 1 : 3;
         const results = client.memoryRepo.recall(prompt, {
+          // Step 7 fold: retrieval is read-only — exposure is stamped at the
+          // injection boundary (prompt-handler markRecalled), never on candidates
+          // later dropped by eligibility/score/cross-project/budget filters.
+          readOnly: true,
           project,
           kind: 'pitfall',
           maxResults: limit,
@@ -67,13 +71,20 @@ export function routeIntent(ctx: PromptCtx): void {
           .filter(r => !previouslyInjected.has(r.memory.id));
         for (const r of relevant) {
           if (!budgetAvailable()) break;
-          budgetPush(`[WAYKEEP] ${formatMemoryContent(r.memory)}${client.memoryRepo.stalenessMarker(r.memory)}`);
-          newlyInjected.push(r.memory.id);
+          // A push the budget REFUSES was never shown — it must not be
+          // stamped as exposure (codex fold block 1).
+          if (budgetPush(`[WAYKEEP] ${formatMemoryContent(r.memory)}${client.memoryRepo.stalenessMarker(r.memory)}`)) {
+            newlyInjected.push(r.memory.id);
+          }
         }
       }
 
       if (mode === 'normal' && budgetAvailable()) {
         const decisions = client.memoryRepo.recall(prompt, {
+          // Step 7 fold: retrieval is read-only — exposure is stamped at the
+          // injection boundary (prompt-handler markRecalled), never on candidates
+          // later dropped by eligibility/score/cross-project/budget filters.
+          readOnly: true,
           project,
           kind: 'decision',
           maxResults: 1,
@@ -85,8 +96,11 @@ export function routeIntent(ctx: PromptCtx): void {
           .filter(r => !previouslyInjected.has(r.memory.id));
         for (const r of relevantDecisions) {
           if (!budgetAvailable()) break;
-          budgetPush(`[WAYKEEP] ${formatMemoryContent(r.memory)}${client.memoryRepo.stalenessMarker(r.memory)}`);
-          newlyInjected.push(r.memory.id);
+          // A push the budget REFUSES was never shown — it must not be
+          // stamped as exposure (codex fold block 1).
+          if (budgetPush(`[WAYKEEP] ${formatMemoryContent(r.memory)}${client.memoryRepo.stalenessMarker(r.memory)}`)) {
+            newlyInjected.push(r.memory.id);
+          }
         }
       }
 
@@ -98,6 +112,10 @@ export function routeIntent(ctx: PromptCtx): void {
       if (mode === 'normal' && budgetAvailable()) {
         try {
           const goals = client.memoryRepo.recall(prompt, {
+            // Step 7 fold: retrieval is read-only — exposure is stamped at the
+            // injection boundary (prompt-handler markRecalled), never on candidates
+            // later dropped by eligibility/score/cross-project/budget filters.
+            readOnly: true,
             project,
             kind: 'goal',
             maxResults: 1,
@@ -109,8 +127,11 @@ export function routeIntent(ctx: PromptCtx): void {
             .filter(r => !isGoalMemoryStale(r.memory))
             .filter(r => !previouslyInjected.has(r.memory.id))[0];
           if (goalHit) {
-            budgetPush(`[WAYKEEP goal] Similar prior goal: ${formatMemoryContent(goalHit.memory)}`);
-            newlyInjected.push(goalHit.memory.id);
+            // A push the budget REFUSES was never shown — it must not be
+            // stamped as exposure (codex fold block 1).
+            if (budgetPush(`[WAYKEEP goal] Similar prior goal: ${formatMemoryContent(goalHit.memory)}`)) {
+              newlyInjected.push(goalHit.memory.id);
+            }
           }
         } catch { /* best-effort — goal match is additive */ }
       }
@@ -137,6 +158,10 @@ export function routeIntent(ctx: PromptCtx): void {
 
       if (mode === 'normal') {
         const facts = client.memoryRepo.recall(prompt, {
+          // Step 7 fold: retrieval is read-only — exposure is stamped at the
+          // injection boundary (prompt-handler markRecalled), never on candidates
+          // later dropped by eligibility/score/cross-project/budget filters.
+          readOnly: true,
           project,
           kind: 'fact',
           maxResults: 2,
@@ -149,8 +174,11 @@ export function routeIntent(ctx: PromptCtx): void {
           .filter(r => !previouslyInjected.has(r.memory.id));
         for (const r of relevant) {
           if (!budgetAvailable()) break;
-          budgetPush(`[WAYKEEP] ${formatMemoryContent(r.memory)}${client.memoryRepo.stalenessMarker(r.memory)}`);
-          newlyInjected.push(r.memory.id);
+          // A push the budget REFUSES was never shown — it must not be
+          // stamped as exposure (codex fold block 1).
+          if (budgetPush(`[WAYKEEP] ${formatMemoryContent(r.memory)}${client.memoryRepo.stalenessMarker(r.memory)}`)) {
+            newlyInjected.push(r.memory.id);
+          }
         }
       }
       break;

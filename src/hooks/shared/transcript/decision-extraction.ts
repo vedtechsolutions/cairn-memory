@@ -2,6 +2,7 @@
  * Decision mining from assistant text: legacy prose extraction (Layer 1b)
  * and explicit `[dec: …]` sigil parsing (Layer 1a).
  */
+import { isPastedShape, isRejectedSentence, splitSentences, stripPrependedContext } from '../capture-shapes.js';
 
 /**
  * Extract decision-like statements from assistant text (Layer 1b).
@@ -35,12 +36,27 @@ export function extractAssistantDecision(text: string): string | null {
   ];
   if (!rationaleSignals.some(p => p.test(lower))) return null;
 
-  // Extract first 200 chars, clean up
-  let decision = text.replace(/\s+/g, ' ').trim();
-  if (decision.length > 200) {
-    decision = decision.slice(0, 197) + '...';
+  text = stripPrependedContext(text);
+  // Pasted material never becomes a decision, whatever else matched.
+  if (isPastedShape(text)) return null;
+
+  const normalized = text.replace(/\s+/g, ' ').trim();
+  if (normalized.length <= 200 && !isRejectedSentence(normalized)) return normalized;
+
+  // 201–500 chars: this path stored `slice(0,197)+'…'` — the same
+  // prefix-truncation defect as the prompt extractors, and the source of the
+  // 29 source='learned' polluting rows (step-1 review, block 1). Select the
+  // sentence carrying BOTH signals, or capture nothing; never the prefix.
+  for (const rawSentence of splitSentences(text)) {
+    const sentence = rawSentence.replace(/\s+/g, ' ').trim();
+    if (sentence.length > 200) continue;
+    const sLower = sentence.toLowerCase();
+    if (!choiceSignals.some(p => p.test(sLower))) continue;
+    if (!rationaleSignals.some(p => p.test(sLower))) continue;
+    if (isRejectedSentence(sentence)) continue;
+    return sentence;
   }
-  return decision;
+  return null;
 }
 
 /** Max content length for a single sigil decision (matches legacy extractor cap). */
@@ -83,11 +99,14 @@ export function extractDecisionSigils(text: string): string[] {
   SIGIL_PATTERN.lastIndex = 0;
   while ((match = SIGIL_PATTERN.exec(cleaned)) !== null) {
     if (results.length >= SIGIL_MAX_PER_TURN) break;
-    let content = match[1].replace(/\s+/g, ' ').trim();
+    const content = match[1].replace(/\s+/g, ' ').trim();
     if (content.length === 0) continue;
-    if (content.length > SIGIL_MAX_LENGTH) {
-      content = content.slice(0, SIGIL_MAX_LENGTH - 3) + '...';
-    }
+    // Step-4 review finding: over-long sigils were TRUNCATED to the exact
+    // slice+'...' signature the 88-row remediation just cleaned — the
+    // pollution would re-accumulate. Step-1 doctrine applies here too:
+    // reject, never slice. A sigil is supposed to be a one-sentence
+    // distillation; an over-cap one is misuse, not a lesson.
+    if (content.length > SIGIL_MAX_LENGTH) continue;
     // Dedup within a single turn — repeated sigils collapse to one store.
     const key = content.toLowerCase();
     if (seen.has(key)) continue;

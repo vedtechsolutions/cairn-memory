@@ -19,6 +19,7 @@ import { getEmbeddingModelConfig } from '../utils/embeddings.js';
 import { verifyModelPackage, ArtifactVerificationError } from '../utils/artifact-verification.js';
 import { probeHookSocket, socketPath, pidPath } from '../mcp/socket-ownership.js';
 import { binaryUsable, relayShellPath } from './relay.js';
+import { ENV } from '../constants/env.js';
 import {
   codexDir, codexHooksPath, codexConfigPath, codexHookCount,
   countTrustedHooksIn, hasCairnMcpServer, cairnCommandSet,
@@ -126,7 +127,7 @@ async function checkConfigHealth(): Promise<CheckResult> {
 
 async function checkDatabase(): Promise<CheckResult> {
   // Same resolution the server/hooks use, so doctor inspects the same file.
-  const path = resolveDbPath(process.env.CAIRN_DB_PATH);
+  const path = resolveDbPath(process.env[ENV.DB_PATH]);
   if (!existsSync(path)) {
     return { status: 'ok', detail: `no database yet at ${path} (schema v${SCHEMA_VERSION} is created on first use)` };
   }

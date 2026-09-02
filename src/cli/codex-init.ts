@@ -18,10 +18,13 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { CLIENT_CODEX } from '../constants/clients.js';
 import { CAIRN_HOOK_DIR_MARKER } from '../constants/index.js';
+import { ENV } from '../constants/env.js';
+import { FILES, BACKUP_SUFFIX } from '../constants/paths.js';
+import { MCP_SERVER_NAME } from '../constants/mcp.js';
 
 /** ~/.codex, overridable for hermetic tests. */
 export function codexDir(): string {
-  return process.env.CAIRN_CODEX_DIR ?? join(homedir(), '.codex');
+  return process.env[ENV.CODEX_DIR] ?? join(homedir(), '.codex');
 }
 export function codexHooksPath(): string { return join(codexDir(), 'hooks.json'); }
 export function codexConfigPath(): string { return join(codexDir(), 'config.toml'); }
@@ -204,7 +207,7 @@ export function commandAt(file: Partial<CodexHooksFile>, entry: Pick<TrustStateE
  * commands are not ours to attest and keep position-join semantics.
  * Absent/invalid shadow (pre-shadow installs) means tolerant behavior.
  */
-export function trustShadowPath(): string { return join(codexDir(), '.cairn-trust-shadow.json'); }
+export function trustShadowPath(): string { return join(codexDir(), FILES.TRUST_SHADOW); }
 
 export function readTrustShadow(): Record<string, string> | null {
   try {
@@ -276,21 +279,27 @@ export function pruneTrustKeys(configToml: string, keys: ReadonlySet<string>): s
  *  a single quote, which a literal string cannot express. */
 export function codexMcpBlock(serverPath: string): string | null {
   if (process.execPath.includes("'") || serverPath.includes("'")) return null;
-  return `\n[mcp_servers.cairn]\ncommand = '${process.execPath}'\nargs = ['${serverPath}']\n`;
+  return `\n[mcp_servers.${MCP_SERVER_NAME}]\ncommand = '${process.execPath}'\nargs = ['${serverPath}']\n`;
 }
 
-/** True when config.toml already declares mcp_servers.cairn in ANY valid
+/** True when config.toml already declares our MCP server in ANY valid
  *  TOML form — appending a second declaration is a parse error that stops
- *  Codex from starting at all. Forms: [mcp_servers.cairn] header (bare or
- *  quoted), dotted top-level key, or a `cairn` key inside [mcp_servers]. */
+ *  Codex from starting at all. Forms: [mcp_servers.<name>] header (bare or
+ *  quoted), dotted top-level key, or a bare key inside [mcp_servers].
+ *
+ *  The name is interpolated into these patterns unescaped, which is safe
+ *  only because it is a controlled ASCII slug with no regex metacharacters
+ *  (see NAMESPACE in waykeep-contract). */
 export function hasCairnMcpServer(configToml: string): boolean {
-  if (/^\s*\[mcp_servers\.(?:cairn|"cairn")\]/m.test(configToml)) return true;
-  if (/^\s*mcp_servers\.(?:cairn|"cairn")\./m.test(configToml)) return true;
+  const N = MCP_SERVER_NAME;
+  if (new RegExp(`^\\s*\\[mcp_servers\\.(?:${N}|"${N}")\\]`, 'm').test(configToml)) return true;
+  if (new RegExp(`^\\s*mcp_servers\\.(?:${N}|"${N}")\\.`, 'm').test(configToml)) return true;
   const lines = configToml.split('\n');
+  const bareKey = new RegExp(`^\\s*(?:${N}|"${N}")\\s*[=.]`);
   for (let i = 0; i < lines.length; i++) {
     if (!/^\s*\[mcp_servers\]\s*$/.test(lines[i])) continue;
     for (let j = i + 1; j < lines.length && !lines[j].trimStart().startsWith('['); j++) {
-      if (/^\s*(?:cairn|"cairn")\s*[=.]/.test(lines[j])) return true;
+      if (bareKey.test(lines[j])) return true;
     }
   }
   return false;
@@ -330,7 +339,7 @@ function atomicWrite(path: string, content: string): void {
 
 function backupOnce(path: string): void {
   if (!existsSync(path)) return;
-  const backup = `${path}.cairn-backup`;
+  const backup = `${path}${BACKUP_SUFFIX}`;
   if (!existsSync(backup)) {
     copyFileSync(path, backup);
     console.log(`  ✓ backed up existing ${path} to ${backup}`);
@@ -403,11 +412,11 @@ export function runCodexInit(relayCmd: string, serverPath: string, dryRun: boole
     console.log(`    Migrate with \`waykeep init --migrate-routes\` when convenient (one re-trust in codex).`);
   }
   if (mcpRegistered) {
-    console.log('  = config.toml [mcp_servers.cairn] already registered');
+    console.log(`  = config.toml [mcp_servers.${MCP_SERVER_NAME}] already registered`);
   } else if (mcpBlock === null) {
-    console.log(`  ! config.toml: a path contains a single quote, which init cannot express in TOML — add [mcp_servers.cairn] manually (command: ${process.execPath}, args: ["${serverPath}"])`);
+    console.log(`  ! config.toml: a path contains a single quote, which init cannot express in TOML — add [mcp_servers.${MCP_SERVER_NAME}] manually (command: ${process.execPath}, args: ["${serverPath}"])`);
   } else {
-    console.log(`  ✓ config.toml [mcp_servers.cairn] — ${dryRun ? 'would append' : 'appending'}`);
+    console.log(`  ✓ config.toml [mcp_servers.${MCP_SERVER_NAME}] — ${dryRun ? 'would append' : 'appending'}`);
   }
 
   if (!dryRun) {

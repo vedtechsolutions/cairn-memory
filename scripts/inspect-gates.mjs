@@ -4,6 +4,21 @@ import {
   InspectorError, InspectorValidationError, inspectGates, renderInspectorText,
 } from '../dist/src/governance/inspector.js';
 import { GateConfigError } from '../dist/src/governance/gate-config.js';
+import { readFileSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const REPO = join(dirname(fileURLToPath(import.meta.url)), '..');
+// Namespace-derived env names, from the build-time generator (npm run build).
+const IDENTITY_PATH = join(REPO, 'dist', 'generated', 'identity.json');
+let ID;
+try {
+  ID = JSON.parse(readFileSync(IDENTITY_PATH, 'utf-8'));
+} catch (err) {
+  throw new Error(`cannot read ${IDENTITY_PATH} (${err.code || err.message}) — run \`npm run build\` first`);
+}
+const E = ID.ENV;
+
 
 function usage() {
   return 'Usage: node scripts/inspect-gates.mjs [--project <root>] [--paths <csv>] [--db <path> | --no-db] [--json]';
@@ -47,7 +62,7 @@ try {
     projectRoot: parsed.projectRoot,
     paths: parsed.paths,
     dbPath: parsed.dbPath,
-    refuseDefaultStore: process.env.CAIRN_INSPECTOR_TEST === '1',
+    refuseDefaultStore: process.env[E.INSPECTOR_TEST] === '1',
   });
   process.stdout.write(parsed.json ? `${JSON.stringify(report, null, 2)}\n` : renderInspectorText(report));
   process.exitCode = 0;

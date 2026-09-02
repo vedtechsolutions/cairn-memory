@@ -4,41 +4,83 @@
  * node --test spawns each test file as a child process with the same execArgv,
  * so this runs once per test process. It points Cairn's mutable state at a
  * per-process temp dir unless the caller already set an override, guaranteeing
- * tests never read or write the real ~/.cairn or ~/.claude/cairn-state.json —
+ * tests never read or write the real state dir or client state file —
  * required for sandboxed/read-only-home environments (EROFS) and to keep live
  * Cairn state from changing test behavior.
  *
  * The DB is not redirected here: tests open ':memory:' explicitly, and
- * CAIRN_DB_PATH is only read by hook entrypoints, which tests don't spawn.
+ * the DB_PATH override is only read by hook entrypoints, which tests don't spawn.
  */
 'use strict';
-const { mkdtempSync, rmSync } = require('node:fs');
+const { mkdtempSync, rmSync, readFileSync } = require('node:fs');
 const { tmpdir } = require('node:os');
 const { join } = require('node:path');
 
-const dir = mkdtempSync(join(tmpdir(), 'cairn-hermetic-'));
+// Namespace-derived names, from the build-time generator. This file is CJS so
+// it can preload before any ESM, which rules out importing the contract
+// directly (require(ESM) needs Node >= 20.19, below our declared engines
+// floor). Read the generated JSON instead.
+//
+// THROW, never default: if these names went stale the overrides below would
+// set variables nothing reads, every test would fall through to the real home
+// directory, and the whole suite would still pass. A missing build must be
+// loud.
+const IDENTITY_PATH = join(__dirname, '..', 'dist', 'generated', 'identity.json');
+let ID;
+try {
+  ID = JSON.parse(readFileSync(IDENTITY_PATH, 'utf-8'));
+} catch (err) {
+  throw new Error(
+    `hermetic preload cannot read ${IDENTITY_PATH} (${err.code || err.message}). ` +
+    'Run `npm run build` first — without it the suite would silently read and write your real home directory.',
+  );
+}
+const E = ID.ENV || {};
 
-if (!process.env.CAIRN_DIR) process.env.CAIRN_DIR = join(dir, '.cairn');
-if (!process.env.CAIRN_STATE_PATH) {
-  process.env.CAIRN_STATE_PATH = join(dir, 'cairn-state.json');
+// A JSON from an older generator can parse fine yet lack a key. `E.DIR` would
+// then be undefined, `process.env[undefined]` would set the literal key
+// "undefined", the real override would stay unset, and the suite would run
+// against the real home while passing. Validate before using any of them.
+for (const key of ['DIR', 'STATE_PATH', 'QUERY_CWD', 'CODEX_DIR', 'CONFIG_PATH', 'ALLOW_TMP_TRANSCRIPTS']) {
+  if (typeof E[key] !== 'string' || !E[key]) {
+    throw new Error(
+      `hermetic preload: ${IDENTITY_PATH} is missing ENV.${key} — stale or partial generator output. ` +
+      'Run `npm run build`; without every override the suite would use your real home directory.',
+    );
+  }
+}
+for (const key of ['NAMESPACE', 'DATA_DIR', 'CLIENT_STATE_FILE']) {
+  if (typeof ID[key] !== 'string' || !ID[key]) {
+    throw new Error(`hermetic preload: ${IDENTITY_PATH} is missing ${key} — run \`npm run build\`.`);
+  }
+}
+
+const dir = mkdtempSync(join(tmpdir(), `${ID.NAMESPACE}-hermetic-`));
+
+if (!process.env[E.DIR]) process.env[E.DIR] = join(dir, ID.DATA_DIR);
+if (!process.env[E.STATE_PATH]) {
+  process.env[E.STATE_PATH] = join(dir, ID.CLIENT_STATE_FILE);
 }
 // A1: pin the briefing query-fp cwd signal to a token-free basename ('x' is
 // under the 3-char token floor) so test behavior can't depend on what the
 // checkout directory happens to be called.
-if (!process.env.CAIRN_QUERY_CWD) process.env.CAIRN_QUERY_CWD = '/x';
+if (!process.env[E.QUERY_CWD]) process.env[E.QUERY_CWD] = '/x';
 
 // Parity step 5: `cairn init`/`doctor` read and WRITE the Codex config dir —
 // point it at the hermetic temp dir so a test can never touch ~/.codex.
-if (!process.env.CAIRN_CODEX_DIR) process.env.CAIRN_CODEX_DIR = join(dir, '.codex');
+if (!process.env[E.CODEX_DIR]) process.env[E.CODEX_DIR] = join(dir, '.codex');
 
 // Phase 1 step 3: scope policy reads ~/.cairn/config.json — point it at a
 // (nonexistent) hermetic path so a developer's real scope config can never
 // shape test behavior; tests that need a config write this file themselves.
-if (!process.env.CAIRN_CONFIG_PATH) process.env.CAIRN_CONFIG_PATH = join(dir, 'cairn-config.json');
+if (!process.env[E.CONFIG_PATH]) process.env[E.CONFIG_PATH] = join(dir, `${ID.NAMESPACE}-config.json`);
 
 // M3: production only trusts transcripts under ~/.claude/; tests write
 // fixtures via mkdtemp, so opt the OS tmpdir into the allowlist here.
-process.env.CAIRN_ALLOW_TMP_TRANSCRIPTS = '1';
+process.env[E.ALLOW_TMP_TRANSCRIPTS] = '1';
+// Step-5 review HOLD: a developer's CAIRN_RERANK=1 must not leak into
+// hermetic runs — tests choose their reranker explicitly via injection.
+process.env[E.RERANK] = '0';
 
 process.on('exit', () => {
   try {

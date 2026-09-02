@@ -2,7 +2,14 @@
 # StatusLine relay — ultra-lightweight curl to daemon.
 # Falls back to minimal display if daemon is unavailable.
 # NEVER falls back to node cold-start (too expensive for status line).
-SOCK="$HOME/.cairn/hook-daemon.sock"
+SCRIPT_DIR="${0%/*}"
+# shellcheck source=/dev/null
+if [ -r "$SCRIPT_DIR/identity.sh" ]; then
+  . "$SCRIPT_DIR/identity.sh"
+else
+  exit 0
+fi
+SOCK="$HOME/$WK_DATA_DIR/$WK_SOCKET_FILE"
 INPUT=$(cat)
 
 if [ -S "$SOCK" ]; then
@@ -14,4 +21,4 @@ if [ -S "$SOCK" ]; then
 fi
 
 # Minimal fallback — no node, no DB, just show something
-printf 'Cairn: ready'
+printf 'Waykeep: ready'

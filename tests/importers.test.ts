@@ -20,6 +20,7 @@ import DatabaseCtor from 'better-sqlite3';
 import type { Database as DatabaseType } from 'better-sqlite3';
 
 import { openDatabase } from '../src/db/connection.js';
+import { CONFIDENCE } from '../src/constants/index.js';
 import { MemoryRepository } from '../src/db/memory-repository.js';
 import { learnSections } from '../src/importers/learn-pipeline.js';
 import { transformCodexMemories } from '../src/importers/codex-memories.js';
@@ -811,5 +812,31 @@ describe('exact dedup independent of FTS', () => {
     const rerun2 = learnSections(repo, [{ kind: 'fact', content: stopwords, tags: [] }], null);
     assert.equal(rerun2.exactDuplicates, 1, 'stopword-only content reads as exact on re-import');
     assert.equal(rerun2.ingested, 0, 'no duplicate row for stopword-only content');
+  });
+});
+
+// --- Step-6 carry-in behavioral pins -----------------------------------------
+
+describe('imported pitfall prior (step 6 carry-in)', () => {
+  it('a pitfall through the learn pipeline is born at AUTO_DETECTED, below the injection gate', () => {
+    const db = openDatabase({ dbPath: ':memory:' });
+    try {
+      const repo = new MemoryRepository(db);
+      const res = learnSections(repo, [{
+        kind: 'pitfall',
+        content: 'imported pitfall probe: never trust an unverified backup archive',
+        tags: [],
+      }], 'proj-import');
+      assert.equal(res.ingested, 1);
+      const row = db.prepare("SELECT confidence FROM memories WHERE content LIKE 'imported pitfall probe%'").get() as { confidence: number };
+      assert.equal(row.confidence, CONFIDENCE.AUTO_DETECTED,
+        'untrusted imports must not be born ON (or above) the 0.65 gate');
+      // Non-pitfall sections keep their defaults.
+      learnSections(repo, [{ kind: 'fact', content: 'imported fact probe about ports', tags: [] }], 'proj-import');
+      const fact = db.prepare("SELECT confidence FROM memories WHERE content LIKE 'imported fact probe%'").get() as { confidence: number };
+      assert.equal(fact.confidence, CONFIDENCE.LEARNED);
+    } finally {
+      db.close();
+    }
   });
 });

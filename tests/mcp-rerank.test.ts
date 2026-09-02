@@ -71,7 +71,7 @@ describe('cairn_recall — rerank path (MCP level, fake reranker)', () => {
     });
   });
 
-  it('reorders results, labels the score as rrf_score, and marks only the returned top-k', async () => {
+  it('reorders results, labels the score as rrf_score, and marks NOTHING (read-only recall)', async () => {
     const { m1, m2, m3 } = seed();
     const text = await callRecall();
 
@@ -84,8 +84,10 @@ describe('cairn_recall — rerank path (MCP level, fake reranker)', () => {
     assert.match(text, /rrf_score:/, 'score labeled as the RRF fusion score, not a reranker score');
     assert.ok(!text.includes('[rerank unavailable'), 'no fallback label on success');
 
-    assert.equal(recallCount(m3), 1, 'returned id marked');
-    assert.equal(recallCount(m2), 1, 'returned id marked');
+    // Step 7 (M5): cairn_recall is read-only in fact — no recall-stat
+    // writes for ANY candidate, returned or not.
+    assert.equal(recallCount(m3), 0, 'returned id must NOT be marked — diagnostic recall is inert');
+    assert.equal(recallCount(m2), 0, 'returned id must NOT be marked — diagnostic recall is inert');
     assert.equal(recallCount(m1), 0, 'pool candidate outside top-k must NOT be marked');
   });
 
@@ -112,7 +114,7 @@ describe('cairn_recall — rerank fallback (MCP level)', () => {
     });
   });
 
-  it('labels the fallback visibly, keeps RRF order, and still marks the returned ids', async () => {
+  it('labels the fallback visibly, keeps RRF order, and still marks nothing (read-only recall)', async () => {
     const { m1, m2, m3 } = seed();
     const text = await callRecall();
 
@@ -122,8 +124,9 @@ describe('cairn_recall — rerank fallback (MCP level)', () => {
     assert.match(text, / score: /, 'fallback shows the honest plain score label');
     assert.ok(!text.includes('rrf_score:'), 'no rerank-mode label when rerank did not run');
 
-    assert.equal(recallCount(m1), 1);
-    assert.equal(recallCount(m2), 1);
+    // Step 7 (M5): the fallback path is read-only too.
+    assert.equal(recallCount(m1), 0);
+    assert.equal(recallCount(m2), 0);
     assert.equal(recallCount(m3), 0);
   });
 });

@@ -231,6 +231,24 @@ export function extractWhyContext(text: string): string | null {
 
 // --- Intent Classification ---------------------------------------------------
 
+/**
+ * The trigger vocabulary that classifies a prompt as a CORRECTION.
+ * Exported because the correction extractor must select the sentence that
+ * matches one of THESE — selecting on an independent marker vocabulary let
+ * an unrelated sentence be stored as the lesson (step-1 review, block 3).
+ */
+export const CORRECTION_TRIGGER_PATTERNS: readonly RegExp[] = [
+      /^no[,.]?\s+(that|this|it|you|don|stop|never|wrong|not|i\s+(said|told|asked|already))/,
+      /that'?s\s*(not|wrong)/,
+      /don'?t\s+(do|use|add|make)/,
+      /always\s+(use|do|make|add)/,
+      // "I said/told/asked" — only at sentence start or after punctuation to avoid
+      // false positives like "based on what I asked earlier"
+      /(?:^|[,.;!]\s*)i\s+(said|told|asked)\s+(you|that|to)\b/,
+      /stop\s+(doing|using)/,
+      /never\s+(use|do)/,
+];
+
 export function classifyIntent(message: string): UserIntent {
   const lower = message.toLowerCase().trim();
 
@@ -247,17 +265,7 @@ export function classifyIntent(message: string): UserIntent {
     /\bgo\s+back\s+to\b/i,
   ];
   if (!correctionAntiPatterns.some(p => p.test(lower))) {
-    const correctionPatterns = [
-      /^no[,.]?\s+(that|this|it|you|don|stop|never|wrong|not|i\s+(said|told|asked|already))/,
-      /that'?s\s*(not|wrong)/,
-      /don'?t\s+(do|use|add|make)/,
-      /always\s+(use|do|make|add)/,
-      // "I said/told/asked" — only at sentence start or after punctuation to avoid
-      // false positives like "based on what I asked earlier"
-      /(?:^|[,.;!]\s*)i\s+(said|told|asked)\s+(you|that|to)\b/,
-      /stop\s+(doing|using)/,
-      /never\s+(use|do)/,
-    ];
+    const correctionPatterns = CORRECTION_TRIGGER_PATTERNS;
     if (correctionPatterns.some(p => p.test(lower))) return 'correction';
   }
 

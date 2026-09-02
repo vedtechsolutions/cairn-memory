@@ -18,6 +18,8 @@ import { parsePlanContent } from '../utils/plan-parser.js';
 import { readFileSync, existsSync } from 'node:fs';
 import { LIMITS } from '../constants/index.js';
 import { recordTelemetry } from './shared/hook-telemetry.js';
+import { ENV } from '../constants/env.js';
+import { TOOL } from '../constants/mcp.js';
 
 const _startTime = Date.now();
 
@@ -73,7 +75,7 @@ function createCairnPlan(
   planContent: { name: string; steps: string[] },
 ): void {
   const project = projectId(input.cwd);
-  const dbPath = process.env.CAIRN_DB_PATH ?? undefined;
+  const dbPath = process.env[ENV.DB_PATH] ?? undefined;
   const client = createHookDbClient(dbPath);
 
   try {
@@ -87,7 +89,7 @@ function createCairnPlan(
       steps,
     });
 
-    const msg = `[WAYKEEP] Plan auto-persisted: "${planContent.name}" (${steps.length} steps). Survives compaction. Use cairn_plan(step) to track progress.`;
+    const msg = `[WAYKEEP] Plan auto-persisted: "${planContent.name}" (${steps.length} steps). Survives compaction. Use ${TOOL.PLAN}(step) to track progress.`;
     // Same cost row the shared handler records — plan-bridge is a SYNC
     // route, so this stdout IS delivered (standalone twin must not be the
     // one uncounted path; review round 2).

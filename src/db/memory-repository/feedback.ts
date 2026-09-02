@@ -29,10 +29,22 @@ export function incrementImpact(db: Database.Database, id: string): void {
  *  upsert (journal.ts trust-change semantics). */
 export function strengthenConfidence(db: Database.Database, id: string): boolean {
   return db.transaction(() => {
+    // Pitfalls additionally floor at DELIBERATE: strengthen is an explicit
+    // "this proved useful", and 0.55 + 0.10 landed a validated auto pitfall
+    // at exactly 0.65 — ON the injection gate, eligible at that instant and
+    // gone at the first decay charge (the F4 borderline step 3 rejects).
+    // Decisions get the analogous floor (step-6 carry-in): 0.6 + 0.1 landed
+    // exactly ON the 0.7 decision surfacing gate — the same F4 borderline.
     const result = db.prepare(`
-      UPDATE memories SET confidence = MIN(1.0, confidence + ?)
+      UPDATE memories SET confidence = MIN(1.0, CASE
+        WHEN kind = 'pitfall' THEN MAX(confidence + ?, ?)
+        WHEN kind = 'decision' THEN MAX(confidence + ?, ?)
+        ELSE confidence + ?
+      END)
       WHERE id = ? AND invalidated = 0 AND kind != 'rule'
-    `).run(CONFIDENCE.STRENGTHEN_INCREMENT, id);
+    `).run(CONFIDENCE.STRENGTHEN_INCREMENT, CONFIDENCE.DELIBERATE,
+      CONFIDENCE.STRENGTHEN_INCREMENT, CONFIDENCE.STRENGTHENED_DECISION_FLOOR,
+      CONFIDENCE.STRENGTHEN_INCREMENT, id);
     if (result.changes > 0) journalUpsertForId(db, id);
     return result.changes > 0;
   })();

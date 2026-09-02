@@ -17,12 +17,13 @@ import { CONFIDENCE, TOKEN_BUDGET } from '../constants/index.js';
 import { generateFingerprint } from '../utils/fingerprint.js';
 import { extractWhyContext } from '../utils/intent-classifier.js';
 import { isSystemContent } from '../utils/validation.js';
+import { ENV } from '../constants/env.js';
 
 const _startTime = Date.now();
 try {
   const input = readStdinJson<PreCompactInput>();
 
-  const dbPath = process.env.CAIRN_DB_PATH ?? undefined;
+  const dbPath = process.env[ENV.DB_PATH] ?? undefined;
   const client = createHookDbClient(dbPath);
 
   const project = projectId(input.cwd);

@@ -13,6 +13,8 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
 export const RELAY_SOURCE = join(process.cwd(), 'src/hooks/hook-relay.c');
+/** hook-relay.c #includes the generated identity.h — a fresh compile needs it. */
+export const GENERATED_INCLUDE = join(process.cwd(), 'dist/generated');
 export const RELAY_BINARY = join(process.cwd(), 'dist/src/hooks/hook-relay');
 
 /** Hard cap on every spawned process — restricted sandboxes must fail fast
@@ -35,7 +37,7 @@ export function prepareRelayDir(prefix: string): string {
     relayBin = RELAY_BINARY;
   } else {
     const out = join(tmpdir(), `${prefix}-bin-${process.pid}`);
-    const compile = spawnSync('cc', ['-O2', '-o', out, RELAY_SOURCE], { stdio: 'pipe', timeout: SPAWN_TIMEOUT_MS });
+    const compile = spawnSync('cc', ['-O2', '-I', GENERATED_INCLUDE, '-o', out, RELAY_SOURCE], { stdio: 'pipe', timeout: SPAWN_TIMEOUT_MS });
     if (compile.status !== 0) {
       throw new Error(`failed to compile hook-relay.c: ${compile.stderr?.toString()}`);
     }

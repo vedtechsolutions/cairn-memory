@@ -10,6 +10,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { PlanRepository, Plan } from '../db/plan-repository.js';
 import type { MemoryRepository } from '../db/memory-repository.js';
 import type { ContextMode } from '../constants/index.js';
+import { RESOURCE_URI } from '../constants/mcp.js';
 
 type ContextModeFn = () => ContextMode;
 
@@ -19,13 +20,13 @@ export function registerResources(
   memoryRepo: MemoryRepository,
   _getMode: ContextModeFn,
 ): void {
-  // --- cairn://plan/{project}/active ----------------------------------------
+  // --- ACTIVE_PLAN resource -------------------------------------------------
   // Full active plan with all steps, decisions, and notes.
   // No token budget constraint — intended for post-compaction recovery reads.
 
   server.resource(
     'active-plan',
-    new ResourceTemplate('cairn://plan/{project}/active', { list: undefined }),
+    new ResourceTemplate(RESOURCE_URI.ACTIVE_PLAN, { list: undefined }),
     { description: 'Full active plan with all steps, decisions, and notes' },
     async (uri, variables) => {
       const project = variables.project as string;
@@ -43,13 +44,13 @@ export function registerResources(
     },
   );
 
-  // --- cairn://briefing/{project} -------------------------------------------
+  // --- FULL_BRIEFING resource -----------------------------------------------
   // Full briefing without the 500-token budget constraint.
   // Includes pitfalls, corrections, decisions, and plan state.
 
   server.resource(
     'full-briefing',
-    new ResourceTemplate('cairn://briefing/{project}', { list: undefined }),
+    new ResourceTemplate(RESOURCE_URI.FULL_BRIEFING, { list: undefined }),
     { description: 'Full project briefing without token budget constraints' },
     async (uri, variables) => {
       const project = variables.project as string;

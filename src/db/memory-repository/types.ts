@@ -71,9 +71,10 @@ export interface CreateMemoryInput {
    *  per-turn identity so evidence sessions can't be merged away. */
   skipDedup?: boolean;
   /** Bypass truth-maintenance conflict detection (supersession/contradiction).
-   *  Internal — benchmark corpora must be preserved verbatim: two opposing
-   *  version claims in a haystack are BOTH retrieval targets, and supersession
-   *  would hide the older one from search. */
+   *  Internal — benchmark corpora must be preserved verbatim (two opposing
+   *  version claims in a haystack are BOTH retrieval targets), and step-4
+   *  remediation replacements must write NOTHING outside their manifest —
+   *  no supersessions, no contradiction edges. */
   skipConflictDetection?: boolean;
 }
 
@@ -124,10 +125,11 @@ export interface RecallOptions {
   kind?: MemoryKind;
   maxResults?: number;
   minConfidence?: number;
-  /** Skip recall-stat side effects (last_recalled / recall_count). Default
-   *  false — production behavior unchanged. Benchmark harnesses set true so
-   *  repeated evaluation queries stay order-independent and never perturb
-   *  spaced-repetition state. Internal: not exposed via any MCP tool schema. */
+  /** Historical no-op (step 6): retrieval NEVER stamps recall stats on any
+   *  path — the mutate-on-return default was removed once every production
+   *  caller passed readOnly. markRecalled at injection boundaries is the
+   *  only exposure stamp. The field is retained so existing callers keep
+   *  compiling; passing it changes nothing. */
   readOnly?: boolean;
 }
 

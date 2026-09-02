@@ -3,6 +3,7 @@ import type Database from 'better-sqlite3';
 import { generateId } from '../utils/index.js';
 import {
   GOVERNANCE_OVERRIDE_MAX_DURATION_MS,
+  GOVERNANCE_OVERRIDE_MAX_DURATION_HOURS,
   GOVERNANCE_OVERRIDE_PAYLOAD_VERSION,
   validateGovernanceOverride,
   type GovernanceOverrideCandidate,
@@ -89,7 +90,9 @@ export class GovernanceOverrideStore {
     const durationMs = input.durationMs ?? GOVERNANCE_OVERRIDE_DEFAULT_DURATION_MS;
     if (!Number.isSafeInteger(durationMs) || durationMs <= 0 ||
         durationMs > GOVERNANCE_OVERRIDE_MAX_DURATION_MS) {
-      throw new Error('override duration must be 1 ms..24 h');
+      throw new Error(
+        `override duration must be 1 ms..${GOVERNANCE_OVERRIDE_MAX_DURATION_HOURS} h`,
+      );
     }
     const reason = redactedReason(input.reason);
     const nowMs = input.nowMs ?? Date.now();

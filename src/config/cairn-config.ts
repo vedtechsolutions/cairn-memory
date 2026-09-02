@@ -16,8 +16,7 @@
  * picks up edits without restart).
  */
 import { readFileSync, statSync } from 'node:fs';
-import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { configPath as sharedConfigPath } from '../constants/paths.js';
 
 export interface CairnScopeConfig {
   /** Projects whose memories never surface OUTSIDE the project — on any
@@ -43,7 +42,7 @@ const EMPTY_CONFIG: CairnConfig = {
 };
 
 export function cairnConfigPath(): string {
-  return process.env.CAIRN_CONFIG_PATH ?? join(homedir(), '.cairn', 'config.json');
+  return sharedConfigPath();
 }
 
 /** Cache identity is (path, mtime, size, inode): mtimeMs alone is lossy —

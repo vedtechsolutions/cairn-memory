@@ -9,12 +9,13 @@ import { readStdinJson, type PostToolUseInput } from './hook-io.js';
 import { createHookDbClient } from './db-client.js';
 import { handleCodexPostTool } from '../handlers/codex-post-tool-handler.js';
 import { recordTelemetry } from './hook-telemetry.js';
+import { ENV } from '../../constants/env.js';
 
 export async function runPostToolEntry(telemetryName: string): Promise<void> {
   const startTime = Date.now();
   try {
     const input = readStdinJson<PostToolUseInput>();
-    const client = createHookDbClient(process.env.CAIRN_DB_PATH ?? undefined);
+    const client = createHookDbClient(process.env[ENV.DB_PATH] ?? undefined);
     try {
       const result = await handleCodexPostTool(input, client);
       recordTelemetry(telemetryName, result.action, startTime, true);

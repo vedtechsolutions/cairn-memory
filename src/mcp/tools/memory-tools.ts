@@ -6,13 +6,12 @@ import type { MemoryRepository } from '../../db/memory-repository.js';
 import type { EdgeRepository } from '../../db/edge-repository.js';
 import type { SessionCache } from '../../hooks/shared/session-cache.js';
 import { deriveOriginClient } from '../../hooks/shared/client-adapter.js';
-import { LEARNABLE_KINDS, LIMITS, BRIEFING_MODE, RELEVANCE, FINGERPRINT, type ContextMode } from '../../constants/index.js';
+import { LEARNABLE_KINDS, LIMITS, BRIEFING_MODE, RELEVANCE, FINGERPRINT, CONFIDENCE, RETRIEVAL_PATHS, RERANK_FALLBACK_LABEL, type RetrievalPathKind, type ContextMode } from '../../constants/index.js';
 import { RERANK } from '../../constants/reranker-models.js';
 import { generateFingerprint } from '../../utils/fingerprint.js';
 import { surfacesInScopedRecall } from '../../utils/cross-project-guard.js';
 import { canReadPrivate } from '../../config/cairn-config.js';
 import { sessionProjectId } from '../../utils/session-project.js';
-import { projectId } from '../../utils/project-id.js';
 import type { ContextRepository } from '../../db/context-repository.js';
 import { isRerankEnabled, rerank } from '../../utils/reranker.js';
 import { isCritical } from './helpers.js';
@@ -28,6 +27,7 @@ import {
 import { embed, embedQuery, embeddingToBuffer, isEmbeddingReady, bufferToEmbedding } from '../../utils/embeddings.js';
 import { extractAnchor, anchorToJson } from '../../utils/anchor.js';
 import { cosineSimilarity } from '../../utils/similarity.js';
+import { TOOL } from '../../constants/mcp.js';
 
 type ContextModeFn = () => ContextMode;
 
@@ -64,7 +64,7 @@ export function registerMemoryTools(
   // --- cairn_recall ----------------------------------------------------------
 
   server.registerTool(
-    'cairn_recall',
+    TOOL.RECALL,
     {
       title: 'Recall Memories',
       description: 'Retrieve relevant memories for a topic or task. Returns pitfalls, decisions, corrections, and facts ranked by relevance.',
@@ -73,7 +73,7 @@ export function registerMemoryTools(
         query: z.string().max(LIMITS.MAX_STRING_PARAM).describe('What you are about to do — used to find relevant memories'),
         project: z.string().max(LIMITS.MAX_STRING_PARAM).optional().describe('Scope to a specific project ID'),
         max_results: z.number().int().positive().optional().describe('Max results (default: 5)'),
-        scope: z.enum(['all', 'project']).optional().describe("Result scope: 'all' (default) includes relevant globals; 'project' returns ONLY the given project's own memories"),
+        scope: z.enum(['all', 'project', 'global']).optional().describe("Result scope: 'all' (default) = the target project's rows plus globals; 'project' = ONLY the target project's own rows; 'global' = ONLY global rows. The target project is the `project` argument when given, else this session's own project."),
       }),
     },
     async ({ query, project, max_results: maxResults, scope }) => {
@@ -82,9 +82,22 @@ export function registerMemoryTools(
       if (critical) return critical;
 
       // Resolve a bare project name (e.g. "cairn") to its full id for scoping.
-      const resolvedProject = repo.resolveProject(project) ?? null;
+      //
+      // SYMMETRY (remediation step 2): when `project` is omitted, default to
+      // the session's own project — the same default `cairn_learn` applies —
+      // so a lesson stored by this session is visible to this session's next
+      // bare recall. Before this, bare recall searched GLOBAL-ONLY, and a
+      // freshly learned project-scoped pitfall was unreachable seconds later
+      // (incident mechanism R6). Globals still surface either way; the
+      // explicit global-ONLY mode is scope: 'global' below — omitting the
+      // argument was never a documented way to exclude project rows.
+      const resolvedProject = scope === 'global'
+        ? null // global-only retrieves GLOBAL candidates — filtering a session-scoped window can crowd every global out
+        : project !== undefined
+          ? repo.resolveProject(project) ?? null
+          : sessionProjectId();
       if (scope === 'project' && !resolvedProject) {
-        return { content: [{ type: 'text' as const, text: "error: scope: 'project' requires a resolvable `project` argument" }], isError: true };
+        return { content: [{ type: 'text' as const, text: "error: scope: 'project' needs a target — pass `project`, or run the session inside a workspace so it has one of its own" }], isError: true };
       }
 
       const limit = modeAdjustedLimit(mode, maxResults);
@@ -99,11 +112,9 @@ export function registerMemoryTools(
       }
 
       // Rerank stage (opt-in, W2): fetch the RRF top-RERANK.CANDIDATES
-      // read-only, cross-encode, keep the top `limit`, then apply recall
-      // side effects to exactly the top-k ids returned by this stage.
-      // Supplemental graph neighbors added later by enrichment are NOT
-      // marked — matching the non-rerank path, where only directly
-      // retrieved results carry recall side effects.
+      // read-only, cross-encode, keep the top `limit`. No recall side
+      // effects exist anywhere in this tool (step 7) — candidates and
+      // returned results alike stay unstamped.
       const rerankActive = rerankerImpl.isEnabled();
       const recallOptions = {
         project: resolvedProject,
@@ -127,6 +138,9 @@ export function registerMemoryTools(
       if (scope === 'project') {
         results = results.filter(r => r.memory.project === resolvedProject);
       }
+      if (scope === 'global') {
+        results = results.filter(r => r.memory.project === null);
+      }
 
       // Cross-project guard (same filter the hook/briefing paths apply): a
       // global memory surfaces in a project-scoped recall only when its
@@ -134,7 +148,13 @@ export function registerMemoryTools(
       // as an Odoo pitfall stored global. The query fingerprint comes from the
       // project's stored context, exactly as on the UserPromptSubmit path;
       // absent context yields an empty fp → fail closed (block, never leak).
-      const queryFp = resolvedProject
+      // The mis-scoped-global fingerprint guard applies only when the CALLER
+      // named a project — the pre-symmetry contract. Bare recall keeps every
+      // global reachable exactly as it always did: applying the guard to the
+      // session default silently hid 12 legitimate global lessons whose older
+      // fingerprints spell 'node' where current contexts spell 'node.js'
+      // (fingerprint drift — a store-repair concern, not a recall filter).
+      const queryFp = project !== undefined && resolvedProject
         ? generateFingerprint({ projectContext: contextRepo?.getLatest(resolvedProject) ?? null })
         : null;
       if (queryFp) {
@@ -153,18 +173,14 @@ export function registerMemoryTools(
           results = reordered.map(c => byId.get(c.id)).filter((r): r is NonNullable<typeof r> => r !== undefined);
         }
       }
-      // Slice to the requested limit AFTER filtering/reranking, then mark
-      // exactly the surfaced set as recalled — once, for both branches, so a
-      // dropped candidate never gets a spurious recall bump.
+      // Slice to the requested limit AFTER filtering/reranking.
+      // NO recall-stat or co-recall writes happen here (step 7 / M5): this
+      // tool declares readOnlyHint: true and is now read-only in fact — a
+      // diagnostic recall must not reinforce what it observes. Exposure
+      // tracking (last_recalled / recall_count) is stamped by the
+      // prompt-handler at its injection boundary (markRecalled on exactly
+      // the ids whose budgetPush succeeded), never during retrieval.
       results = results.slice(0, limit);
-      repo.markRecalled(results.map(r => r.memory.id));
-
-      // Track co-recall for prediction
-      if (results.length >= 2) {
-        try {
-          repo.trackCoRecall('mcp-recall', results.map(r => r.memory.id));
-        } catch { /* best-effort */ }
-      }
 
       // Direct top-k ids BEFORE enrichment — supplemental graph neighbors
       // carry a synthetic graph score, never an RRF fusion score, so the
@@ -178,19 +194,42 @@ export function registerMemoryTools(
         // a mis-scoped global (or a private project's memory, or an
         // out-of-scope row under scope:'project') past the filters above.
         results = results.filter(r => directIds.has(r.memory.id) || canReadPrivate(r.memory.project, sessionPid));
+        // A neighbor must belong to the target project or be global: with
+        // session rows now serving as graph entry points, an edge would
+        // otherwise smuggle ANOTHER project's row into a bare recall.
+        results = results.filter(r =>
+          directIds.has(r.memory.id) || r.memory.project === resolvedProject || r.memory.project === null);
         if (scope === 'project') {
           results = results.filter(r => directIds.has(r.memory.id) || r.memory.project === resolvedProject);
+        }
+        if (scope === 'global') {
+          results = results.filter(r => directIds.has(r.memory.id) || r.memory.project === null);
         }
         if (queryFp) {
           results = results.filter(r => directIds.has(r.memory.id) || surfacesInScopedRecall(r.memory, resolvedProject, queryFp));
         }
       }
 
+      // Which retrieval actually ran — the TYPED contract (step 5): the
+      // strings come from RETRIEVAL_PATHS, never minted here. The FTS-only
+      // degraded path can rank very differently from hybrid, so silence
+      // would mislead exactly when results are least trustworthy. Minimal
+      // mode gets a compact marker for the degraded case only.
+      const pathKind: RetrievalPathKind = queryEmbedding ? 'hybrid' : 'fts_degraded';
+      const retrievalPath = RETRIEVAL_PATHS[pathKind].header;
+      const compactMarker = RETRIEVAL_PATHS[pathKind].compactMarker;
+
       if (results.length === 0) {
-        return { content: [{ type: 'text', text: 'No relevant memories found.' }] };
+        const note = mode === 'minimal'
+          ? `No relevant memories found.${compactMarker ? ' ' + compactMarker : ''}`
+          : `No relevant memories found. [retrieval: ${retrievalPath}]`;
+        return { content: [{ type: 'text', text: note }] };
       }
 
-      const header = rerankFallback ? ['[rerank unavailable — results in RRF order]'] : [];
+      const header = mode === 'minimal'
+        ? (compactMarker ? [compactMarker] : [])
+        : [`[retrieval: ${retrievalPath}]`];
+      if (rerankFallback) header.push(RERANK_FALLBACK_LABEL);
       // After a successful rerank the ORDER is the cross-encoder's but the
       // numeric score is still the RRF fusion score — label it honestly so
       // a reader never mistakes it for the reranker's relevance score.
@@ -200,7 +239,7 @@ export function registerMemoryTools(
         if (!(rerankActive && !rerankFallback)) return 'score';
         return directIds.has(id) ? 'rrf_score' : 'graph_score';
       };
-      const lines = results.map(({ memory: m, score }) => {
+      const lines = results.map(({ memory: m, score }, rank) => {
         const scope = m.project ? `[${m.project}]` : '[global]';
         const tags = m.tags.length > 0 ? ` (${m.tags.map(formatAuxText).join(', ')})` : '';
         const why = m.context?.why ? ` (Why: ${formatAuxText(m.context.why)})` : '';
@@ -208,7 +247,10 @@ export function registerMemoryTools(
         if (mode === 'minimal') {
           return `• ${formatMemoryContent(m)}${why}`;
         }
-        return `• [${m.kind}] ${formatMemoryContent(m)}${why} ${scope}${tags} — conf: ${m.confidence.toFixed(2)}, ${labelFor(m.id)}: ${score.toFixed(2)}`;
+        // Rank ordinal is explicit and the score keeps 4 decimals: RRF scores
+        // live around 0.03 and collapse to indistinguishable values at 2 — the
+        // misread that motivated this line's format (see incident fixture).
+        return `• #${rank + 1} [${m.kind}] ${formatMemoryContent(m)}${why} ${scope}${tags} — conf: ${m.confidence.toFixed(2)}, ${labelFor(m.id)}: ${score.toFixed(4)}`;
       });
 
       return { content: [{ type: 'text', text: [...header, ...lines].join('\n') }] };
@@ -218,7 +260,7 @@ export function registerMemoryTools(
   // --- cairn_learn -----------------------------------------------------------
 
   server.registerTool(
-    'cairn_learn',
+    TOOL.LEARN,
     {
       title: 'Learn Memory',
       description: 'Store a distilled lesson. One sentence preferred. Deduplicates automatically.',
@@ -226,7 +268,8 @@ export function registerMemoryTools(
       inputSchema: z.object({
         content: z.string().max(LIMITS.MAX_CONTENT_CHARS).describe('The distilled lesson — one sentence preferred'),
         kind: z.enum(LEARNABLE_KINDS).describe('Memory kind: pitfall, decision, correction, fact, user_profile, or reference'),
-        tags: z.array(z.string().max(50)).max(LIMITS.MAX_TAGS).optional().describe('Free-form tags for retrieval (max 5)'),
+        tags: z.array(z.string().max(LIMITS.MAX_TAG_CHARS)).max(LIMITS.MAX_TAGS).optional()
+          .describe(`Free-form tags for retrieval (max ${LIMITS.MAX_TAGS})`),
         project: z.string().max(LIMITS.MAX_STRING_PARAM).nullable().optional().describe('Project ID, or null for global scope'),
         expires_at: z.string().optional().describe('ISO date when this memory should auto-expire (optional)'),
         why: z.string().max(200).optional().describe('Why this matters (optional structured context)'),
@@ -281,11 +324,23 @@ export function registerMemoryTools(
       // project-specific pitfall/fact never silently lands in global scope (the
       // cross-project leak Codex hit). An explicit project (including null for
       // global) is always respected.
-      const effectiveProject = kind === 'user_profile'
-        ? null
-        : project !== undefined
-          ? project
-          : (kind === 'correction' ? null : projectId(process.cwd()));
+      let effectiveProject: string | null;
+      if (kind === 'user_profile') {
+        effectiveProject = null;
+      } else if (project !== undefined) {
+        effectiveProject = project;
+      } else if (kind === 'correction') {
+        effectiveProject = null;
+      } else {
+        // Fail EXPLICITLY when the session project cannot be derived: the old
+        // code threw here, and silently storing a project-default lesson as
+        // GLOBAL widens its audience without the user choosing that.
+        const sessionProject = sessionProjectId();
+        if (sessionProject === null) {
+          return { content: [{ type: 'text', text: 'error: no session project could be derived — pass `project` explicitly (a project id, or null for global scope)' }], isError: true };
+        }
+        effectiveProject = sessionProject;
+      }
 
       // Build structured context if provided
       const context = (why || howToApply) ? { why, how_to_apply: howToApply } : undefined;
@@ -326,6 +381,12 @@ export function registerMemoryTools(
             embedding: embeddingBuf,
             anchor: anchorStr,
             originClient,
+            // DELIBERATE learning (step 3): a pitfall stored through this tool
+            // was a conscious act, not a miner's guess — born strictly above
+            // the injection gate instead of inheriting AUTO_DETECTED, which
+            // left it invisible on every confidence-gated recall/injection
+            // surface until reinforced (incident mechanism M7).
+            confidence: CONFIDENCE.DELIBERATE,
           })
         : repo.create({
             content,
@@ -373,7 +434,7 @@ export function registerMemoryTools(
   // --- cairn_correct ---------------------------------------------------------
 
   server.registerTool(
-    'cairn_correct',
+    TOOL.CORRECT,
     {
       title: 'Correct Memory',
       description: 'Fix or invalidate a stored memory.',
@@ -416,7 +477,7 @@ export function registerMemoryTools(
   // --- cairn_forget ----------------------------------------------------------
 
   server.registerTool(
-    'cairn_forget',
+    TOOL.FORGET,
     {
       title: 'Forget Memory',
       description: 'Permanently delete a memory.',
@@ -437,7 +498,7 @@ export function registerMemoryTools(
   // --- cairn_strengthen ------------------------------------------------------
 
   server.registerTool(
-    'cairn_strengthen',
+    TOOL.STRENGTHEN,
     {
       title: 'Strengthen Memory',
       description: 'Increase trust in a memory that proved accurate or useful.',
@@ -457,7 +518,7 @@ export function registerMemoryTools(
   // --- cairn_weaken ----------------------------------------------------------
 
   server.registerTool(
-    'cairn_weaken',
+    TOOL.WEAKEN,
     {
       title: 'Weaken Memory',
       description: 'Decrease trust in a memory that was inaccurate or unhelpful. Auto-invalidates if confidence drops below threshold.',
@@ -486,13 +547,14 @@ export function registerMemoryTools(
   // suppressed.
 
   server.registerTool(
-    'cairn_expand',
+    TOOL.EXPAND,
     {
       title: 'Expand Memory IDs',
       description: 'Fetch full content, why, how_to_apply, and confidence for a list of memory IDs from the index briefing. Pass IDs like "dec:a1b2c3d4" or "pit:f5e6d7c8" (type prefix + first 8 chars of UUID).',
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
       inputSchema: z.object({
-        ids: z.array(z.string().max(32)).min(1).max(BRIEFING_MODE.EXPAND_MAX_IDS).describe('Memory IDs from the index briefing (max 10)'),
+        ids: z.array(z.string().max(32)).min(1).max(BRIEFING_MODE.EXPAND_MAX_IDS)
+          .describe(`Memory IDs from the index briefing (max ${BRIEFING_MODE.EXPAND_MAX_IDS})`),
       }),
     },
     async ({ ids }) => {
@@ -541,7 +603,7 @@ export function registerMemoryTools(
   // --- cairn_cleanup ---------------------------------------------------------
 
   server.registerTool(
-    'cairn_cleanup',
+    TOOL.CLEANUP,
     {
       title: 'Cleanup Memories',
       description: 'Bulk delete memories by filter. Use "preview" first to see what would be deleted, then "execute" to delete.',

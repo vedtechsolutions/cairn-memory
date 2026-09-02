@@ -274,26 +274,9 @@ describe('durable-generation cache invalidation (D8 item 7)', () => {
     }
   });
 
-  it('H4: a LOCAL memory-version bump also flushes fingerprint scores (merges enrich fingerprints)', () => {
-    const cache = new SessionCache();
-    cache.setFingerprintScore('mem-l', 'fp-key', 0.8);
-    cache.bumpMemoryVersion();
-    assert.equal(cache.getFingerprintScore('mem-l', 'fp-key'), undefined);
-  });
-
-  it('C2: fingerprint scores are memory-derived and flush with the rest', () => {
-    const db = openDatabase({ dbPath: ':memory:' });
-    try {
-      const cache = new SessionCache();
-      cache.checkDurableGeneration(db);
-      cache.setFingerprintScore('mem-1', 'fp-key', 0.9);
-      applyEventBatch(db, PROJECT, [upsert(1, envelope(record({ id: randomUUID(), content: 'fingerprint flush probe' }), 'E-fp', 1))]);
-      cache.checkDurableGeneration(db);
-      assert.equal(cache.getFingerprintScore('mem-1', 'fp-key'), undefined, 'stale relevance scores flush on remote applies');
-    } finally {
-      db.close();
-    }
-  });
+  // (H4/C2 fingerprint-score flush tests removed at step 6: the per-id
+  // score cache no longer exists — hits recompute multiSignalScore live,
+  // so there is no memory-derived score state left to flush.)
 
   it('a PROVEN pre-v32 database no-ops; a v32 database missing sync_state is drift and flushes', () => {
     const db = openDatabase({ dbPath: ':memory:' });

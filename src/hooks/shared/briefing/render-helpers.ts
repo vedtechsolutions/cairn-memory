@@ -6,6 +6,7 @@ import { estimateTokensFast } from '../../../utils/tokens.js';
 import { basename } from 'node:path';
 import { existsSync as fsExistsSync } from 'node:fs';
 import type { BriefingContext } from './types.js';
+import { TOOL } from '../../../constants/mcp.js';
 
 /** T1↔T2 decision dedup Jaccard threshold (GAP F). Slightly looser than staleness. */
 export const DECISION_DEDUP_JACCARD = 0.55;
@@ -117,7 +118,7 @@ export function formatPlanSummary(plan: Plan, interrupted: boolean): string {
   }
 
   if (plan.decisions.length > 0) {
-    line += `\n  Decisions: ${plan.decisions.length} recorded (call cairn_plan get for full map)`;
+    line += `\n  Decisions: ${plan.decisions.length} recorded (call ${TOOL.PLAN} get for full map)`;
   }
 
   return line;

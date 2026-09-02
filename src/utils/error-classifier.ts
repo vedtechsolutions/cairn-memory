@@ -4,13 +4,13 @@
  * Persists dedup state to file so dedup works across hook invocations.
  */
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
-import { join, dirname } from 'node:path';
-import { homedir } from 'node:os';
+import { dirname } from 'node:path';
 import {
   LEARNABLE_ERROR_PATTERNS,
   NOISE_ERROR_PATTERNS,
   LIMITS,
 } from '../constants/index.js';
+import { errorDedupPath as sharedErrorDedupPath } from '../constants/paths.js';
 
 export interface ErrorClassification {
   learnable: boolean;
@@ -22,7 +22,7 @@ export interface ErrorClassification {
 /** Dedup-state file — honors the CAIRN_DIR override (like edit-tracker /
  *  state-io), resolved lazily so tests and sandboxes stay off ~/.cairn. */
 function errorDedupPath(): string {
-  return join(process.env.CAIRN_DIR ?? join(homedir(), '.cairn'), 'error-dedup.json');
+  return sharedErrorDedupPath();
 }
 
 /** Whether to use file-based persistence (disabled during testing) */

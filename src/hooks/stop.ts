@@ -13,11 +13,12 @@ import { CONFIDENCE } from '../constants/index.js';
 import { recordTelemetry } from './shared/hook-telemetry.js';
 import { isSystemContent } from '../utils/validation.js';
 import { evaluateShadowStopFailOpen } from '../governance/shadow-stop.js';
+import { ENV } from '../constants/env.js';
 
 const _startTime = Date.now();
 async function main(): Promise<void> {
   const input = readStdinJson<StopInput>();
-  const dbPath = process.env.CAIRN_DB_PATH ?? undefined;
+  const dbPath = process.env[ENV.DB_PATH] ?? undefined;
   const client = createHookDbClient(dbPath);
   try {
     await evaluateShadowStopFailOpen(client.db, {

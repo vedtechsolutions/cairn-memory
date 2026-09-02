@@ -62,12 +62,20 @@ describe('extractAssistantDecision', () => {
     assert.equal(result, null);
   });
 
-  it('should truncate long decisions to 200 chars', () => {
+  it('rejects a long run-on decision rather than storing a truncated prefix', () => {
+    // INVERTED at remediation step 1: this test previously pinned
+    // `slice(0,197)+'...'` — the mechanism that produced the 29
+    // source='learned' prompt-prefix fragments in the live store. A single
+    // run-on sentence over the cap is rejected: capture whole, or nothing.
     const text = "I'll use a three-layer compliance architecture because it provides defense in depth: infrastructure extraction eliminates the need for explicit calls, contextual nudges re-inject rules mid-conversation, and enforcement gates block completion without stored decisions, creating a reliable system.";
-    const result = extractAssistantDecision(text);
-    assert.ok(result !== null);
-    assert.ok(result.length <= 200);
-    assert.ok(result.endsWith('...'));
+    assert.equal(extractAssistantDecision(text), null);
+  });
+
+  it('captures the decision SENTENCE from a longer message, never the prefix', () => {
+    const text = "The refactor touched several modules and the tests were noisy for a while across the board. We'll use SQLite because atomic local writes matter here. The rest of the plan lands tomorrow after review.";
+    // >200 chars total; the middle sentence carries choice+rationale.
+    const result = extractAssistantDecision(text + ' Padding sentence follows for length beyond the cap, with more words.');
+    assert.equal(result, "We'll use SQLite because atomic local writes matter here.");
   });
 });
 
@@ -116,13 +124,16 @@ describe('extractDecisionSigils', () => {
     assert.ok(result[0].includes('bun'));
   });
 
-  it('truncates sigil content longer than 200 chars', () => {
+  it('REJECTS sigil content longer than 200 chars — never truncates (step-4 fold)', () => {
+    // Inverted: truncation stored the exact slice+'...' signature the
+    // 88-row remediation cleaned — reject over-cap sigils outright, and
+    // keep capturing valid sigils in the same turn.
     const longContent = 'chose X over Y because ' + 'reason '.repeat(40);
-    const text = `[dec: ${longContent}]`;
+    const text = `[dec: ${longContent}] then [dec: chose brevity over sprawl because sigils are one-sentence distillations]`;
     const result = extractDecisionSigils(text);
-    assert.equal(result.length, 1);
-    assert.ok(result[0].length <= 200);
-    assert.ok(result[0].endsWith('...'));
+    assert.equal(result.length, 1, 'only the in-cap sigil survives');
+    assert.ok(result[0].includes('brevity'));
+    assert.ok(!result.some(r => r.endsWith('...')), 'no truncation artifacts, ever');
   });
 
   it('is case-insensitive on the sigil marker', () => {

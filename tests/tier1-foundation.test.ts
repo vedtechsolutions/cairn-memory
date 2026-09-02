@@ -213,11 +213,11 @@ describe('Hybrid Search', () => {
     assert.ok(results.length >= 1, 'should work without embedding');
   });
 
-  it('should update recall stats on hybrid search', () => {
+  it('does NOT update recall stats on hybrid search (step 6 — retrieval is read-only)', () => {
     const { id } = repo.create({ content: 'recalled memory test', kind: 'fact' });
     repo.recallHybrid('recalled memory', null, { maxResults: 5 });
     const mem = repo.findById(id);
-    assert.ok(mem && mem.recall_count > 0, 'recall_count should increment');
+    assert.ok(mem && mem.recall_count === 0, 'retrieval must not increment recall_count');
   });
 });
 

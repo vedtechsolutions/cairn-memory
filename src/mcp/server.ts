@@ -25,9 +25,11 @@ import { startContextVectorWorker } from './context-vector-worker.js';
 import { startHookSocket } from './hook-socket.js';
 import { postMemoryBumpToOwner } from './socket-ownership.js';
 import { SessionCache } from '../hooks/shared/session-cache.js';
+import { ENV } from '../constants/env.js';
+import { MCP_SERVER_NAME } from '../constants/mcp.js';
 
-const DB_PATH = process.env.CAIRN_DB_PATH ?? undefined;
-const VERBOSE = process.env.CAIRN_VERBOSE === '1';
+const DB_PATH = process.env[ENV.DB_PATH] ?? undefined;
+const VERBOSE = process.env[ENV.VERBOSE] === '1';
 
 async function main(): Promise<void> {
   // Resolve AND pin-gate the model configs SYNCHRONOUSLY before anything
@@ -59,7 +61,7 @@ async function main(): Promise<void> {
   startContextVectorWorker(db);
 
   const server = new McpServer({
-    name: 'cairn',
+    name: MCP_SERVER_NAME,
     version: VERSION,
   });
 

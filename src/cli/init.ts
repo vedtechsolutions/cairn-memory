@@ -15,6 +15,9 @@ import { dirname, join } from 'node:path';
 import { resolveRelay, relayBinaryPath, relayShellPath } from './relay.js';
 import { runCodexInit } from './codex-init.js';
 import { CAIRN_HOOK_DIR_MARKER } from '../constants/index.js';
+import { ENV } from '../constants/env.js';
+import { BACKUP_SUFFIX } from '../constants/paths.js';
+import { MCP_SERVER_NAME } from '../constants/mcp.js';
 
 /** Package root: dist/src/cli/ → the install root that holds dist/. */
 const PKG_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
@@ -64,7 +67,7 @@ export function cairnHooks(relayCmd: string): HookMap {
 }
 
 function cairnMcpServer(): Record<string, unknown> {
-  return { command: 'node', args: [SERVER], env: { CAIRN_LOG_LEVEL: 'info' } };
+  return { command: 'node', args: [SERVER], env: { [ENV.LOG_LEVEL]: 'info' } };
 }
 
 function cairnStatusLine(): Record<string, unknown> {
@@ -137,21 +140,21 @@ function mergeSettings(existing: Settings, relayCmd: string, statuslineOnly = fa
       result.hooks = hooks;
       changed.push(`hooks (${sweptEvents} event(s) of settings-wired Waykeep hooks removed — the plugin provides them)`);
     }
-    const existingServer = (existing.mcpServers ?? {}).cairn as { args?: unknown[] } | undefined;
+    const existingServer = (existing.mcpServers ?? {})[MCP_SERVER_NAME] as { args?: unknown[] } | undefined;
     if (existingServer && JSON.stringify(existingServer).includes('dist/src/mcp/server.js')) {
       const servers = { ...(existing.mcpServers ?? {}) };
-      delete servers.cairn;
+      delete servers[MCP_SERVER_NAME];
       result.mcpServers = servers;
-      changed.push('mcpServers.cairn removed (the plugin provides it)');
+      changed.push(`mcpServers.${MCP_SERVER_NAME} removed (the plugin provides it)`);
     }
     skipped.push('hooks + MCP wiring (plugin-managed — --statusline-only)');
     return { changed, skipped, result };
   }
 
   const servers = { ...(existing.mcpServers ?? {}) };
-  servers.cairn = cairnMcpServer();
+  servers[MCP_SERVER_NAME] = cairnMcpServer();
   result.mcpServers = servers;
-  changed.push('mcpServers.cairn');
+  changed.push(`mcpServers.${MCP_SERVER_NAME}`);
 
   const hooks: HookMap = { ...(existing.hooks ?? {}) };
   const desired = cairnHooks(relayCmd);
@@ -187,7 +190,7 @@ const OTHER_CLIENTS: Array<{ name: string; dir: string }> = [
 ];
 
 function claudeSettingsPath(): string {
-  return process.env.CAIRN_CLAUDE_SETTINGS ?? join(homedir(), '.claude', 'settings.json');
+  return process.env[ENV.CLAUDE_SETTINGS] ?? join(homedir(), '.claude', 'settings.json');
 }
 
 function readSettings(path: string): Settings {
@@ -238,7 +241,7 @@ export function runInit(options: InitOptions = {}): number {
   if (!options.dryRun) {
     mkdirSync(dirname(path), { recursive: true });
     if (existsSync(path)) {
-      const backup = `${path}.cairn-backup`;
+      const backup = `${path}${BACKUP_SUFFIX}`;
       // Back up only the pristine, pre-init file — never overwrite it on a
       // re-run, which would replace the original with an already-merged copy.
       if (!existsSync(backup)) {

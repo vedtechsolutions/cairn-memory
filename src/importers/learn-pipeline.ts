@@ -8,7 +8,7 @@
  * three times over).
  */
 import type { MemoryRepository } from '../db/memory-repository.js';
-import { LIMITS, type LearnableKind } from '../constants/index.js';
+import { LIMITS, type LearnableKind, CONFIDENCE } from '../constants/index.js';
 import { neutralizeMemoryText, sanitize } from '../utils/validation.js';
 import { scrubSecrets } from '../utils/secret-scanner.js';
 
@@ -155,6 +155,18 @@ export function learnSections(
         tags: cleanedTags,
         project,
         context: cleanedContext,
+        // Step 6 carry-in (F4 class): imported pitfalls previously inherited
+        // the LEARNED default 0.65 — EXACTLY the injection gate, eligible at
+        // birth and gone at the first decay charge (the degenerate value the
+        // remediation rejects). Imports are UNTRUSTED observations, so they
+        // start honestly BELOW the gate like auto-mined pitfalls and earn
+        // injectability through reinforcement — a foreign pack must not buy
+        // proactive-warning rights on arrival. DELIBERATE POLICY (codex
+        // step-6 review): repeated exact re-imports reinforce via the dedup
+        // boost (0.55 → 0.60 → 0.65 → capped by the reinforcement ceiling) —
+        // repetition of the same observation is corroboration; a pack that
+        // wants injection on day one still cannot have it.
+        ...(section.kind === 'pitfall' ? { confidence: CONFIDENCE.AUTO_DETECTED } : {}),
         ...(section.originClient ? { originClient: section.originClient } : {}),
       });
       if (!result.deduplicated) ingested++;

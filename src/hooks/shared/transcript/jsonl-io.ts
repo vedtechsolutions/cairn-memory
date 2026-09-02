@@ -5,6 +5,7 @@
 import { openSync, readSync, closeSync, realpathSync, constants } from 'node:fs';
 import { resolve } from 'node:path';
 import { homedir, tmpdir } from 'node:os';
+import { ENV } from '../../../constants/env.js';
 
 /** Bytes to read from head of large files for initial goal extraction */
 export const HEAD_READ_BYTES = 32 * 1024; // 32KB — enough to capture first few user messages
@@ -31,7 +32,7 @@ export function isSafeTranscriptPath(p: string): boolean {
   const resolved = resolve(p);
   const home = homedir();
   const roots = [`${home}/.claude`];
-  if (process.env.CAIRN_ALLOW_TMP_TRANSCRIPTS) roots.push(tmpdir());
+  if (process.env[ENV.ALLOW_TMP_TRANSCRIPTS]) roots.push(tmpdir());
   // Canonicalize target and each allowed root, then require the target's real
   // path to sit under a root's real path. Canonicalizing both sides keeps a
   // symlinked temp root (e.g. macOS /tmp -> /private/tmp) from false-negating,

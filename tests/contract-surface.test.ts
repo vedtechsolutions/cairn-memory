@@ -44,11 +44,30 @@ describe('contract route classification matches the served table', () => {
   });
 });
 
-describe('C relay literals ⊇ contract constants', () => {
-  it('carries the client header (case-insensitive — emitters may use any casing)', () => {
-    const c = readFileSync(join(REPO, 'src', 'hooks', 'hook-relay.c'), 'utf-8').toLowerCase();
-    assert.ok(c.includes(`${CLIENT_HEADER}: %s`), 'hook-relay.c must emit the contract client header');
-    assert.ok(c.includes(CLIENT_ENV_VAR.toLowerCase()), 'hook-relay.c must set the contract client env var');
+describe('C relay identity ⊇ contract constants', () => {
+  // The C relay no longer spells these: it includes dist/generated/identity.h,
+  // written from the contract by scripts/gen-identity.mjs. The guarantee is
+  // unchanged — the relay must carry the contract's header and client env var —
+  // but it is now enforced one layer down, on the generated header.
+  it('references the generated macros rather than literals', () => {
+    const c = readFileSync(join(REPO, 'src', 'hooks', 'hook-relay.c'), 'utf-8');
+    // Angle form specifically: the quoted form searches the .c file's own
+    // directory first, so a stray src/hooks/identity.h would outrank the
+    // generated one and silently rebrand the relay (demonstrated in review).
+    assert.ok(c.includes('#include <identity.h>'),
+      'hook-relay.c must include the generated identity header via the ANGLE form');
+    assert.ok(!c.includes('#include "identity.h"'),
+      'the quoted include is shadowable by a file beside hook-relay.c — use the angle form');
+    assert.ok(c.includes('WK_CLIENT_HEADER ": %s'), 'hook-relay.c must emit the header via the macro');
+    assert.ok(c.includes('WK_ENV_CLIENT'), 'hook-relay.c must set the client env var via the macro');
+  });
+
+  it('the generated header defines the contract values', () => {
+    const h = readFileSync(join(REPO, 'dist', 'generated', 'identity.h'), 'utf-8');
+    assert.ok(h.includes(`#define WK_CLIENT_HEADER "${CLIENT_HEADER}"`),
+      'identity.h drifted from the contract client header');
+    assert.ok(h.includes(`#define WK_ENV_CLIENT "${CLIENT_ENV_VAR}"`),
+      'identity.h drifted from the contract client env var');
   });
 });
 

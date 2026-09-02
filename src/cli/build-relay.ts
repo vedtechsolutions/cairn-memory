@@ -13,6 +13,8 @@ import { dirname, join } from 'node:path';
 
 const PKG_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const SRC = join(PKG_ROOT, 'src', 'hooks', 'hook-relay.c');
+/** hook-relay.c #includes the generated identity.h; it is shipped in files[]. */
+const GENERATED_INCLUDE = join(PKG_ROOT, 'dist', 'generated');
 const SHELL_SRC = join(PKG_ROOT, 'src', 'hooks', 'hook-relay.sh');
 const OUT = join(PKG_ROOT, 'dist', 'src', 'hooks', 'hook-relay');
 const SHELL_OUT = join(PKG_ROOT, 'dist', 'src', 'hooks', 'hook-relay.sh');
@@ -30,7 +32,7 @@ export function runBuildRelay(): number {
   mkdirSync(dirname(OUT), { recursive: true });
   const cc = process.env.CC ?? 'cc';
   const compile = (flags: readonly string[]): ReturnType<typeof spawnSync> =>
-    spawnSync(cc, [...flags, '-o', OUT, SRC], { stdio: 'inherit' });
+    spawnSync(cc, [...flags, '-I', GENERATED_INCLUDE, '-o', OUT, SRC], { stdio: 'inherit' });
 
   let result = compile(CC_FLAGS);
   if (result.error) {

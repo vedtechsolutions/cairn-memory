@@ -245,8 +245,12 @@ describe('hook surfaces never leak a private project cross-project', () => {
     seedPrivatePitfall(client.memoryRepo);
     // A same-project memory proves each surface still renders content —
     // anchored to billing.ts so the pitfall surface's relevance gate hits.
+    // Content deliberately shares the test prompts' tokens: since step 7,
+    // retrieval no longer stamps candidates, so scores are honest (stale
+    // recency 0.8, not the same-turn 1.2 the old fixture rode past the
+    // 0.45 injection gate — that inflation WAS mechanism M5).
     client.memoryRepo.create({
-      content: 'OPEN-PROJECT pitfall about hooks and billing handlers',
+      content: 'OPEN-PROJECT pitfall: fix the billing exports handler hooks bug with the validation guard',
       kind: 'pitfall',
       project: OPEN_PID,
       confidence: 0.9,
@@ -323,7 +327,9 @@ describe('hook surfaces never leak a private project cross-project', () => {
     // then dereferences the private id by RAW id in another project —
     // the one hook path where a cross-project row arrives unfetched.
     const global_ = client.memoryRepo.create({
-      content: 'GLOBAL-BILLING pitfall validate billing handler hooks input',
+      // Token overlap with promptInput's prompt is deliberate — honest
+      // post-step-7 scoring (stale recency), no stamp-inflation crutch.
+      content: 'GLOBAL-BILLING pitfall: fix the billing handler hooks validation bug on every input',
       kind: 'pitfall',
       project: null,
       confidence: 1.0,
@@ -459,15 +465,21 @@ describe('MCP surfaces', () => {
     const priv = repo.create({ content: PRIVATE_MARKER, kind: 'pitfall', project: PRIVATE_PROJECT, confidence: 1.0, fingerprint: OVERLAPPING_FP });
     new EdgeRepository(db).createEdge(own.id, priv.id, 'informs', 1.0);
 
+    // CHANGED at remediation step 2: enrichment neighbors are now scoped to
+    // target-project-or-global UNCONDITIONALLY, so the cross-project ride is
+    // blocked even WITHOUT the privacy config — the leak this test used to
+    // demonstrate no longer exists to demonstrate. Both arms now assert the
+    // block; the config arm additionally proves privacy still holds on top.
     removeScopeConfig();
     const open = await call('cairn_recall', { query: 'billing exports handler', project: OTHER_PROJECT });
-    assert.ok(open.text.includes(PRIVATE_MARKER),
-      'without config the edge-neighbor private row surfaces — proving the leak the policy closes is real');
+    assert.ok(open.text.includes('OWN-ROW'), 'own row returned');
+    assert.ok(!open.text.includes(PRIVATE_MARKER),
+      'a foreign-project neighbor no longer rides enrichment even without config (scope filter)');
 
     writeScopeConfig([PRIVATE_PROJECT]);
     const closed = await call('cairn_recall', { query: 'billing exports handler', project: OTHER_PROJECT });
     assert.ok(closed.text.includes('OWN-ROW'), 'own row still returned');
-    assert.ok(!closed.text.includes(PRIVATE_MARKER), 'the private neighbor is blocked');
+    assert.ok(!closed.text.includes(PRIVATE_MARKER), 'and remains blocked with the config');
   });
 
   it("scope: 'project' returns only the project's own rows (globals excluded)", async () => {
@@ -479,8 +491,27 @@ describe('MCP surfaces', () => {
     assert.ok(!projOnly.text.includes('GLOBAL-LESSON'), "scope:'project' excludes globals");
     assert.ok(projOnly.text.includes('OWN-ROW'), 'own rows still returned');
 
+    // CHANGED at remediation step 2 (scope symmetry): an omitted `project`
+    // now defaults to the SESSION's own project — the same default
+    // cairn_learn applies — so scope:'project' without an argument means
+    // "only my own project's rows". It errors only when no session project
+    // exists (covered below by clearing the override).
+    // This harness runs the session "inside" OTHER_PROJECT (beforeEach), so
+    // bare scope:'project' means OTHER_PROJECT's own rows: OWN-ROW included,
+    // globals still excluded.
     const noProject = await call('cairn_recall', { query: 'WAL billing schema', scope: 'project' });
-    assert.equal(noProject.isError, true, "scope:'project' without a project is a caller error, not a silent no-op");
+    assert.equal(noProject.isError, false, noProject.text);
+    assert.ok(!noProject.text.includes('GLOBAL-LESSON'), "scope:'project' still excludes globals");
+    assert.ok(noProject.text.includes('OWN-ROW'), "the session's own project rows are the result set");
+
+    setSessionProjectForTests(null);
+    try {
+      const noSession = await call('cairn_recall', { query: 'WAL billing schema', scope: 'project' });
+      assert.equal(noSession.isError, true,
+        "with no session project AND no argument there is nothing to scope to — caller error preserved");
+    } finally {
+      setSessionProjectForTests(OTHER_PROJECT);
+    }
   });
 
   it('cairn_expand redacts private rows for other sessions — no short-id content oracle', async () => {

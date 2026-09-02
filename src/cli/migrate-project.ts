@@ -18,6 +18,7 @@ import { resolveDbPath } from '../db/db-path.js';
 import { countProjectRows, moveProjectRows } from '../db/project-identity-migration.js';
 import { projectId } from '../utils/project-id.js';
 import { isPrivateProject } from '../config/cairn-config.js';
+import { ENV } from '../constants/env.js';
 
 /** Mirrors the MCP tools' project-param shape: sane charset, 200-char cap. */
 const PROJECT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$/;
@@ -55,7 +56,7 @@ export function runMigrateProject(options: MigrateProjectOptions): number {
     return 1;
   }
 
-  const db = openDatabase({ dbPath: resolveDbPath(process.env.CAIRN_DB_PATH) });
+  const db = openDatabase({ dbPath: resolveDbPath(process.env[ENV.DB_PATH]) });
   try {
     const counts = countProjectRows(db, oldId);
     const total = Object.values(counts).reduce((a, b) => a + b, 0);

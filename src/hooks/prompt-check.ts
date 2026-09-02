@@ -11,11 +11,12 @@ import { readStdinJson, type UserPromptSubmitInput } from './shared/hook-io.js';
 import { createHookDbClient } from './shared/db-client.js';
 import { recordTelemetry } from './shared/hook-telemetry.js';
 import { handlePromptCheck } from './handlers/prompt-handler.js';
+import { ENV } from '../constants/env.js';
 
 const _startTime = Date.now();
 try {
   const input = readStdinJson<UserPromptSubmitInput>();
-  const dbPath = process.env.CAIRN_DB_PATH ?? undefined;
+  const dbPath = process.env[ENV.DB_PATH] ?? undefined;
   const client = createHookDbClient(dbPath);
 
   const result = handlePromptCheck(input, client);

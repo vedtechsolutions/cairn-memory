@@ -1,9 +1,10 @@
 import { createHash } from 'node:crypto';
 import { readFileSync, realpathSync, statSync } from 'node:fs';
-import { dirname, isAbsolute, join, posix, relative, resolve, sep } from 'node:path';
+import { dirname, isAbsolute, posix, relative, resolve, sep } from 'node:path';
 import {
   GATE_CONFIG_LIMITS, GateConfigSchema, type ParsedGateConfig,
 } from './gates-schema.js';
+import { gatesPath, GATES_RELATIVE_PATH } from '../constants/paths.js';
 
 export type GateConfigErrorCode =
   | 'invalid-project-root'
@@ -31,7 +32,7 @@ export interface FileChangedCapability {
 }
 
 export interface LoadGateConfigOptions {
-  /** Defaults to the sole canonical location: .cairn/gates.json. */
+  /** Defaults to the sole canonical location: `GATES_RELATIVE_PATH`. */
   configPath?: string;
   fileChanged?: FileChangedCapability;
 }
@@ -178,13 +179,13 @@ function canonicalConfigPath(root: string, requested?: string): string {
   if (requested?.replaceAll('\\', '/').split('/').includes('..')) {
     throw new GateConfigError('invalid-config-path', 'config path must not contain traversal');
   }
-  const expected = join(root, '.cairn', 'gates.json');
+  const expected = gatesPath(root);
   const lexical = requested === undefined
     ? expected
     : resolve(root, requested);
   if (lexical !== expected) {
     throw new GateConfigError(
-      'invalid-config-path', 'config path must resolve exactly to .cairn/gates.json',
+      'invalid-config-path', `config path must resolve exactly to ${GATES_RELATIVE_PATH}`,
     );
   }
   let canonical: string;

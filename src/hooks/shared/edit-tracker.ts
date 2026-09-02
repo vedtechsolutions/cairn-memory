@@ -9,7 +9,6 @@
  */
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSync, unlinkSync, renameSync, rmdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
-import { homedir } from 'node:os';
 import {
   TRACKER_FILENAME,
   TRACKER_ORPHAN_MAX_AGE_DAYS,
@@ -18,6 +17,7 @@ import {
   TRACKER_LOCK_RETRY_MS,
 } from '../../constants/index.js';
 import type { ToolEvent, SuccessDedup } from '../../utils/success-classifier.js';
+import { dataDir } from '../../constants/paths.js';
 
 const TRACKER_BASE = TRACKER_FILENAME.replace('.json', '');
 
@@ -25,7 +25,7 @@ const TRACKER_BASE = TRACKER_FILENAME.replace('.json', '');
  *  tests and sandboxed environments off the real ~/.cairn. Resolved lazily
  *  so the override works regardless of import order. */
 function cairnDir(): string {
-  return process.env.CAIRN_DIR ?? join(homedir(), '.cairn');
+  return dataDir();
 }
 
 /** Get tracker path — per-session when session_id is provided (concurrent session isolation) */

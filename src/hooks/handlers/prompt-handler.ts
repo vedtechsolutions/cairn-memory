@@ -169,6 +169,25 @@ export function handlePromptCheck(input: UserPromptSubmitInput, client: CachedHo
     } catch { /* best-effort */ }
   }
 
+  // Step 7 (M5): exposure is stamped HERE, at the injection boundary — every
+  // retrieval layer above is read-only, so a candidate dropped by
+  // eligibility, score, cross-project, staleness, dedup, or budget filters
+  // never gains recall_count or a spaced-repetition reset. newlyInjected is
+  // exactly the set of memory ids pushed into the user's context this turn.
+  if (newlyInjected.length > 0) {
+    const injectedIds = [...new Set(newlyInjected)];
+    try { client.memoryRepo.markRecalled(injectedIds); } catch { /* best-effort */ }
+    // Step 8 (the step-7 carry-out): co-recall is RE-SOURCED here, from
+    // genuine injection, under the REAL session id. The old feeder was the
+    // diagnostic MCP recall writing under the literal 'mcp-recall' — pure
+    // M5 contamination that also left the Phase-5 precision readers blind
+    // (they filter by real session ids). EVERY non-empty injection set is
+    // recorded: trackCoRecall writes session_memories per id and mints
+    // co-recall pairs only when two or more exist — a single-memory turn
+    // must still feed the precision loop (codex fold review).
+    try { client.memoryRepo.trackCoRecall(input.session_id, injectedIds); } catch { /* best-effort */ }
+  }
+
   // Persist tracker state
   if (newlyInjected.length > 0) {
     tracker.injectedMemoryIds = [...new Set([...tracker.injectedMemoryIds, ...newlyInjected])];

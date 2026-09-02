@@ -16,12 +16,12 @@
  *   - uniform confidence in retrieval-only mode;
  *   - the live store must never be touched.
  */
-import { homedir } from 'node:os';
 import { resolve } from 'node:path';
 import type Database from 'better-sqlite3';
 import { openDatabase } from '../../db/connection.js';
 import { MemoryRepository } from '../../db/memory-repository.js';
 import { type LmeQuestion, parseSessionDate } from './data.js';
+import { realHomeDataDir } from '../../constants/paths.js';
 
 export const LME_PROJECT = 'lme-bench';
 /** Uniform ingest confidence — any value works as long as it is identical for
@@ -68,7 +68,7 @@ export interface QuestionStore {
 export function assertNotLiveStore(dbPath: string): void {
   if (dbPath === ':memory:') return;
   const resolved = resolve(dbPath);
-  const liveDir = resolve(homedir(), '.cairn');
+  const liveDir = realHomeDataDir();
   if (resolved === liveDir || resolved.startsWith(liveDir + '/')) {
     throw new Error(`benchmark refuses to touch the live store directory: ${resolved}`);
   }

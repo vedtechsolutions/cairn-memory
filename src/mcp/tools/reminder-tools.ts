@@ -6,6 +6,7 @@ import type { ReminderRepository } from '../../db/reminder-repository.js';
 import type { SessionCache } from '../../hooks/shared/session-cache.js';
 import { LIMITS, type ContextMode } from '../../constants/index.js';
 import { isCritical } from './helpers.js';
+import { TOOL } from '../../constants/mcp.js';
 
 type ContextModeFn = () => ContextMode;
 
@@ -18,7 +19,7 @@ export function registerReminderTools(
   // --- cairn_remind -----------------------------------------------------------
 
   server.registerTool(
-    'cairn_remind',
+    TOOL.REMIND,
     {
       title: 'Set Reminder',
       description: 'Create a trigger-action reminder: "when I encounter [trigger], remind me to [action]". Fires automatically on matching prompts.',
@@ -73,7 +74,7 @@ export function registerReminderTools(
   // --- cairn_reminder_list -----------------------------------------------------
 
   server.registerTool(
-    'cairn_reminder_list',
+    TOOL.REMINDER_LIST,
     {
       title: 'List Reminders',
       description: 'List active reminders.',
@@ -106,7 +107,7 @@ export function registerReminderTools(
   // --- cairn_reminder_delete ---------------------------------------------------
 
   server.registerTool(
-    'cairn_reminder_delete',
+    TOOL.REMINDER_DELETE,
     {
       title: 'Delete Reminder',
       description: 'Delete or deactivate a reminder by ID.',

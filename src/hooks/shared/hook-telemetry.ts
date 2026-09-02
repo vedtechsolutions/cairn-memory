@@ -5,6 +5,7 @@
  */
 import type Database from 'better-sqlite3';
 import { createHookDbClient } from './db-client.js';
+import { ENV } from '../../constants/env.js';
 
 export function recordTelemetry(
   hookName: string,
@@ -23,7 +24,7 @@ export function recordTelemetry(
     if (db) {
       database = db;
     } else {
-      const dbPath = process.env.CAIRN_DB_PATH ?? undefined;
+      const dbPath = process.env[ENV.DB_PATH] ?? undefined;
       const client = createHookDbClient(dbPath);
       database = client.db;
       ownedDb = true;

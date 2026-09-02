@@ -9,7 +9,6 @@
  * Cacheable (immutable/deterministic):
  *   - Git hash/branch (invalidated on file-changed)
  *   - Project context (keyed by git hash)
- *   - Fingerprint overlap scores (deterministic computation)
  *   - FTS candidate memory IDs (content is immutable; 30s TTL)
  *   - Skip-gate hook output (keyed on memoryVersion + session state)
  *
@@ -63,7 +62,6 @@ interface SkipGateEntry {
 const FTS_CACHE_TTL_MS = 30_000;       // 30 seconds for FTS candidates
 const GIT_CACHE_TTL_MS = 300_000;      // 5 minutes fallback TTL for git
 const MAX_FTS_CACHE_ENTRIES = 50;      // Prevent unbounded growth
-const MAX_FINGERPRINT_ENTRIES = 200;   // Max cached overlap scores
 const TRACKER_FLUSH_INTERVAL_MS = 60_000; // Flush trackers to disk every 60s
 const SKIP_GATE_TTL_MS = 60_000;       // Hard-TTL on skip-gate entries (staleness bound)
 const MAX_SKIP_GATE_ENTRIES = 200;     // Per-process cap
@@ -76,9 +74,6 @@ export class SessionCache {
 
   // Project context — keyed by (projectId, gitHash)
   private projectContextCache = new Map<string, ProjectContext>();
-
-  // Fingerprint overlap scores — deterministic (immutable input → same output)
-  private fingerprintScores = new Map<string, number>();
 
   // FTS candidate cache — 30s TTL
   private ftsCache = new Map<string, FTSCacheEntry>();
@@ -171,10 +166,8 @@ export class SessionCache {
    */
   bumpMemoryVersion(): void {
     // ONE invalidator for every memory-derived cache (Codex H4): a local
-    // semantic write can also change fingerprint bytes (storeMemory
-    // merges enrich fingerprints) and FTS-relevant content, so the
-    // skip-gate-only clear left the un-TTL'd fingerprint scores stale
-    // for the life of the process.
+    // semantic write can change FTS-relevant content and fingerprint
+    // bytes, so the skip gate AND the FTS candidate cache flush together.
     this.invalidateMemoryDerived();
     this.bumpNotifier?.();
   }
@@ -221,9 +214,8 @@ export class SessionCache {
     this.lastSeenGeneration = generation;
   }
 
-  /** Flush every MEMORY-DERIVED cache: the skip gate, the FTS candidate
-   *  cache, and the fingerprint scores — the last is keyed by memoryId
-   *  and a remote edit rewrites the fingerprint bytes it scored (review
+  /** Flush every MEMORY-DERIVED cache: the skip gate and the FTS
+   *  candidate cache — a remote edit changes the rows they derive from (review
    *  C2). memoryVersion++ directly — never through bumpMemoryVersion,
    *  whose notifier would push a redundant relay: the durable generation
    *  IS the shared channel, and every peer discovers the change
@@ -231,7 +223,6 @@ export class SessionCache {
   private invalidateMemoryDerived(): void {
     this.skipGateCache.clear();
     this.ftsCache.clear();
-    this.fingerprintScores.clear();
     this.memoryVersion++;
   }
 
@@ -301,23 +292,6 @@ export class SessionCache {
     if (this.projectContextCache.size > 10) {
       const first = this.projectContextCache.keys().next().value;
       if (first) this.projectContextCache.delete(first);
-    }
-  }
-
-  // --- Fingerprint overlap score cache ---
-
-  /** Cache key: memoryId + serialized query fingerprint */
-  getFingerprintScore(memoryId: string, queryFpKey: string): number | undefined {
-    return this.fingerprintScores.get(`${memoryId}:${queryFpKey}`);
-  }
-
-  setFingerprintScore(memoryId: string, queryFpKey: string, score: number): void {
-    const key = `${memoryId}:${queryFpKey}`;
-    this.fingerprintScores.set(key, score);
-    // Evict oldest if over limit
-    if (this.fingerprintScores.size > MAX_FINGERPRINT_ENTRIES) {
-      const first = this.fingerprintScores.keys().next().value;
-      if (first) this.fingerprintScores.delete(first);
     }
   }
 

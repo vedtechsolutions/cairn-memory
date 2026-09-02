@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { existsSync, realpathSync } from 'node:fs';
-import { dirname, join, parse, resolve } from 'node:path';
+import { dirname, parse, resolve } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import type Database from 'better-sqlite3';
 import { adaptClaudeHook } from './claude-hook-adapter.js';
@@ -21,6 +21,7 @@ import { GOVERNANCE } from '../constants/index.js';
 import type {
   AdaptedClaudeEvent, NormalizedToolEvent, RecorderDiagnostic,
 } from './types.js';
+import { gatesPath } from '../constants/paths.js';
 
 export interface RecordGovernanceOptions {
   nowMs?: number;
@@ -55,7 +56,7 @@ function findProjectRoot(cwd: string): string {
   let cursor = realpathSync.native(resolve(cwd));
   const filesystemRoot = parse(cursor).root;
   while (true) {
-    if (existsSync(join(cursor, '.cairn', 'gates.json'))) return cursor;
+    if (existsSync(gatesPath(cursor))) return cursor;
     if (cursor === filesystemRoot) return realpathSync.native(resolve(cwd));
     cursor = dirname(cursor);
   }
@@ -134,7 +135,7 @@ function adapterErrorInsert(
 }
 
 function loadConfig(root: string): { loaded: LoadedGateConfig | null; error: string | null } {
-  if (!existsSync(join(root, '.cairn', 'gates.json'))) return { loaded: null, error: null };
+  if (!existsSync(gatesPath(root))) return { loaded: null, error: null };
   try {
     return { loaded: loadGateConfig(root), error: null };
   } catch {

@@ -14,23 +14,24 @@ import {
 } from '../constants/reranker-models.js';
 import { assertManifestPinned, verifyArtifacts as verifyArtifactsGeneric, verifyModelPackage } from './artifact-verification.js';
 import { createVerifiedLoader, type VerifiedLoader } from './verified-loader.js';
+import { ENV } from '../constants/env.js';
 
 /** CAIRN_RERANK contract: unset/''/'0' = off, '1' = on, anything else is a
  *  misconfiguration and fails closed rather than guessing intent. */
-export function isRerankEnabled(envValue: string | undefined = process.env.CAIRN_RERANK): boolean {
+export function isRerankEnabled(envValue: string | undefined = process.env[ENV.RERANK]): boolean {
   if (envValue === undefined || envValue === '' || envValue === '0') return false;
   if (envValue === '1') return true;
-  throw new Error(`invalid CAIRN_RERANK "${envValue}" — use 1 to enable or unset/0 to disable`);
+  throw new Error(`invalid ${ENV.RERANK} "${envValue}" — use 1 to enable or unset/0 to disable`);
 }
 
 /** Resolve the reranker model config. Pure; fails closed on unknown keys. */
 export function resolveRerankerModel(
-  envValue: string | undefined = process.env.CAIRN_RERANK_MODEL,
+  envValue: string | undefined = process.env[ENV.RERANK_MODEL],
 ): RerankerModelConfig {
   const key = envValue?.trim() || DEFAULT_RERANKER_MODEL_KEY;
   if (!Object.hasOwn(RERANKER_MODELS, key)) {
     throw new Error(
-      `unknown CAIRN_RERANK_MODEL "${key}" — valid keys: ${Object.keys(RERANKER_MODELS).join(', ')}`,
+      `unknown ${ENV.RERANK_MODEL} "${key}" — valid keys: ${Object.keys(RERANKER_MODELS).join(', ')}`,
     );
   }
   return RERANKER_MODELS[key];

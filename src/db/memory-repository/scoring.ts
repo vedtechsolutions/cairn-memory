@@ -24,12 +24,23 @@ import type { Memory } from './types.js';
  *  implementation lives in utils/scoring-primitives.ts. */
 export { recencyBucketBoost as recencyBoost } from '../../utils/scoring-primitives.js';
 
-export function computeScore(memory: Memory, query: string): number {
+/**
+ * RECALL-path composite score (step 6 rebalance, M1/M8).
+ *
+ * `bm25Share` is the row's BM25 strength relative to the best lexical match
+ * in the SAME candidate set (1 = strongest, ∈(0,1]); callers without an FTS
+ * rank (tag/anchor recall) pass nothing and get 1. Jaccard token overlap
+ * alone could not separate a distilled answer from a vocabulary-sharing
+ * paste (0.143 vs 0.103 on the incident fixture); BM25's term-frequency and
+ * length signals do, and the PRODUCT gives relevance enough range
+ * (floor 0.05 + gain 1.9) that the confidence/source/recency prior — ~22.5×
+ * of range before step 6 — decides ties instead of overruling relevance.
+ */
+export function computeScore(memory: Memory, query: string, bm25Share: number = 1): number {
   const profile = SCORING_PROFILES.RECALL;
   const sourceWeight = profile.SOURCE_WEIGHTS[memory.source] ?? 1.0;
   const boost = recencyBucketBoost(memory.last_recalled);
-  // Query relevance: how well does this memory's content match the query?
-  const relevance = tokenOverlap(memory.content, query);
+  const relevance = tokenOverlap(memory.content, query) * bm25Share;
   const relevanceFactor = profile.RELEVANCE_FLOOR + profile.RELEVANCE_GAIN * relevance;
   return memory.confidence * sourceWeight * boost * relevanceFactor;
 }

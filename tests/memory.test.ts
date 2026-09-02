@@ -150,13 +150,13 @@ describe('MemoryRepository — Recall', () => {
     }
   });
 
-  it('should update recall stats on recall', () => {
+  it('does NOT update recall stats on recall (step 6 — retrieval is read-only)', () => {
     const results = repo.recall('Odoo XML', { project: 'proj-a' });
     assert.ok(results.length > 0);
 
     const mem = repo.findById(results[0].memory.id)!;
-    assert.equal(mem.recall_count, 1);
-    assert.ok(mem.last_recalled);
+    assert.equal(mem.recall_count, 0);
+    assert.equal(mem.last_recalled, null);
   });
 
   it('should respect maxResults', () => {
@@ -324,15 +324,22 @@ describe('MemoryRepository — Search (read-only)', () => {
     assert.equal(mem.last_recalled, null, 'search() must not set last_recalled');
   });
 
-  it('recall() should update recall_count', () => {
+  it('recall() never stamps — markRecalled is the only exposure stamp (step 6)', () => {
+    // Inverted: the mutate-on-return default had zero production callers
+    // after step 7 and stamped retrieved-but-unshown candidates. Retrieval
+    // is read-only everywhere; injection boundaries call markRecalled.
     repo.create({ content: 'TypeScript strict mode compilation errors', kind: 'pitfall', project: 'proj-a' });
 
     const results = repo.recall('TypeScript strict mode', { project: 'proj-a' });
     assert.ok(results.length > 0);
 
     const mem = repo.findById(results[0].memory.id)!;
-    assert.equal(mem.recall_count, 1, 'recall() must bump recall_count');
-    assert.ok(mem.last_recalled, 'recall() must set last_recalled');
+    assert.equal(mem.recall_count, 0, 'recall() must not bump recall_count');
+    assert.equal(mem.last_recalled, null, 'recall() must not set last_recalled');
+
+    repo.markRecalled([results[0].memory.id]);
+    const stamped = repo.findById(results[0].memory.id)!;
+    assert.equal(stamped.recall_count, 1, 'markRecalled records exposure');
   });
 });
 
@@ -425,8 +432,11 @@ describe('MemoryRepository — storeDecision()', () => {
 
     assert.equal(r2.deduplicated, true);
     const mem = repo.findById(r2.id)!;
-    // max(0.9 + 0.05, 0.55) = 0.95
-    assert.ok(mem.confidence >= 0.95, `expected >= 0.95, got ${mem.confidence}`);
+    // Step-3 review fold: repetition growth caps at
+    // DEDUP_REINFORCEMENT_CEILING, and a row already above it (0.9) keeps
+    // its level instead of ratcheting toward 1.0 — max(min(0.95, 0.9), 0.55).
+    assert.ok(Math.abs(mem.confidence - 0.9) < 1e-9,
+      `a row above the reinforcement ceiling keeps its level, got ${mem.confidence}`);
   });
 
   it('should fill context gaps without overwriting existing', () => {

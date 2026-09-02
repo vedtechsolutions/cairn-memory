@@ -229,7 +229,10 @@ export function renderTier4(
   const identityTokens = deriveProjectIdentityTokens(ctx.project);
   const useNarrow = meaningfulTokenCount(queryFp, narrowPolicyExclusions(ctx.project)) >= NARROW_OVERLAP_MIN_MEANINGFUL_TOKENS;
   const relevanceFp = useNarrow ? queryFp : broadRelevanceFp(queryFp);
-  const corrections = memoryRepo.activeCorrections(ctx.project, 6)
+  // M9 (step 6): filter for eligibility BEFORE the display limit. The old
+  // confidence-only LIMIT 6 pool filled with structurally ineligible rows
+  // and starved the tier while eligible corrections sat at rank 7+.
+  const corrections = memoryRepo.activeCorrections(ctx.project, BRIEFING_ALLOCATION.CORRECTION_CANDIDATE_POOL)
     .filter(c => isCorrectionQuality(c.content))
     .filter(c => passesCrossProjectGuard(c, ctx.project, queryFp))
     .filter(c => passesSameProjectRelevance(c, relevanceFp, null, identityTokens))

@@ -3,7 +3,7 @@
  */
 import type { CachedHookContext } from '../../shared/db-client.js';
 import type { EditTracker } from '../../shared/edit-tracker.js';
-import { fingerprintOverlap } from '../../../utils/fingerprint.js';
+import { multiSignalScore } from '../../../db/memory-repository/scoring.js';
 import type { ContextFingerprint } from '../../../utils/fingerprint.js';
 import type { Memory } from '../../../db/memory-repository.js';
 import { SessionCache } from '../../shared/session-cache.js';
@@ -46,12 +46,11 @@ export function sessionStateHash(tracker: EditTracker): string {
  * real telemetry. Results are deterministic (same query → same candidate IDs
  * from the SQL layer, within the 30 s TTL window), so the candidate IDs are
  * safe to cache. Mutable fields (confidence, surface_count, impact_count,
- * last_recalled, invalidated) are REFETCHED live on every cache hit to
- * preserve SNR — we never serve stale authority state.
+ * last_recalled, invalidated) are REFETCHED live on every cache hit, and
+ * since step 6 the hit path shares ONE contract with a fresh miss:
+ * eligibility (incl. options.minConfidence) and the full multiSignalScore
+ * are recomputed from live fields — only the FTS candidate scan is cached.
  *
- * Fingerprint overlap scores are cached per (memoryId, queryFpKey) because
- * the inputs are immutable once stored. This eliminates the per-candidate
- * JS scoring loop on cache hit.
  */
 export function cachedRecallByFingerprint(
   client: CachedHookContext,
@@ -68,34 +67,36 @@ export function cachedRecallByFingerprint(
   const ftsKey = `${options.kind}|${options.project ?? ''}|${fpKey}|${queryText.slice(0, 160)}|${options.minConfidence.toFixed(2)}|${options.maxResults}`;
 
   client.cache?.checkDurableGeneration(client.db);
+
+  // Step 6 parity contract (codex fold): both paths share ONE pipeline over
+  // the same candidate WINDOW — filter (kind, injection eligibility,
+  // options.minConfidence) → live multiSignalScore → sort → slice. The
+  // cache stores the WINDOW ids, not the sliced top-k: a top-k-only cache
+  // could neither backfill a weakened row with the runner-up a fresh miss
+  // would promote, nor reorder on live-field changes. Only the expensive
+  // FTS+LIKE scan is frozen for the TTL; everything downstream is live.
+  const pipeline = (mems: Array<Memory | null | undefined>): Array<{ memory: Memory; score: number }> => {
+    const out: Array<{ memory: Memory; score: number }> = [];
+    for (const mem of mems) {
+      if (!mem || mem.kind !== options.kind || !isMemoryEligibleForInjection(mem)) continue;
+      if (mem.confidence < options.minConfidence) continue;
+      out.push({ memory: mem, score: multiSignalScore(mem, queryFp, queryText) });
+    }
+    out.sort((a, b) => b.score - a.score);
+    return out.slice(0, options.maxResults);
+  };
+
   const cachedIds = client.cache?.getFTSCandidates(ftsKey);
   if (cachedIds) {
-    const out: Array<{ memory: Memory; score: number }> = [];
-    for (const id of cachedIds) {
-      const mem = client.memoryRepo.findById(id);
-      if (!mem || mem.kind !== options.kind || !isMemoryEligibleForInjection(mem)) continue;
-      // Fingerprint scores are deterministic — cache them per (id, fpKey).
-      let score = client.cache?.getFingerprintScore(mem.id, fpKey);
-      if (score === undefined) {
-        score = mem.fingerprint ? fingerprintOverlap(mem.fingerprint, queryFp) : 0;
-        client.cache?.setFingerprintScore(mem.id, fpKey, score);
-      }
-      out.push({ memory: mem, score });
-    }
-    // Preserve descending-score ordering from the original recall.
-    out.sort((a, b) => b.score - a.score);
-    return out;
+    return pipeline(cachedIds.map(id => client.memoryRepo.findById(id)));
   }
 
-  const results = client.memoryRepo.recallByFingerprint(queryFp, queryText, options)
-    .filter(r => isMemoryEligibleForInjection(r.memory));
+  // The frozen unit is the RAW bounded SQL scan (pre-scoring, pre-slicing —
+  // codex step-6 fold round 2): freezing anything later let live-field
+  // promotion from just outside a scored slice diverge hit from miss.
+  const candidates = client.memoryRepo.recallByFingerprintCandidates(queryFp, queryText, options);
   if (client.cache) {
-    client.cache.setFTSCandidates(ftsKey, results.map(r => r.memory.id));
-    // Warm the per-candidate score cache so the next call short-circuits the
-    // fingerprintOverlap computation for these IDs.
-    for (const r of results) {
-      client.cache.setFingerprintScore(r.memory.id, fpKey, r.score);
-    }
+    client.cache.setFTSCandidates(ftsKey, candidates.map(m => m.id));
   }
-  return results;
+  return pipeline(candidates);
 }

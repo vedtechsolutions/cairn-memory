@@ -1,6 +1,6 @@
 import type Database from 'better-sqlite3';
 import { RELEVANCE, FINGERPRINT } from '../../constants/index.js';
-import { now, buildFtsQuery, escapeLikePattern } from '../../utils/index.js';
+import { buildFtsQuery, escapeLikePattern } from '../../utils/index.js';
 import { type ContextFingerprint, fingerprintLikeConditions } from '../../utils/fingerprint.js';
 import type { Memory, MemoryRow, RecallOptions, RecallResult } from './types.js';
 import { rowToMemory } from './reads.js';
@@ -36,10 +36,15 @@ export function search(db: Database.Database, query: string, options: RecallOpti
     maxResults * 3, // fetch extra for re-ranking
   ) as MemoryRow[];
 
-  // Re-rank with composite score
+  // Re-rank with composite score. FTS5's BM25 rank (negative, more negative
+  // = stronger) was previously discarded here — step 6 folds it in as each
+  // row's share of the set's best lexical strength.
+  const bestRank = candidates.reduce((m, r) => Math.min(m, (r as MemoryRow & { rank?: number }).rank ?? 0), 0);
   const scored = candidates.map(row => {
     const memory = rowToMemory(row);
-    const score = computeScore(memory, query);
+    const rank = (row as MemoryRow & { rank?: number }).rank ?? 0;
+    const bm25Share = bestRank < 0 && rank < 0 ? rank / bestRank : 1;
+    const score = computeScore(memory, query, bm25Share);
     return { memory, score };
   });
 
@@ -47,25 +52,13 @@ export function search(db: Database.Database, query: string, options: RecallOpti
   return scored.slice(0, maxResults);
 }
 
-/** Search + track — updates recall stats for returned memories
- *  (unless options.readOnly). */
+/** Search — retrieval NEVER stamps recall stats (step 6; the step-7 fold
+ *  left the mutate-on-return default with zero production callers, a loaded
+ *  gun). Exposure is recorded solely by markRecalled at injection
+ *  boundaries. `options.readOnly` is retained as an accepted no-op for
+ *  source compatibility. */
 export function recall(db: Database.Database, query: string, options: RecallOptions = {}): RecallResult[] {
-  const results = search(db, query, options);
-  if (options.readOnly) return results;
-
-  // Side effect: update recall stats
-  const updateStmt = db.prepare(
-    "UPDATE memories SET last_recalled = ?, recall_count = recall_count + 1 WHERE id = ? AND kind != 'rule'"
-  );
-  const timestamp = now();
-  const updateAll = db.transaction(() => {
-    for (const { memory } of results) {
-      updateStmt.run(timestamp, memory.id);
-    }
-  });
-  updateAll();
-
-  return results;
+  return search(db, query, options);
 }
 
 /** Recall by tags — lightweight query for hooks (no FTS) */
@@ -102,12 +95,18 @@ export function recallByTags(db: Database.Database, tags: string[], options: Rec
 
 /** Multi-signal retrieval using context fingerprints + content FTS.
  *  Fetches candidates via fingerprint LIKE + FTS, then re-ranks with multi-signal scoring. */
-export function recallByFingerprint(
+/** The RAW bounded SQL candidate scan behind recallByFingerprint —
+ *  post-SQL, PRE-scoring, PRE-slicing (step 6, codex review): the pitfall
+ *  warning cache freezes exactly this membership for its TTL and replays
+ *  everything downstream (eligibility, live multiSignalScore, sort, slice)
+ *  identically on hits and misses. Cache anything later in the pipeline and
+ *  live-field promotion from just outside the cached slice diverges. */
+export function recallByFingerprintCandidates(
   db: Database.Database,
   queryFp: ContextFingerprint,
   queryText: string,
   options: RecallOptions = {},
-): RecallResult[] {
+): Memory[] {
   const maxResults = options.maxResults ?? 5;
   const minConfidence = options.minConfidence ?? RELEVANCE.MIN_CONFIDENCE_FOR_PITFALL;
   const candidateLimit = maxResults * FINGERPRINT.CANDIDATE_MULTIPLIER;
@@ -150,13 +149,21 @@ export function recallByFingerprint(
     candidateLimit,
   ) as MemoryRow[];
 
-  // Multi-signal scoring
-  const scored = rows.map(row => {
-    const memory = rowToMemory(row);
-    const score = multiSignalScore(memory, queryFp, queryText);
-    return { memory, score };
-  });
+  return rows.map(row => rowToMemory(row));
+}
 
+export function recallByFingerprint(
+  db: Database.Database,
+  queryFp: ContextFingerprint,
+  queryText: string,
+  options: RecallOptions = {},
+): RecallResult[] {
+  const maxResults = options.maxResults ?? 5;
+  const candidates = recallByFingerprintCandidates(db, queryFp, queryText, options);
+  const scored = candidates.map(memory => ({
+    memory,
+    score: multiSignalScore(memory, queryFp, queryText),
+  }));
   scored.sort((a, b) => b.score - a.score);
   return scored.slice(0, maxResults);
 }

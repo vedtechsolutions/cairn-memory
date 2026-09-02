@@ -9,6 +9,7 @@ import { readStdinJson, type PostCompactInput } from './shared/hook-io.js';
 import { createHookDbClient } from './shared/db-client.js';
 import { handlePostCompact } from './handlers/postcompact-handler.js';
 import { recordTelemetry } from './shared/hook-telemetry.js';
+import { ENV } from '../constants/env.js';
 
 const _startTime = Date.now();
 try {
@@ -18,7 +19,7 @@ try {
   // standalone implementation is exactly how the daemon-vs-fallback paths
   // drift: this one updated the tracker but never recorded the report's
   // client-reported gross row (review finding).
-  const client = createHookDbClient(process.env.CAIRN_DB_PATH ?? undefined);
+  const client = createHookDbClient(process.env[ENV.DB_PATH] ?? undefined);
   try {
     const result = handlePostCompact(input, client);
     recordTelemetry('postcompact', input.trigger ?? 'auto', _startTime, true, undefined, {

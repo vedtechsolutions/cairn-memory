@@ -25,6 +25,7 @@ import {
 } from './render-helpers.js';
 import { GOVERNANCE_TIER_MAX_TOKENS, renderGovernanceTier } from './governance-tier.js';
 import { isMemoryEligibleForInjection } from '../../../utils/memory-injection.js';
+import { TOOL } from '../../../constants/mcp.js';
 
 /**
  * Emit a compact index briefing. Each memory entry is rendered as a single
@@ -205,7 +206,7 @@ export function compileIndexBriefing(
   }
 
   // Footer — tell Claude how to get detail
-  lines.push('Use cairn_expand(["<id>", ...]) for full content, why, and how-to-apply.');
+  lines.push(`Use ${TOOL.EXPAND}(["<id>", ...]) for full content, why, and how-to-apply.`);
 
   const text = lines.join('\n');
   return {

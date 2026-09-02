@@ -16,11 +16,12 @@ import { readStdinJson, type PostToolUseFailureInput } from './shared/hook-io.js
 import { createHookDbClient } from './shared/db-client.js';
 import { handleErrorLearning } from './handlers/error-learning-handler.js';
 import { recordTelemetry } from './shared/hook-telemetry.js';
+import { ENV } from '../constants/env.js';
 
 const _startTime = Date.now();
 try {
   const input = readStdinJson<PostToolUseFailureInput>();
-  const dbPath = process.env.CAIRN_DB_PATH ?? undefined;
+  const dbPath = process.env[ENV.DB_PATH] ?? undefined;
   const client = createHookDbClient(dbPath);
 
   const result = await handleErrorLearning(input, client);

@@ -97,6 +97,15 @@ export class MemoryRepository {
   }
 
   /** Multi-signal retrieval using context fingerprints + content FTS. */
+  /** Raw bounded candidate scan (pre-scoring) — the cache's frozen unit. */
+  recallByFingerprintCandidates(
+    queryFp: ContextFingerprint,
+    queryText: string,
+    options: RecallOptions = {},
+  ): Memory[] {
+    return searchOps.recallByFingerprintCandidates(this.db, queryFp, queryText, options);
+  }
+
   recallByFingerprint(
     queryFp: ContextFingerprint,
     queryText: string,

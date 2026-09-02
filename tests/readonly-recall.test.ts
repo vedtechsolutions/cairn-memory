@@ -1,7 +1,7 @@
 /**
  * Read-only retrieval option (roadmap W1 slice 1) — benchmark harnesses must
  * be able to query without perturbing recall stats, or evaluation results
- * become order-dependent. Default behavior (mutating) must be unchanged.
+ * become order-dependent. Since step 6 retrieval never mutates — these gates pin the read-only contract on every path.
  */
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
@@ -39,7 +39,9 @@ describe('readOnly recall option', () => {
     assert.equal(stats.recall_count, 0, 'recall_count must remain zero');
   });
 
-  it('recall without the flag mutates stats (default behavior unchanged)', () => {
+  it('recall never mutates stats — with or without the flag (step 6)', () => {
+    // Inverted: the mutate-on-return default was removed once every
+    // production caller passed readOnly; markRecalled is the only stamp.
     const created = repo.create({
       content: 'authentication tokens refresh through the oauth handler',
       kind: 'fact', project: 'proj',
@@ -48,17 +50,18 @@ describe('readOnly recall option', () => {
     repo.recall('oauth authentication tokens', { project: 'proj' });
 
     const stats = statsOf(created.id);
-    assert.ok(stats.last_recalled, 'default recall must set last_recalled');
-    assert.equal(stats.recall_count, 1, 'default recall must increment recall_count');
+    assert.equal(stats.last_recalled, null, 'recall must not set last_recalled');
+    assert.equal(stats.recall_count, 0, 'recall must not increment recall_count');
   });
 
-  it('recallHybrid(readOnly) leaves stats untouched; default mutates', () => {
+  it('recallHybrid never mutates stats — with or without the flag (step 6)', () => {
     const created = repo.create({
       content: 'database migrations run through the schema version table',
       kind: 'fact', project: 'proj',
     });
 
-    // No embedding — hybrid degrades to FTS-backed RRF, same stat-update path
+    // No embedding — hybrid degrades to FTS-backed RRF; retrieval is
+    // read-only on every path since step 6 (markRecalled is the stamp).
     const ro = repo.recallHybrid('database schema migrations', null, { project: 'proj', readOnly: true });
     assert.equal(ro.length, 1);
     let stats = statsOf(created.id);
@@ -67,8 +70,8 @@ describe('readOnly recall option', () => {
 
     repo.recallHybrid('database schema migrations', null, { project: 'proj' });
     stats = statsOf(created.id);
-    assert.ok(stats.last_recalled);
-    assert.equal(stats.recall_count, 1);
+    assert.equal(stats.last_recalled, null, 'the removed default must not return');
+    assert.equal(stats.recall_count, 0);
   });
 
   it('repeated read-only queries are order-independent (identical results)', () => {

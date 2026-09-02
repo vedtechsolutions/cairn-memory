@@ -1,0 +1,493 @@
+{
+  "applied_at": "2026-09-02T08:26:13.425Z",
+  "live": true,
+  "note": "replacement content redacted \u2014 see the private archive; integrity via replacement ids + the sanitized manifest shas",
+  "rows": [
+    {
+      "ancestor": "02679f93-bf97-4248-8ab1-8aa169163b2e",
+      "bucket": "correction",
+      "status": "applied"
+    },
+    {
+      "ancestor": "7420982a-23db-45cb-a2ba-84b6a1fec1c9",
+      "bucket": "trigger_absent",
+      "status": "applied"
+    },
+    {
+      "ancestor": "24a72f55-2856-42f0-9518-ed8df1fff52d",
+      "bucket": "trigger_absent",
+      "status": "applied"
+    },
+    {
+      "ancestor": "2f544027-b995-4b6d-ba43-71b360ea7afb",
+      "bucket": "trigger_absent",
+      "status": "applied"
+    },
+    {
+      "ancestor": "eee27b11-f517-44ad-b9d3-7ab6ed987acf",
+      "bucket": "trigger_absent",
+      "status": "applied"
+    },
+    {
+      "ancestor": "98f03709-f909-4b5b-9d0c-9879eaabd640",
+      "bucket": "correction",
+      "status": "applied"
+    },
+    {
+      "ancestor": "c2faae04-15e9-461d-a00f-ceba5f6e1d25",
+      "bucket": "trigger_absent",
+      "status": "applied"
+    },
+    {
+      "ancestor": "fa8d4210-975d-4783-b1cc-da5e416e3757",
+      "bucket": "trigger_absent",
+      "status": "applied"
+    },
+    {
+      "ancestor": "aabf5c39-19ca-4fe6-9a9e-78608bd70e43",
+      "bucket": "trigger_absent",
+      "status": "applied"
+    },
+    {
+      "ancestor": "95b46efb-024c-40f4-82a7-c4c2a542eba2",
+      "bucket": "trigger_absent",
+      "status": "applied"
+    },
+    {
+      "ancestor": "5c0bb466-291d-4b6e-85d9-f621c4d2b022",
+      "bucket": "trigger_absent",
+      "status": "applied"
+    },
+    {
+      "ancestor": "102ef5c4-7fb7-4355-986d-ff777dd51ca2",
+      "bucket": "trigger_absent",
+      "status": "applied"
+    },
+    {
+      "ancestor": "168570a7-707b-4554-850f-ebe08c475649",
+      "bucket": "trigger_absent",
+      "status": "applied"
+    },
+    {
+      "ancestor": "f9b17431-ad14-4b2d-ad5a-215234a2e2c3",
+      "bucket": "trigger_absent",
+      "status": "applied"
+    },
+    {
+      "ancestor": "c29474f9-3de4-4b98-848c-1ba7664bc9f0",
+      "bucket": "trigger_absent",
+      "status": "applied"
+    },
+    {
+      "ancestor": "aba034b7-1544-49fd-b924-3497348fca18",
+      "bucket": "trigger_absent",
+      "status": "applied"
+    },
+    {
+      "ancestor": "c22e93f8-4cd1-474e-9533-4cf7cc7bcda2",
+      "bucket": "trigger_absent",
+      "status": "applied"
+    },
+    {
+      "ancestor": "7766d201-3021-4b93-99cb-f65de5ecec1d",
+      "bucket": "trigger_absent",
+      "status": "applied"
+    },
+    {
+      "ancestor": "7eabc2e1-dd83-466d-b3df-c455bc9e48a2",
+      "bucket": "correction",
+      "status": "applied"
+    },
+    {
+      "ancestor": "79944121-d8ce-4666-9901-b7b60e6e773d",
+      "bucket": "trigger_absent",
+      "status": "applied"
+    },
+    {
+      "ancestor": "514b9ebb-9027-419e-99ec-b3d4f8a2be15",
+      "bucket": "trigger_absent",
+      "status": "applied"
+    },
+    {
+      "ancestor": "8075b55a-0c13-4722-8f96-d4689e7f1d31",
+      "bucket": "trigger_absent",
+      "status": "applied"
+    },
+    {
+      "ancestor": "a27d8552-69bc-48f6-92c3-68659b654dc1",
+      "bucket": "trigger_absent",
+      "status": "applied"
+    },
+    {
+      "ancestor": "da80b573-4162-4295-91e9-ed3b28d28863",
+      "bucket": "trigger_absent",
+      "status": "applied"
+    },
+    {
+      "ancestor": "94a70184-d8bd-4289-b4df-12d3083be778",
+      "bucket": "trigger_absent",
+      "status": "applied"
+    },
+    {
+      "ancestor": "d5e5c11a-b365-4463-8e83-f8e006108ee1",
+      "bucket": "trigger_absent",
+      "status": "applied"
+    },
+    {
+      "ancestor": "832ccc97-2476-4182-8363-d41019c443a2",
+      "bucket": "trigger_absent",
+      "status": "applied"
+    },
+    {
+      "ancestor": "4f7d5061-90e7-4775-9c2b-9371f0031d70",
+      "bucket": "trigger_absent",
+      "status": "applied"
+    },
+    {
+      "ancestor": "a3b9385a-6137-4152-a67c-6d9499d4bfc2",
+      "bucket": "trigger_absent",
+      "status": "applied"
+    },
+    {
+      "ancestor": "a9b2ce0a-f5b6-424d-b9d0-6e4a1b01c24c",
+      "bucket": "trigger_absent",
+      "status": "applied"
+    },
+    {
+      "ancestor": "ac1c6c8c-8cce-4423-8350-e37f1e25ace8",
+      "bucket": "trigger_absent",
+      "status": "applied"
+    },
+    {
+      "ancestor": "7b42e886-6005-4f53-b29a-6e2d0ffc0344",
+      "bucket": "trigger_absent",
+      "status": "applied"
+    },
+    {
+      "ancestor": "c76100ac-697a-4c8d-bba4-b8458a96b359",
+      "bucket": "correction",
+      "status": "applied"
+    },
+    {
+      "ancestor": "120cfdbe-af06-41b1-afc1-a7c496064e14",
+      "bucket": "trigger_absent",
+      "status": "applied"
+    },
+    {
+      "ancestor": "14a8dbf2-7a89-4d43-8769-23d31e6430ec",
+      "bucket": "trigger_absent",
+      "status": "applied"
+    },
+    {
+      "ancestor": "6921908b-ca03-49ec-b7ac-ad5938c747f9",
+      "bucket": "trigger_absent",
+      "status": "applied"
+    },
+    {
+      "ancestor": "8249b9ea-2421-4554-91f7-cab28bd40184",
+      "bucket": "trigger_absent",
+      "status": "applied"
+    },
+    {
+      "ancestor": "d363a139-112e-4af6-8052-c3ab7fe3d5bd",
+      "bucket": "trigger_absent",
+      "status": "applied"
+    },
+    {
+      "ancestor": "da9f497f-2c5b-4e98-b09e-11ebab47e186",
+      "bucket": "trigger_present_resolved",
+      "status": "applied",
+      "replacement_id": "6d31eb26-2fc5-4e72-8153-b287c7e4322e",
+      "replacement_confidence": 0.1
+    },
+    {
+      "ancestor": "9bc88fb9-d676-4efb-b92e-d5a93dc2084f",
+      "bucket": "trigger_absent",
+      "status": "applied"
+    },
+    {
+      "ancestor": "d2fbf571-01ea-4754-bd11-f6aedae0bff8",
+      "bucket": "trigger_absent",
+      "status": "applied"
+    },
+    {
+      "ancestor": "addc1c3a-1e93-40cf-bf30-b99e212f3b23",
+      "bucket": "trigger_absent",
+      "status": "applied"
+    },
+    {
+      "ancestor": "dc9dbc1e-f672-4c9b-94dc-e279f71d1b38",
+      "bucket": "false_negative_resolved",
+      "status": "applied",
+      "replacement_id": "908216c5-8a35-4c8f-9929-059916e41815",
+      "replacement_confidence": 0.2919759511475855
+    },
+    {
+      "ancestor": "7f4a2fd5-62a9-4fd5-a14b-be175a93a7f6",
+      "bucket": "trigger_absent",
+      "status": "applied"
+    },
+    {
+      "ancestor": "d063b909-e9d1-4b79-bd5b-c45484584459",
+      "bucket": "false_negative_resolved",
+      "status": "applied",
+      "replacement_id": "3abb98fe-68c3-43ec-8989-34a68cdfdc0c",
+      "replacement_confidence": 0.2920333580007414
+    },
+    {
+      "ancestor": "8ee1fe3b-f150-47a5-9a11-390a4ae22a6b",
+      "bucket": "trigger_absent",
+      "status": "applied"
+    },
+    {
+      "ancestor": "03da44dd-c1d5-4a91-9d91-d238fdae6fcc",
+      "bucket": "trigger_absent",
+      "status": "applied"
+    },
+    {
+      "ancestor": "bc7ee2b2-43ef-4d9a-8cd0-f6ff79dc000b",
+      "bucket": "trigger_absent",
+      "status": "applied"
+    },
+    {
+      "ancestor": "ae0965b5-eca9-4479-95df-9c7df8916f56",
+      "bucket": "trigger_present_resolved",
+      "status": "applied",
+      "replacement_id": "88f7051a-acaa-4209-90c5-76ecb93abfac",
+      "replacement_confidence": 0.40009204237920065
+    },
+    {
+      "ancestor": "a02bbeea-e80f-4760-aaf6-152ed1ead394",
+      "bucket": "correction",
+      "status": "applied"
+    },
+    {
+      "ancestor": "719d7d36-c5ba-40a2-848d-e198ee057233",
+      "bucket": "trigger_absent",
+      "status": "applied"
+    },
+    {
+      "ancestor": "7821ccd2-06b8-4101-8245-e2fdf69b6138",
+      "bucket": "trigger_present_resolved",
+      "status": "applied",
+      "replacement_id": "0b65903c-4849-43b7-bf6d-de11269f92aa",
+      "replacement_confidence": 0.29925129265348405
+    },
+    {
+      "ancestor": "6832f3dd-dc26-4eba-b6f0-e833956c04d0",
+      "bucket": "trigger_present_resolved",
+      "status": "applied",
+      "replacement_id": "e8722fe5-5315-4e4b-94e3-80bc66b6b567",
+      "replacement_confidence": 0.2992513001193729
+    },
+    {
+      "ancestor": "8b6c6100-c0ab-4195-8eff-d3b7eefd1734",
+      "bucket": "trigger_absent",
+      "status": "applied"
+    },
+    {
+      "ancestor": "dbc82273-166b-493a-a228-214f2f4a1c23",
+      "bucket": "trigger_absent",
+      "status": "applied"
+    },
+    {
+      "ancestor": "d631e6ce-7d95-48e9-8798-798172589695",
+      "bucket": "trigger_absent",
+      "status": "applied"
+    },
+    {
+      "ancestor": "6c157da8-cad5-4990-9520-0e6b41cb346a",
+      "bucket": "false_negative_resolved",
+      "status": "applied",
+      "replacement_id": "74493137-f2fd-4724-aef2-faa13142b21d",
+      "replacement_confidence": 0.30336400231729543
+    },
+    {
+      "ancestor": "43a20d6f-f4ac-45b5-921b-0428a94ad41b",
+      "bucket": "trigger_present_resolved",
+      "status": "applied",
+      "replacement_id": "7e7fe03b-64aa-4b2f-87fe-462aab3594f9",
+      "replacement_confidence": 0.32843241094272657
+    },
+    {
+      "ancestor": "45143748-1482-4e13-8713-003b6babfa60",
+      "bucket": "trigger_present_resolved",
+      "status": "applied",
+      "replacement_id": "620f3bde-fff8-4bd7-9ddb-8f924b71891e",
+      "replacement_confidence": 0.30378185813130054
+    },
+    {
+      "ancestor": "2a205294-bfe5-4e39-a3dc-cf332521b77a",
+      "bucket": "trigger_present_resolved",
+      "status": "applied",
+      "replacement_id": "18d9976e-c3a3-414e-b3f5-fc9d72e66fdf",
+      "replacement_confidence": 0.35193055738291984
+    },
+    {
+      "ancestor": "35c61d29-d598-44b7-a98f-f9db2a09d581",
+      "bucket": "trigger_absent",
+      "status": "applied"
+    },
+    {
+      "ancestor": "03aa80c9-c9da-4ad3-ba53-894609b8743f",
+      "bucket": "false_negative_resolved",
+      "status": "applied",
+      "replacement_id": "5bf360c1-1a07-48fe-97e2-1af09442b45b",
+      "replacement_confidence": 0.6477382304700572
+    },
+    {
+      "ancestor": "853a6d28-4e89-4d92-91b3-35e3dfabbcb5",
+      "bucket": "trigger_present_resolved",
+      "status": "applied",
+      "replacement_id": "5f2165a2-65eb-4304-a308-0d53c8f92032",
+      "replacement_confidence": 0.6477382349682393
+    },
+    {
+      "ancestor": "67b56389-3807-46a3-a9df-327dbbf87653",
+      "bucket": "false_negative_resolved",
+      "status": "applied",
+      "replacement_id": "9bab613b-0a44-4707-af3b-626afc94c93d",
+      "replacement_confidence": 0.65
+    },
+    {
+      "ancestor": "f01d97a6-a42a-46da-b182-053abdc6d4d7",
+      "bucket": "false_negative_resolved",
+      "status": "applied",
+      "replacement_id": "0fecc42e-2c23-45f9-8778-80b2fc0d87c9",
+      "replacement_confidence": 0.65
+    },
+    {
+      "ancestor": "e1b61b00-a3b1-4a84-a787-f976b0d26947",
+      "bucket": "false_negative_resolved",
+      "status": "applied",
+      "replacement_id": "a41ecf37-738c-47f5-ae72-d2e8dff713a6",
+      "replacement_confidence": 0.65
+    },
+    {
+      "ancestor": "0220b2be-08fd-468b-8d63-ca6af536a474",
+      "bucket": "false_negative_resolved",
+      "status": "applied",
+      "replacement_id": "0fb47e1f-4034-4f19-bff6-fe0f85602cb2",
+      "replacement_confidence": 0.65
+    },
+    {
+      "ancestor": "e740e3c1-d9ac-42a8-8fbb-1ea9af0e3b23",
+      "bucket": "trigger_present_resolved",
+      "status": "applied",
+      "replacement_id": "e03648e0-b3b9-4bfb-943f-828293271b9f",
+      "replacement_confidence": 0.65
+    },
+    {
+      "ancestor": "1221725a-1ae7-4061-bd74-cfa9531cadc6",
+      "bucket": "trigger_present_resolved",
+      "status": "applied",
+      "replacement_id": "5c89e485-73fb-41c8-b42e-e61f4e74b475",
+      "replacement_confidence": 0.65
+    },
+    {
+      "ancestor": "7acc53c0-c028-4eeb-83e6-3e41960bf729",
+      "bucket": "trigger_present_resolved",
+      "status": "applied",
+      "replacement_id": "8edaf557-6aa7-4841-9fda-dfd8a6414416",
+      "replacement_confidence": 0.65
+    },
+    {
+      "ancestor": "d04bb509-0132-4cab-a90c-5ce4680bedbb",
+      "bucket": "trigger_present_resolved",
+      "status": "applied",
+      "replacement_id": "9f4d5fbd-95a0-4c44-a677-7b7d85a68dcd",
+      "replacement_confidence": 0.65
+    },
+    {
+      "ancestor": "bc1ecd1a-3e71-4545-80d7-701c7a5e7fa1",
+      "bucket": "false_negative_resolved",
+      "status": "applied",
+      "replacement_id": "03899cdf-6e4d-4e64-865b-f80f5c5d2b62",
+      "replacement_confidence": 0.65
+    },
+    {
+      "ancestor": "0f5b2cd8-a995-407d-89b8-c80f410457de",
+      "bucket": "false_negative_resolved",
+      "status": "applied",
+      "replacement_id": "f9cd8997-5ce0-4d24-9122-91066347efc4",
+      "replacement_confidence": 0.65
+    },
+    {
+      "ancestor": "9b2a4f58-3a53-4bb6-9921-9e05d4cd27a5",
+      "bucket": "false_negative_resolved",
+      "status": "applied",
+      "replacement_id": "6d850652-b608-4b87-bb00-e706044d37a3",
+      "replacement_confidence": 0.65
+    },
+    {
+      "ancestor": "4fc8aafb-0840-4c6a-afba-1e9366b43323",
+      "bucket": "pasted_shape",
+      "status": "applied"
+    },
+    {
+      "ancestor": "c1cd7337-9057-4a29-8e1a-1386d107874c",
+      "bucket": "pasted_shape",
+      "status": "applied"
+    },
+    {
+      "ancestor": "e4631c25-f6f3-4ac3-8a18-d6a3051f12e2",
+      "bucket": "pasted_shape",
+      "status": "applied"
+    },
+    {
+      "ancestor": "1b019dbf-6022-407d-a850-ebd1de03cad7",
+      "bucket": "pasted_shape",
+      "status": "applied"
+    },
+    {
+      "ancestor": "7f8d657d-1eb5-4902-ab14-d7b263276dfb",
+      "bucket": "trigger_absent",
+      "status": "applied"
+    },
+    {
+      "ancestor": "395da6f1-f9fc-4f20-9e5c-707078995dfa",
+      "bucket": "pasted_shape",
+      "status": "applied"
+    },
+    {
+      "ancestor": "566ba93e-01df-494e-aaec-b5d4877642d8",
+      "bucket": "pasted_shape",
+      "status": "applied"
+    },
+    {
+      "ancestor": "f0fff983-a0b3-4e77-a2a7-6d0be2997014",
+      "bucket": "trigger_absent",
+      "status": "applied"
+    },
+    {
+      "ancestor": "89c72100-eafd-4190-a856-13d85313fe40",
+      "bucket": "trigger_absent",
+      "status": "applied"
+    },
+    {
+      "ancestor": "e96d2e6e-06b7-43ef-82b0-b81c1d986923",
+      "bucket": "trigger_absent",
+      "status": "applied"
+    },
+    {
+      "ancestor": "2df3c6a7-6f42-4304-a8fe-624b7e5dcff2",
+      "bucket": "pasted_shape",
+      "status": "applied"
+    },
+    {
+      "ancestor": "f7375249-604a-4100-a880-d5441dfa4ee0",
+      "bucket": "trigger_absent",
+      "status": "applied"
+    },
+    {
+      "ancestor": "be41ddcc-0b1f-4504-8cc6-2117c71fa741",
+      "bucket": "trigger_absent",
+      "status": "applied"
+    },
+    {
+      "ancestor": "811bb171-03c1-46d3-89b1-1b632b0402b4",
+      "bucket": "trigger_absent",
+      "status": "applied"
+    }
+  ]
+}

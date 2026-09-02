@@ -119,7 +119,10 @@ describe('cairn_learn', () => {
     assert.ok(sessionCache.getMemoryVersion() > before, 'learn must invalidate skip-gate caches');
   });
 
-  it('stores pitfalls through the gateway at the auto-detected confidence default', async () => {
+  it('stores pitfalls through the gateway at DELIBERATE confidence (step 3 — was AUTO_DETECTED)', async () => {
+    // Inverted by remediation step 3: an explicit cairn_learn pitfall was a
+    // conscious act yet inherited the auto-miner prior (0.55), leaving it
+    // below the 0.65 injection gate — structurally uninjectable (M7).
     await call('cairn_learn', {
       content: 'Validate webhook signatures before dispatching handlers',
       kind: 'pitfall',
@@ -129,7 +132,7 @@ describe('cairn_learn', () => {
     const stored = repo.exportMemories({ project: 'proj-a' });
     assert.equal(stored.length, 1);
     assert.equal(stored[0].kind, 'pitfall');
-    assert.equal(stored[0].confidence, CONFIDENCE.AUTO_DETECTED);
+    assert.equal(stored[0].confidence, CONFIDENCE.DELIBERATE);
   });
 
   it('forces user_profile memories to global scope even when a project is given', async () => {
@@ -355,7 +358,8 @@ describe('cairn_recall', () => {
   it('returns the no-results message when nothing matches', async () => {
     const reply = await call('cairn_recall', { query: 'quantum entanglement teapot' });
     assert.equal(reply.isError, false);
-    assert.equal(reply.text, 'No relevant memories found.');
+    assert.match(reply.text, /^No relevant memories found\. \[retrieval: /,
+      'empty results must still disclose which retrieval path produced the emptiness');
   });
 
   it('excludes other projects while including global scope when a project is given', async () => {
@@ -382,7 +386,12 @@ describe('cairn_recall', () => {
     assert.match(reply.text, /secrets rotate quarterly/, 'general global still surfaces (not over-blocked)');
   });
 
-  it('returns only global memories when no project is given', async () => {
+  it('bare recall returns globals and never OTHER projects\' rows (session default scoping)', async () => {
+    // RETITLED at remediation step 2: this previously claimed "only global
+    // memories when no project is given" and passed only because proj-a is
+    // not the session project. Bare recall now targets the SESSION project
+    // plus globals; other projects stay excluded — which is what the
+    // assertions below actually pin.
     repo.create({ content: 'Webhook retries demand exponential backoff on failure', kind: 'fact', project: 'proj-a' });
     repo.create({ content: 'Webhook secrets rotate quarterly per security policy', kind: 'fact', project: null });
 
@@ -408,7 +417,8 @@ describe('cairn_recall', () => {
     repo.create({ content: 'Deployment beta rides canary stages exclusively', kind: 'fact', project: null });
 
     const reply = await call('cairn_recall', { query: 'deployment', max_results: 1 });
-    assert.equal(reply.text.split('\n').length, 1);
+    // Count RESULT lines: the output also carries a retrieval-path header line.
+    assert.equal(reply.text.split('\n').filter(l => l.startsWith('•')).length, 1);
   });
 
   it('caps result count at the compact-mode limit even when more is requested', async () => {
@@ -420,7 +430,7 @@ describe('cairn_recall', () => {
     repo.create({ content: 'Deployment epsilon pins container digests always', kind: 'fact', project: null });
 
     const reply = await call('cairn_recall', { query: 'deployment', max_results: 10 });
-    assert.equal(reply.text.split('\n').length, LIMITS.RECALL_COMPACT);
+    assert.equal(reply.text.split('\n').filter(l => l.startsWith('•')).length, LIMITS.RECALL_COMPACT);
   });
 
   it('omits kind, scope, and confidence metadata in minimal mode', async () => {
@@ -428,7 +438,10 @@ describe('cairn_recall', () => {
     repo.create({ content: 'Deployment alpha requires rollback rehearsal first', kind: 'fact', project: null });
 
     const reply = await call('cairn_recall', { query: 'deployment rollback' });
-    assert.equal(reply.text, '• Deployment alpha requires rollback rehearsal first');
+    // Minimal mode carries a compact degraded-path marker (tests run without
+    // the embedding model, so the FTS-only marker is expected here) but no
+    // per-row metadata — that is the property under test.
+    assert.equal(reply.text, '[FTS-only]\n• Deployment alpha requires rollback rehearsal first');
   });
 
   it('goes silent in critical context mode without touching recall stats', async () => {

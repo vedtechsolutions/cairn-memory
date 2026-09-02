@@ -18,6 +18,7 @@ import { projectId } from '../utils/project-id.js';
 import { markRecallSuccess } from '../utils/prediction.js';
 import { InvestigationRepository } from '../db/investigation-repository.js';
 import { recordGovernanceEventFailOpen } from '../governance/recorder.js';
+import { ENV } from '../constants/env.js';
 
 const _startTime = Date.now();
 
@@ -54,7 +55,7 @@ try {
         // (No memory creation — generic "edit → test pass" patterns are noise.
         //  Plan checkpoints are useful; permanent memories of them are not.)
         try {
-          const dbPath = process.env.CAIRN_DB_PATH ?? undefined;
+          const dbPath = process.env[ENV.DB_PATH] ?? undefined;
           const client = createHookDbClient(dbPath);
           const project = projectId(input.cwd);
           const activePlan = client.planRepo.getActive(project);
@@ -80,7 +81,7 @@ try {
       // Resolve active investigation chain on success pattern (tests pass)
       if (classification.learnable) {
         try {
-          const resolveDbPath = process.env.CAIRN_DB_PATH ?? undefined;
+          const resolveDbPath = process.env[ENV.DB_PATH] ?? undefined;
           const resolveClient = createHookDbClient(resolveDbPath);
           const resolveProject = projectId(input.cwd);
           const investigationRepo = new InvestigationRepository(resolveClient.db);
@@ -119,7 +120,7 @@ try {
       }
 
       if (needsDb) {
-        const dbPath = process.env.CAIRN_DB_PATH ?? undefined;
+        const dbPath = process.env[ENV.DB_PATH] ?? undefined;
         const client = createHookDbClient(dbPath);
 
         let verifiedImpacts = 0;
@@ -151,7 +152,7 @@ try {
   // Governance is a post-business-result tee. Its failures are deliberately
   // invisible to the existing hook output and telemetry behavior.
   try {
-    const governanceClient = createHookDbClient(process.env.CAIRN_DB_PATH ?? undefined);
+    const governanceClient = createHookDbClient(process.env[ENV.DB_PATH] ?? undefined);
     await recordGovernanceEventFailOpen(governanceClient.db, input);
     governanceClient.close();
   } catch { /* fail open */ }

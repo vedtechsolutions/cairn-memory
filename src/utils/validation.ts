@@ -91,8 +91,8 @@ export function validateTags(tags: string[]): ValidationResult {
       errors.push('Tags must not be empty strings');
       break;
     }
-    if (tag.length > 50) {
-      errors.push(`Tag "${tag.slice(0, 20)}..." exceeds 50 chars`);
+    if (tag.length > LIMITS.MAX_TAG_CHARS) {
+      errors.push(`Tag "${tag.slice(0, 20)}..." exceeds ${LIMITS.MAX_TAG_CHARS} chars`);
     }
   }
 

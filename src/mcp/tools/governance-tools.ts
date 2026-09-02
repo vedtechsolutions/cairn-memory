@@ -6,6 +6,7 @@ import {
   GovernanceOverrideStore, GOVERNANCE_OVERRIDE_DEFAULT_DURATION_MS,
 } from '../../governance/governance-overrides.js';
 import { deriveGovernanceOverrideContext } from '../../governance/override-context.js';
+import { TOOL } from '../../constants/mcp.js';
 
 const OVERRIDE_CLIENT_NAME = 'claude-code';
 
@@ -18,7 +19,7 @@ export function registerGovernanceTools(
   db: Database.Database,
   innerServer: Server,
 ): void {
-  server.registerTool('cairn_governance_override', {
+  server.registerTool(TOOL.GOVERNANCE_OVERRIDE, {
     title: 'Confirm Governance Override',
     description: 'Request a temporary, session-bound governance gate override. Requires direct user confirmation.',
     inputSchema: z.object({

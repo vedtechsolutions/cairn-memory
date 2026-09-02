@@ -33,6 +33,7 @@
     "!dist/src/**/*.map",
     "!dist/src/**/*.d.ts",
     "!dist/src/benchmark/",
+    "dist/generated/identity.h",
     "src/hooks/hook-relay.c",
     "src/hooks/hook-relay.sh",
     "CHANGELOG.md",
@@ -40,8 +41,9 @@
   ],
   "scripts": {
     "clean": "rm -rf dist",
-    "build": "tsc -b tsconfig.build.json && npm run build:relay",
-    "build:relay": "cc -O2 -D_FORTIFY_SOURCE=2 -fstack-protector-strong -fPIE -pie -Wall -Wextra -Wformat -Werror=format-security -o dist/src/hooks/hook-relay src/hooks/hook-relay.c && cp src/hooks/hook-relay.sh dist/src/hooks/hook-relay.sh && chmod +x dist/src/hooks/hook-relay.sh",
+    "build": "tsc -b tsconfig.build.json && npm run build:identity && npm run build:relay",
+    "build:identity": "node scripts/gen-identity.mjs",
+    "build:relay": "cc -O2 -D_FORTIFY_SOURCE=2 -fstack-protector-strong -fPIE -pie -Wall -Wextra -Wformat -Werror=format-security -I dist/generated -o dist/src/hooks/hook-relay src/hooks/hook-relay.c && cp src/hooks/hook-relay.sh src/hooks/statusline-relay.sh dist/src/hooks/ && chmod +x dist/src/hooks/hook-relay.sh dist/src/hooks/statusline-relay.sh",
     "start": "node dist/src/mcp/server.js",
     "daemon": "node dist/src/daemon/cairn-daemon.js",
     "test": "node scripts/run-tests.mjs",
@@ -49,7 +51,7 @@
     "prepublishOnly": "npm run clean && npm run build",
     "dev": "tsc -b tsconfig.build.json --watch",
     "prepack": "node scripts/verify-pack.mjs",
-    "version": "node scripts/sync-plugin-versions.mjs && git add plugins src/constants/index.ts"
+    "version": "node scripts/sync-plugin-versions.mjs && git add plugins src/constants/version.ts"
   },
   "engines": {
     "node": ">=20.0.0"

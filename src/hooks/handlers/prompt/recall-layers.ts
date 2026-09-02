@@ -31,8 +31,11 @@ export function runRecallLayers(ctx: PromptCtx): void {
       .filter(r => !previouslyInjected.has(r.memory.id));
     for (const r of broadRelevant.slice(0, 1)) {
       if (!budgetAvailable()) break;
-      budgetPush(`[WAYKEEP] ${r.memory.kind}: ${formatMemoryContent(r.memory)}${client.memoryRepo.stalenessMarker(r.memory)}`);
-      newlyInjected.push(r.memory.id);
+      // A push the budget REFUSES was never shown — it must not be
+      // stamped as exposure (codex fold block 1).
+      if (budgetPush(`[WAYKEEP] ${r.memory.kind}: ${formatMemoryContent(r.memory)}${client.memoryRepo.stalenessMarker(r.memory)}`)) {
+        newlyInjected.push(r.memory.id);
+      }
     }
   }
 
@@ -57,10 +60,14 @@ export function runRecallLayers(ctx: PromptCtx): void {
         if (!passesCrossProjectGuard(mem, project, fp)) continue;
         if (isGoalMemoryStale(mem)) continue;
         if (surfaced === 0 || preferredKinds.includes(mem.kind)) {
-          budgetPush(`[WAYKEEP] ${mem.kind}: ${formatMemoryContent(mem)}${client.memoryRepo.stalenessMarker(mem)}`);
-          newlyInjected.push(predId);
-          allInjected.add(predId);
-          surfaced++;
+          // A push the budget REFUSES was never shown — it must not be
+          // stamped as exposure, counted as surfaced, or excluded from a
+          // later layer's consideration (codex fold block 1).
+          if (budgetPush(`[WAYKEEP] ${mem.kind}: ${formatMemoryContent(mem)}${client.memoryRepo.stalenessMarker(mem)}`)) {
+            newlyInjected.push(predId);
+            allInjected.add(predId);
+            surfaced++;
+          }
         }
       }
     } catch { /* best-effort */ }
@@ -82,7 +89,8 @@ export function runRecallLayers(ctx: PromptCtx): void {
         vectorResults = client.memoryRepo.recallHybrid(
           prompt,
           cached.embedding,
-          { project, maxResults: 3, minConfidence: RELEVANCE.MIN_CONFIDENCE_FOR_FACT },
+          // Step 7 fold: read-only — the injection boundary stamps exposure.
+          { project, maxResults: 3, minConfidence: RELEVANCE.MIN_CONFIDENCE_FOR_FACT, readOnly: true },
         ).filter(r => r.score >= RELEVANCE.MIN_RRF_SCORE)
          .filter(r => isMemoryEligibleForInjection(r.memory))
          .filter(r => passesCrossProjectGuard(r.memory, project, fp))
@@ -101,8 +109,11 @@ export function runRecallLayers(ctx: PromptCtx): void {
 
       for (const r of vectorResults) {
         if (!budgetAvailable()) break;
-        budgetPush(`[WAYKEEP] ${r.memory.kind}: ${formatMemoryContent(r.memory)}${client.memoryRepo.stalenessMarker(r.memory)}`);
-        newlyInjected.push(r.memory.id);
+        // A push the budget REFUSES was never shown — it must not be
+        // stamped as exposure (codex fold block 1).
+        if (budgetPush(`[WAYKEEP] ${r.memory.kind}: ${formatMemoryContent(r.memory)}${client.memoryRepo.stalenessMarker(r.memory)}`)) {
+          newlyInjected.push(r.memory.id);
+        }
       }
     } catch { /* best-effort */ }
   }
@@ -129,8 +140,11 @@ export function runRecallLayers(ctx: PromptCtx): void {
         .filter(r => !allSoFar.has(r.memory.id));
       for (const r of relevantRefs) {
         if (!budgetAvailable()) break;
-        budgetPush(`[CAIRN ref] ${formatMemoryContent(r.memory)}`);
-        newlyInjected.push(r.memory.id);
+        // A push the budget REFUSES was never shown — it must not be
+        // stamped as exposure (codex fold block 1).
+        if (budgetPush(`[CAIRN ref] ${formatMemoryContent(r.memory)}`)) {
+          newlyInjected.push(r.memory.id);
+        }
       }
     }
   }

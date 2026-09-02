@@ -9,6 +9,7 @@ import { createHookDbClient } from './shared/db-client.js';
 import { projectId } from '../utils/project-id.js';
 import { CONFIDENCE } from '../constants/index.js';
 import { recordTelemetry } from './shared/hook-telemetry.js';
+import { ENV } from '../constants/env.js';
 
 interface StopFailureInput extends HookInput {
   error_type?: string;
@@ -32,7 +33,7 @@ try {
   // Create actionable pitfall for error types that have actionable advice
   const pitfallContent = FAILURE_PITFALLS[errorType];
   if (pitfallContent) {
-    const dbPath = process.env.CAIRN_DB_PATH ?? undefined;
+    const dbPath = process.env[ENV.DB_PATH] ?? undefined;
     const client = createHookDbClient(dbPath);
     const project = projectId(input.cwd);
 

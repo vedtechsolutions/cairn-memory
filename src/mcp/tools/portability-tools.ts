@@ -3,7 +3,7 @@ import { formatMemoryContent, formatAuxText } from '../../utils/memory-injection
 import * as z from 'zod/v4';
 import type { MemoryRepository } from '../../db/memory-repository.js';
 import type { SessionCache } from '../../hooks/shared/session-cache.js';
-import { LIMITS, PROMOTION, type ContextMode, type LearnableKind, type MemoryKind, LEARNABLE_KINDS } from '../../constants/index.js';
+import { LIMITS, PROMOTION, type ContextMode, type LearnableKind, type MemoryKind, LEARNABLE_KINDS, CONFIDENCE } from '../../constants/index.js';
 import { isPrivateProject, canReadPrivate } from '../../config/cairn-config.js';
 import { PrivateScopeChangeError } from '../../db/memory-repository/portability.js';
 import { learnSections, safeExcerpt } from '../../importers/learn-pipeline.js';
@@ -12,6 +12,7 @@ import { isCritical } from './helpers.js';
 import { buildFileSection, buildRecordSection, parseExportDocument } from '../../memory-tool/round-trip.js';
 import { parseMarkdown } from '../../utils/markdown-parser.js';
 import { sanitize, neutralizeMemoryText } from '../../utils/validation.js';
+import { TOOL } from '../../constants/mcp.js';
 
 type ContextModeFn = () => ContextMode;
 
@@ -24,7 +25,7 @@ export function registerPortabilityTools(
   // --- cairn_ingest -----------------------------------------------------------
 
   server.registerTool(
-    'cairn_ingest',
+    TOOL.INGEST,
     {
       title: 'Ingest Markdown',
       description: 'Parse structured markdown into memories. v2 sections (data: canonical-JSON payloads) restore losslessly; v1 sections (## Kind: heading + tags: lines) still parse. mode=learn (default) applies gateway semantics (dedup/merge/conflict detection); mode=restore is a strict id-preserving upsert.',
@@ -33,7 +34,7 @@ export function registerPortabilityTools(
         project: z.string().max(LIMITS.MAX_STRING_PARAM).nullable().optional().describe('Project scope for v1 sections and v2 records without a project field (null for global)'),
         mode: z.enum(['learn', 'restore']).optional().describe('learn (default): gateway semantics. restore: strict upsert-by-id, no merge/boost/conflict detection'),
         dry_run: z.boolean().optional().describe('Preview parsed sections without writing to DB'),
-        from_private: z.boolean().optional().describe('Explicit acknowledgment when a restore record changes the project scope of an existing PRIVATE-project memory (same acknowledgment cairn_promote requires)'),
+        from_private: z.boolean().optional().describe(`Explicit acknowledgment when a restore record changes the project scope of an existing PRIVATE-project memory (same acknowledgment ${TOOL.PROMOTE} requires)`),
       }),
     },
     async ({ content, project, mode, dry_run: dryRun, from_private: fromPrivate }) => {
@@ -143,6 +144,11 @@ export function registerPortabilityTools(
             tags: record.tags.map(t => sanitize(t)),
             project: record.project ?? project ?? null,
             context: record.context ?? undefined,
+            // Step 6 carry-in (F4 class): learn-mode ingest drops untrusted
+            // record confidence; pitfalls must not then default to LEARNED
+            // 0.65 — exactly the injection gate. Untrusted imports start
+            // below it, like auto-mined pitfalls.
+            ...(record.kind === 'pitfall' ? { confidence: CONFIDENCE.AUTO_DETECTED } : {}),
           });
           if (result.deduplicated) deduplicated++;
           else ingested++;
@@ -188,10 +194,10 @@ export function registerPortabilityTools(
   // --- cairn_export -----------------------------------------------------------
 
   server.registerTool(
-    'cairn_export',
+    TOOL.EXPORT,
     {
       title: 'Export Memories',
-      description: 'Export memories as structured markdown. Output can be re-ingested with cairn_ingest for round-trip fidelity.',
+      description: `Export memories as structured markdown. Output can be re-ingested with ${TOOL.INGEST} for round-trip fidelity.`,
       inputSchema: z.object({
         project: z.string().max(LIMITS.MAX_STRING_PARAM).nullable().optional().describe('Filter by project (null for global only, omit for all)'),
         kind: z.enum(LEARNABLE_KINDS).optional().describe('Filter by memory kind'),
@@ -258,10 +264,10 @@ export function registerPortabilityTools(
   // --- cairn_promote ----------------------------------------------------------
 
   server.registerTool(
-    'cairn_promote',
+    TOOL.PROMOTE,
     {
       title: 'Promote to Global',
-      description: 'Promote a project-scoped memory to global scope so it surfaces in all projects. Requires confidence >= 0.7 and kind must be pitfall or decision. Promoting from a project marked private in the scope config requires from_private: true.',
+      description: `Promote a project-scoped memory to global scope so it surfaces in all projects. Requires confidence >= ${PROMOTION.MIN_CONFIDENCE} and kind must be ${PROMOTION.ALLOWED_KINDS.join(' or ')}. Promoting from a project marked private in the scope config requires from_private: true.`,
       inputSchema: z.object({
         id: z.string().describe('Memory ID to promote to global scope'),
         from_private: z.boolean().optional().describe('Explicit acknowledgment when promoting a memory OUT of a private project (its content becomes visible in every project)'),

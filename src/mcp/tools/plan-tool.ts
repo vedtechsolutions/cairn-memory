@@ -5,7 +5,8 @@ import * as z from 'zod/v4';
 import type { PlanRepository, Plan, PlanStep } from '../../db/plan-repository.js';
 import type { MemoryRepository } from '../../db/memory-repository.js';
 import type { SessionCache } from '../../hooks/shared/session-cache.js';
-import { STEP_STATUSES, CONFIDENCE, type ContextMode } from '../../constants/index.js';
+import { TOKEN_BUDGET, STEP_STATUSES, CONFIDENCE, type ContextMode } from '../../constants/index.js';
+import { TOOL } from '../../constants/mcp.js';
 
 type ContextModeFn = () => ContextMode;
 
@@ -17,7 +18,7 @@ export function registerPlanTool(
   sessionCache?: SessionCache,
 ): void {
   server.registerTool(
-    'cairn_plan',
+    TOOL.PLAN,
     {
       title: 'Plan Management',
       description: 'Create, track, and manage task plans with steps, decisions, and progress notes.',
@@ -48,7 +49,8 @@ export function registerPlanTool(
         permanent: z.boolean().optional().describe('Graduate to memory on plan completion (for decide)'),
 
         // For "note"
-        note: z.string().optional().describe('Progress note — max 300 chars (for note)'),
+        note: z.string().optional()
+          .describe(`Progress note — max ${TOKEN_BUDGET.NOTE_MAX_CHARS} chars (for note)`),
         replace: z.boolean().optional().describe('Replace all prior notes (for note)'),
       }),
     },

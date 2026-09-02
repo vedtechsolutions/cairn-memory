@@ -1,6 +1,5 @@
 import type Database from 'better-sqlite3';
 import { RELEVANCE, HYBRID_SEARCH } from '../../constants/index.js';
-import { now } from '../../utils/index.js';
 import { getEmbeddingModelConfig } from '../../utils/embeddings.js';
 import { cosineSimilarity } from '../../utils/similarity.js';
 import { isSqliteVecAvailable } from '../connection.js';
@@ -61,22 +60,9 @@ export function recallHybrid(
   }
   results.sort((a, b) => b.score - a.score);
 
-  // Update recall stats for returned results (skipped in readOnly mode so
-  // benchmark queries stay order-independent)
-  const sliced = results.slice(0, maxResults);
-  if (options.readOnly) return sliced;
-
-  const updateStmt = db.prepare(
-    "UPDATE memories SET last_recalled = ?, recall_count = recall_count + 1 WHERE id = ? AND kind != 'rule'"
-  );
-  const timestamp = now();
-  db.transaction(() => {
-    for (const { memory } of sliced) {
-      updateStmt.run(timestamp, memory.id);
-    }
-  })();
-
-  return sliced;
+  // Step 6: retrieval never stamps — markRecalled at injection boundaries
+  // is the only exposure stamp. options.readOnly retained as a no-op.
+  return results.slice(0, maxResults);
 }
 
 /** Vector-only search: returns memory IDs ordered by cosine similarity.
@@ -120,7 +106,12 @@ export function vectorSearch(
 
   // JS fallback: load embeddings and compute cosine similarity.
   // Capped — an unbounded scan decodes every stored embedding in JS and
-  // blocks the event loop as the store grows.
+  // blocks the event loop as the store grows. DECIDED at step 6 (review
+  // carry-in): the cap selects by confidence, so on a store larger than the
+  // cap this leg quietly becomes prior-flavored — accepted for now because
+  // the fallback only runs without sqlite-vec and sub-cap stores are exact;
+  // if the fallback ever becomes a common path, label it through
+  // RETRIEVAL_PATHS like the FTS degradation rather than widening the cap.
   const rows = db.prepare(`
     SELECT id, embedding FROM memories
     WHERE invalidated = 0 AND superseded_by IS NULL

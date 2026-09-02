@@ -4,6 +4,10 @@
 
 ### Added
 
+- Added validated structural-scan primitives with a three-gate harness (known-positive, cross-file, mutation): the namespace-centralization audits run on scanners proven able to find planted violations — including across files and inside comment-marker-bearing strings — and a deliberately defective scanner demonstrably fails the committed gates.
+- Added retrieval-path legibility to `cairn_recall`: normal-mode responses name their retrieval path (hybrid or a typed FTS-only degradation notice) with per-result rank ordinals and scores, and minimal mode keeps a compact marker for the degraded case, so a silent embedding fallback is visible instead of inferred.
+- Added `scope: 'global'` to `cairn_recall` — explicit global-only retrieval that fetches global candidates directly instead of post-filtering a session-scoped window.
+- Added `scripts/recall-replay.mjs`, a side-effect-free recall replay against a snapshot of the live store — the sanctioned measurement instrument for retrieval work.
 - Added the sync-envelope module to `waykeep-contract`: the Phase 2 replication wire vocabulary — client commands, canonical server log events, conflict reasons, share states, stable error codes, the op-status query/response, and the entity envelope with versioned hashing and reserved encryption fields. Types and constants only; additive.
 - Added schema v32 (team-sync foundations): `author`, `updated_at` (trigger-maintained), and tri-state `share_state` on memories; a tombstone log written whenever a memory is deleted or invalidated (forget audit today, retraction propagation later); and the neutral sync replica tables (entity map, alias log, conflict sets, contributor projection, state store, semantic journal). `migrate-project` now carries all project-keyed sync state through renames.
 
@@ -21,7 +25,23 @@
 
 - Added the free manual repo-pack (`waykeep pack export|import --dir P`): a deterministic one-record-per-file codec (content-addressed filenames, byte-identical round-trips) exporting shareable observations to a user-chosen, normally-gitignored directory. Imports ride the learn pipeline as untrusted observations — no edit or delete claims, re-imports are true no-ops, secrets and forged markers are scrubbed, and no pack code path can invoke git (the modules import no process-spawning API). Bulk export excludes private projects; export re-scrubs on write and reports loudly when a redaction fires.
 
+### Changed
+
+- Retrieval is read-only on every path (repo.recall/recallHybrid no longer bump recall counters); exposure and co-recall pairs are recorded solely at genuine injection boundaries under the real session id. Imported pitfalls start below the proactive-warning gate like auto-mined ones, and strengthening a decision floors it above its surfacing gate.
+
 ### Fixed
+
+- Fixed recall ranking letting a query-independent confidence/source prior overrule relevance (the incident-class inversion): relevance now blends token overlap with FTS5's BM25 signal and carries most of the score range, so a distilled lesson outranks high-confidence raw pastes on every retrieval path — 33 of 40 LongMemEval FTS metrics improved, none regressed.
+- Fixed the pitfall warning cache serving stale scores and stale eligibility: cache hits now recompute scores from live fields and reapply the confidence floor, so a weakened memory stops warning immediately.
+- Fixed the briefing corrections tier starving when high-confidence junk filled its confidence-ordered window: candidates are filtered for eligibility before the display limit.
+- Fixed the 88 truncation-polluted memory rows (197-char pasted prefixes stored as decisions/corrections, holding ~1,670 recalls of telemetry weight): all invalidated via a sha-pinned, dual-reviewed manifest, with 23 genuine truncated decisions re-stored as clause-clean replacements carrying zero inherited telemetry; the sigil extractor no longer truncates over-long sigils, so the signature cannot re-accumulate.
+- Fixed the embedding cold-start path being silently different: the retrieval path is now a typed contract — recall never waits on model readiness, cold-start responses are explicitly labeled FTS-only (with a compact marker even in minimal mode), and the label strings have a single source so they cannot drift.
+- Fixed the popularity loop coupling retrieval to durability: `cairn_recall` is now read-only in fact (no recall-count, last-recalled, or co-recall writes — its readOnlyHint was previously false in practice), and decay stability no longer multiplies by recall count, so frequently surfaced rows stop becoming near-undecayable while genuine surfacing still resets the spaced-repetition clock.
+- Fixed explicit `cairn_learn` pitfalls being born below the proactive-injection confidence gate: deliberate lessons now start at 0.70 (injection-eligible and promotable at birth) while auto-mined pitfalls keep 0.55, so a consciously stored lesson is no longer indistinguishable from a miner's guess.
+- Fixed `cairn_strengthen` stranding a validated pitfall exactly ON the injection gate (0.55 + 0.10 = 0.65, eligible for one instant and gone at the first decay charge): strengthening a pitfall now floors it at 0.70.
+- Fixed the dedup reinforcement ratchet: re-learning the same lesson repeatedly no longer climbs confidence to 1.0 past correction and user-correction authority — repetition growth now stops at 0.80, while explicitly higher-confidence writes still pass through.
+- Fixed learn/recall scope asymmetry: a lesson stored without an explicit project is now retrievable by the same session's next bare recall (session-project default on both sides), globals still surface, and graph enrichment can no longer smuggle another project's rows into results.
+- Fixed auto-capture storing raw pasted prefixes as memories: decision/correction/assistant-decision extractors now share one pasted-shape gate and sentence selection, so IDE context blocks, tool transcripts, and attribution envelopes are no longer truncated into 197-character noise rows.
 
 - Fixed automatic injection precision (from a live cross-agent evaluation): pitfalls marked RESOLVED and superseded memories are excluded from every automatic context surface; conversational/tasking prompts ("ask/review/evaluate…") can no longer be captured as decisions; proactive warnings are capped at one bounded warning (96 tokens) per correlated turn.
 - Fixed `npm publish` leaving a hollowed `dist/` behind (`strip:publish` removed benchmark output that incremental builds never re-emitted, failing three test files until a clean rebuild): a `postpublish` script now restores the full build.

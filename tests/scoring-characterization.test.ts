@@ -74,8 +74,9 @@ describe('characterization — parameter surface (weights and buckets)', () => {
 
   it('locks the authoritative SCORING_PROFILES, including constant aliases by identity', () => {
     const { RECALL, SURFACING } = SCORING_PROFILES;
-    assert.equal(RECALL.RELEVANCE_FLOOR, 0.3);
-    assert.equal(RECALL.RELEVANCE_GAIN, 0.9);
+    // Step 6 rebalance: relevance decides, the prior breaks ties.
+    assert.equal(RECALL.RELEVANCE_FLOOR, 0.05);
+    assert.equal(RECALL.RELEVANCE_GAIN, 1.9);
     assert.equal(RECALL.SOURCE_WEIGHTS, SOURCE_WEIGHT, 'source weights alias the SAME object (decay also consumes it)');
 
     assert.equal(SURFACING.MULTI_SIGNAL.WEIGHTS, FINGERPRINT.WEIGHTS, 'signal weights alias the SAME object');
@@ -110,25 +111,26 @@ describe('characterization — tokenOverlap anchor cases', () => {
 });
 
 describe('characterization — computeScore (multiplicative recall form)', () => {
-  // conf × SOURCE_WEIGHT × recencyBoost × (0.3 + 0.9 × tokenOverlap)
-  it('user source, fresh recall, identical content: 0.8×1.2×1.2×1.2', () => {
+  // conf × SOURCE_WEIGHT × recencyBoost × (0.05 + 1.9 × tokenOverlap × bm25Share)
+  // (bm25Share defaults to 1 outside an FTS candidate set — step 6)
+  it('user source, fresh recall, identical content: 0.8×1.2×1.2×1.95', () => {
     const m = mkMemory({ confidence: 0.8, source: 'user', last_recalled: daysAgo(1), content: 'alpha bravo charlie' });
-    close(computeScore(m, 'alpha bravo charlie'), 0.8 * 1.2 * 1.2 * 1.2, 'all-boost case');
+    close(computeScore(m, 'alpha bravo charlie'), 0.8 * 1.2 * 1.2 * 1.95, 'all-boost case');
   });
 
-  it('learned source, never recalled, disjoint content: 0.5×1.0×0.8×0.3', () => {
+  it('learned source, never recalled, disjoint content: 0.5×1.0×0.8×0.05', () => {
     const m = mkMemory({ confidence: 0.5, source: 'learned', last_recalled: null, content: 'alpha bravo' });
-    close(computeScore(m, 'delta echo'), 0.5 * 1.0 * 0.8 * 0.3, 'all-floor case');
+    close(computeScore(m, 'delta echo'), 0.5 * 1.0 * 0.8 * 0.05, 'all-floor case');
   });
 
-  it('corrected source, mid recency, one-third overlap: 0.6×1.5×1.0×(0.3+0.9/3)', () => {
+  it('corrected source, mid recency, one-third overlap: 0.6×1.5×1.0×(0.05+1.9/3)', () => {
     const m = mkMemory({ confidence: 0.6, source: 'corrected', last_recalled: daysAgo(15), content: 'alpha bravo' });
-    close(computeScore(m, 'alpha charlie'), 0.6 * 1.5 * 1.0 * (0.3 + 0.9 * (1 / 3)), 'mid case');
+    close(computeScore(m, 'alpha charlie'), 0.6 * 1.5 * 1.0 * (0.05 + 1.9 * (1 / 3)), 'mid case');
   });
 
-  it('confirmed source, stale recall, identical content: 0.9×1.1×0.8×1.2', () => {
+  it('confirmed source, stale recall, identical content: 0.9×1.1×0.8×1.95', () => {
     const m = mkMemory({ confidence: 0.9, source: 'confirmed', last_recalled: daysAgo(100), content: 'alpha bravo charlie' });
-    close(computeScore(m, 'alpha bravo charlie'), 0.9 * 1.1 * 0.8 * 1.2, 'stale case');
+    close(computeScore(m, 'alpha bravo charlie'), 0.9 * 1.1 * 0.8 * 1.95, 'stale case');
   });
 });
 

@@ -28,6 +28,7 @@ import { handleCodexPostTool, isToolSeen } from '../hooks/handlers/codex-post-to
 import type { RolloutToolRecord } from '../hooks/shared/rollout-lookup.js';
 import { CLIENT_CODEX } from '../constants/clients.js';
 import { ROLLOUT_LOOKUP, ROLLOUT_TAILER } from '../constants/index.js';
+import { ENV } from '../constants/env.js';
 
 interface FileState {
   offset: number;
@@ -46,7 +47,7 @@ interface FileState {
 interface TailerHandle { stop(): void; tick(): Promise<number>; }
 
 function sessionsRoot(): string {
-  return process.env.CAIRN_CODEX_SESSIONS_DIR ?? join(homedir(), '.codex', 'sessions');
+  return process.env[ENV.CODEX_SESSIONS_DIR] ?? join(homedir(), '.codex', 'sessions');
 }
 
 /** Today's and yesterday's date dirs — covers the midnight straddle without

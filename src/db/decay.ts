@@ -17,10 +17,11 @@
  * decay per invocation until the store collapsed onto the confidence floors.
  *
  * Provenance affects durability through stability, never the per-update
- * factor: S = STABILITY_BY_KIND[kind] × (1 + recall_count ×
- * RECALL_STABILITY_FACTOR) × SOURCE_WEIGHT[source]. A per-update source
- * multiplier ≥ 1 inside a min(1, …) clamp would freeze decay entirely under
- * frequent small increments (each increment rounds up to no-op).
+ * factor: S = STABILITY_BY_KIND[kind] × SOURCE_WEIGHT[source]. A per-update
+ * source multiplier ≥ 1 inside a min(1, …) clamp would freeze decay entirely
+ * under frequent small increments (each increment rounds up to no-op).
+ * recall_count is deliberately NOT in S (step 7 / M5): exposure is not
+ * validation — see the note at the formula below.
  *
  * A recall moves `reference` forward past last_decayed_at; the previous
  * charge then evaluates to effectiveAge 0 and the memory starts a fresh
@@ -68,14 +69,14 @@ export function effectiveAgeDays(tMs: number, refMs: number): number {
  *  before its rate gate. `nowMs` is injectable for tests. */
 export function applyConfidenceDecay(db: Database.Database, nowMs: number = Date.now()): DecayResult {
   const eligible = db.prepare(`
-    SELECT id, kind, confidence, recall_count, source, created_at, last_recalled, last_decayed_at
+    SELECT id, kind, confidence, source, created_at, last_recalled, last_decayed_at
     FROM memories
     WHERE invalidated = 0
       AND kind != 'task_state'
       AND kind NOT IN (${NON_DECAYING_PLACEHOLDERS})
       AND confidence > ?
   `).all(...NON_DECAYING_KINDS, CONFIDENCE.DELETE_THRESHOLD) as Array<{
-    id: string; kind: string; confidence: number; recall_count: number;
+    id: string; kind: string; confidence: number;
     source: string; created_at: string; last_recalled: string | null;
     last_decayed_at: string | null;
   }>;
@@ -98,7 +99,15 @@ export function applyConfidenceDecay(db: Database.Database, nowMs: number = Date
 
       const stabilityBase = STABILITY_BY_KIND[mem.kind] ?? DECAY.DEFAULT_STABILITY_DAYS;
       const sourceStability = SOURCE_WEIGHT[mem.source as keyof typeof SOURCE_WEIGHT] ?? 1.0;
-      const S = stabilityBase * (1 + mem.recall_count * DECAY.RECALL_STABILITY_FACTOR) * sourceStability;
+      // Stability is a function of kind and source ONLY (step 7 / M5).
+      // recall_count deliberately does not appear: retrieval exposure is not
+      // validation, and multiplying S by (1 + 0.3·recalls) turned popularity
+      // into durability — rows the system kept surfacing became nearly
+      // undecayable (recall_count 127 → ~39× stability) while the incident
+      // investigation's own diagnostic recalls reinforced the noise it was
+      // investigating. Spaced repetition survives through the reference
+      // point: a genuine surfacing still moves last_recalled forward.
+      const S = stabilityBase * sourceStability;
 
       const newConf = Math.max(CONFIDENCE.DELETE_THRESHOLD, mem.confidence * Math.exp(-delta / S));
       updateStmt.run(newConf, nowIso, mem.id);

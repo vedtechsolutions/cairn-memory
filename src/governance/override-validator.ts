@@ -1,5 +1,7 @@
 export const GOVERNANCE_OVERRIDE_PAYLOAD_VERSION = 1;
-export const GOVERNANCE_OVERRIDE_MAX_DURATION_MS = 24 * 60 * 60 * 1_000;
+export const GOVERNANCE_OVERRIDE_MAX_DURATION_HOURS = 24;
+export const GOVERNANCE_OVERRIDE_MAX_DURATION_MS =
+  GOVERNANCE_OVERRIDE_MAX_DURATION_HOURS * 60 * 60 * 1_000;
 
 export interface GovernanceOverrideRuleBinding {
   ruleId: string;

@@ -75,7 +75,15 @@ if [ "${1:-}" = "--node" ]; then
   [ -f "$HOOK_DIR/$1" ] || fail "hook script missing: $1"
   exec node "$HOOK_DIR/$1"
 fi
-if [ -x "$HOOK_DIR/hook-relay" ] && [ "$("$HOOK_DIR/hook-relay" --cairn-probe < /dev/null 2>/dev/null || true)" = "cairn-relay" ]; then
+# Probe values are generated beside the binary (dist/src/hooks/identity.sh).
+# They MUST come from there: if this launcher and the relay disagree on the
+# handshake, the probe silently fails and every hook falls back to the slower
+# shell relay with nothing reporting it.
+WK_PROBE_FLAG=""; WK_PROBE_SENTINEL=""
+# shellcheck source=/dev/null
+[ -r "$HOOK_DIR/identity.sh" ] && . "$HOOK_DIR/identity.sh"
+if [ -n "$WK_PROBE_FLAG" ] && [ -x "$HOOK_DIR/hook-relay" ] \
+   && [ "$("$HOOK_DIR/hook-relay" "$WK_PROBE_FLAG" < /dev/null 2>/dev/null || true)" = "$WK_PROBE_SENTINEL" ]; then
   exec "$HOOK_DIR/hook-relay" "$@"
 fi
 exec "$HOOK_DIR/hook-relay.sh" "$@"

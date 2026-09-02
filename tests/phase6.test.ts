@@ -25,13 +25,20 @@ afterEach(() => {
 // =============================================================================
 
 describe('Strengthen Confidence', () => {
-  it('should increase confidence by STRENGTHEN_INCREMENT', () => {
+  it('should increase confidence by STRENGTHEN_INCREMENT (pitfalls floor at DELIBERATE)', () => {
+    // Step-3 review fold: strengthen is explicit validation, so a pitfall
+    // never lands below (or ON) the injection gate — 0.5 + 0.1 would be
+    // 0.6, but pitfalls floor at CONFIDENCE.DELIBERATE (0.7).
     const { id } = memRepo.create({ content: 'Test pitfall for strengthening', kind: 'pitfall', confidence: 0.5 });
     const ok = memRepo.strengthenConfidence(id);
     assert.equal(ok, true);
-
     const mem = memRepo.findById(id)!;
-    assert.ok(Math.abs(mem.confidence - 0.6) < 0.001);
+    assert.ok(Math.abs(mem.confidence - 0.7) < 0.001, `pitfall floors at DELIBERATE, got ${mem.confidence}`);
+
+    // The plain increment still governs non-pitfall kinds.
+    const fact = memRepo.create({ content: 'Test fact for strengthening', kind: 'fact', confidence: 0.5 });
+    memRepo.strengthenConfidence(fact.id);
+    assert.ok(Math.abs(memRepo.findById(fact.id)!.confidence - 0.6) < 0.001);
   });
 
   it('should cap at 1.0', () => {

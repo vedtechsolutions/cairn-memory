@@ -318,25 +318,6 @@ export function runStalenessDetection(
   return { zeroImpact, staleFingerprint, deletedFileRefs };
 }
 
-/** Promote high-frequency co-recall pairs to co_occurred knowledge graph edges.
- *  Only creates edges for pairs recalled together >= CO_RECALL_EDGE_THRESHOLD times. */
-function promoteCoRecallToEdges(db: Database.Database, edgeRepo: EdgeRepository): void {
-  const rows = db.prepare(`
-    SELECT cr.memory_a, cr.memory_b FROM memory_corecall cr
-    WHERE cr.co_count >= ?
-      AND NOT EXISTS (
-        SELECT 1 FROM memory_edges e
-        WHERE e.source_id = cr.memory_a AND e.target_id = cr.memory_b AND e.relation = 'co_occurred'
-      )
-    ORDER BY cr.co_count DESC
-    LIMIT ?
-  `).all(CONSOLIDATION.CO_RECALL_EDGE_THRESHOLD, CONSOLIDATION.CO_RECALL_PROMOTE_LIMIT) as Array<{ memory_a: string; memory_b: string }>;
-
-  for (const row of rows) {
-    edgeRepo.createEdge(row.memory_a, row.memory_b, 'co_occurred');
-  }
-}
-
 /** Build a map of pre-computed embedding cosine similarities between memory pairs.
  *  Reads embedding BLOBs from the DB (no model needed — works in hook processes).
  *  Only computes similarities for pairs where BOTH memories have ACTIVE-model
@@ -472,11 +453,16 @@ export function runConsolidation(db: Database.Database): { merged: number; clust
     }
   }
 
-  // Promote high-frequency co-recall pairs to co_occurred edges (enriches graph for neighbor recall)
-  promoteCoRecallToEdges(db, edgeRepo);
+  // Step 7 (M5): co-recall→edge promotion REMOVED. memory_corecall's only
+  // production feeder was the (diagnostic) MCP recall handler, so promoting
+  // its pairs manufactured persistent co_occurred edges from contamination.
+  // Step 8 re-sourced co-recall from genuine injection — promotion stays
+  // removed anyway, DELIBERATELY: the pre-remediation pair data is still in
+  // the table, and re-enabling over a mixed corpus is a future decision the
+  // plan records, not a default.
 
   // Prune old co_occurred edges while we're at it
-  edgeRepo.pruneOldCoOccurrences(90);
+  edgeRepo.pruneOldCoOccurrences();
 
   return { merged: totalMerged, clustersFound: totalClusters };
 }

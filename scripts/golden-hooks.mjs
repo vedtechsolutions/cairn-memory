@@ -13,13 +13,24 @@
  * each hook spawn gets a fresh copy of the seeded DB (snapshot-restore),
  * so one hook's writes can never leak into another's output.
  */
-import { mkdirSync, writeFileSync, copyFileSync, rmSync, mkdtempSync } from 'node:fs';
+import { mkdirSync, writeFileSync, copyFileSync, rmSync, mkdtempSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '..');
+
+// Namespace-derived env names, from the build-time generator (npm run build).
+const IDENTITY_PATH = join(REPO, 'dist', 'generated', 'identity.json');
+let ID;
+try {
+  ID = JSON.parse(readFileSync(IDENTITY_PATH, 'utf-8'));
+} catch (err) {
+  throw new Error(`cannot read ${IDENTITY_PATH} (${err.code || err.message}) — run \`npm run build\` first`);
+}
+const E = ID.ENV;
+
 const HOOKS = join(REPO, 'dist', 'src', 'hooks');
 
 const outDir = process.argv[2];
@@ -29,7 +40,7 @@ if (!outDir) {
 }
 mkdirSync(outDir, { recursive: true });
 
-const work = mkdtempSync(join(tmpdir(), 'cairn-golden-'));
+const work = mkdtempSync(join(tmpdir(), `${ID.NAMESPACE}-golden-`));
 const seedDb = join(work, 'seed.db');
 // FIXED path (not per-run temp): the project id derives from the cwd, so a
 // varying path would change the id and defeat byte-identical captures.
@@ -82,15 +93,15 @@ for (const c of CASES) {
     copyFileSync(seedDb, dbCopy);
     const env = {
       ...process.env,
-      CAIRN_DB_PATH: dbCopy,
-      CAIRN_DIR: join(work, `state-${captured}`),
-      CAIRN_STATE_PATH: join(work, `state-${captured}.json`),
-      CAIRN_QUERY_CWD: '/x',
-      CAIRN_CLIENT: client ?? '',
+      [E.DB_PATH]: dbCopy,
+      [E.DIR]: join(work, `state-${captured}`),
+      [E.STATE_PATH]: join(work, `state-${captured}.json`),
+      [E.QUERY_CWD]: '/x',
+      [E.CLIENT]: client ?? '',
       // Scope config must never shape golden captures (absent = default).
-      CAIRN_CONFIG_PATH: join(work, 'no-config.json'),
+      [E.CONFIG_PATH]: join(work, 'no-config.json'),
     };
-    delete env.CAIRN_TZ;
+    delete env[E.TZ];
     const proc = spawnSync(process.execPath, [join(HOOKS, c.entry)], {
       input: JSON.stringify(c.payload),
       encoding: 'utf8',

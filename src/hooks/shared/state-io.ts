@@ -6,6 +6,8 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync, statSync, renameSyn
 import { join, dirname } from 'node:path';
 import { homedir } from 'node:os';
 import { STATE_STALENESS_MS, CONTEXT_MODES, type ContextMode } from '../../constants/index.js';
+import { ENV } from '../../constants/env.js';
+import { FILES } from '../../constants/paths.js';
 
 export interface CairnState {
   mode: ContextMode;
@@ -35,7 +37,7 @@ function isValidState(value: unknown): value is CairnState {
  *  CAIRN_DB_PATH) keeps tests and sandboxed environments off the real
  *  ~/.claude. Resolved lazily so the override works regardless of import order. */
 function statePath(): string {
-  return process.env.CAIRN_STATE_PATH ?? join(homedir(), '.claude', 'cairn-state.json');
+  return process.env[ENV.STATE_PATH] ?? join(homedir(), '.claude', FILES.CLIENT_STATE);
 }
 
 export function readState(): CairnState {

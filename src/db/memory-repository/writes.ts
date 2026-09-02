@@ -63,8 +63,18 @@ export function create(db: Database.Database, input: CreateMemoryInput): CreateR
     ? undefined
     : findSimilar(db, content, project, input.kind, input.embedding);
   if (existing) {
-    // Merge: boost confidence (dedup = reinforcement) + prefer longer content
-    const newConfidence = Math.min(existing.confidence + CONFIDENCE.BOOST_INCREMENT, 1.0);
+    // Merge: boost confidence (dedup = reinforcement) + prefer longer content.
+    // Repetition growth caps at DEDUP_REINFORCEMENT_CEILING; a row already
+    // above the ceiling keeps its level rather than ratcheting toward 1.0.
+    // An EXPLICITLY passed higher confidence still exceeds the ceiling (the
+    // authority override both dedup sites carry) — but only input.confidence,
+    // never defaultConfidence(kind): a no-confidence re-create must stay
+    // boost-only, not silently lift the row to the kind default.
+    const repetitionCeiling = Math.max(CONFIDENCE.DEDUP_REINFORCEMENT_CEILING, existing.confidence);
+    const boosted = Math.min(existing.confidence + CONFIDENCE.BOOST_INCREMENT, repetitionCeiling);
+    const newConfidence = input.confidence !== undefined
+      ? Math.min(Math.max(boosted, input.confidence), 1.0)
+      : boosted;
     const newContent = content.length > existing.content.length ? content : existing.content;
     db.transaction(() => {
       db.prepare(`
@@ -125,8 +135,13 @@ export function storeMemory(db: Database.Database, input: StoreMemoryInput): Cre
     const incomingAuth = SOURCE_AUTHORITY[source] ?? 0;
     const newSource = incomingAuth >= existingAuth ? source : existing.source;
 
-    // Confidence: max of boosted existing vs incoming
-    const boosted = existing.confidence + CONFIDENCE.BOOST_INCREMENT;
+    // Confidence: max of boosted existing vs incoming. The boost side caps
+    // at DEDUP_REINFORCEMENT_CEILING — repetition alone never pushes a row
+    // past correction authority (0.70 → 0.75 → 0.80 → stop, not → 1.0). A
+    // row already above the ceiling keeps its level (no downgrade); only an
+    // explicitly higher incoming confidence exceeds the ceiling.
+    const repetitionCeiling = Math.max(CONFIDENCE.DEDUP_REINFORCEMENT_CEILING, existing.confidence);
+    const boosted = Math.min(existing.confidence + CONFIDENCE.BOOST_INCREMENT, repetitionCeiling);
     const newConfidence = Math.min(Math.max(boosted, confidence), 1.0);
 
     // Content: keep the longer version

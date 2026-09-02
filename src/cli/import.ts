@@ -19,6 +19,7 @@ import { isPrivateProject } from '../config/cairn-config.js';
 import { transformCodexMemories } from '../importers/codex-memories.js';
 import { transformMemoryMd } from '../importers/memory-md.js';
 import { transformClaudeMem } from '../importers/claude-mem.js';
+import { ENV } from '../constants/env.js';
 
 export interface ImportOptions {
   from: string;
@@ -36,7 +37,7 @@ export function runImport(options: ImportOptions): number {
   try {
     switch (options.from) {
       case 'codex-memories': {
-        const dir = options.path ?? join(process.env.CAIRN_CODEX_DIR ?? join(homedir(), '.codex'), 'memories');
+        const dir = options.path ?? join(process.env[ENV.CODEX_DIR] ?? join(homedir(), '.codex'), 'memories');
         const result = transformCodexMemories(dir, { includeNotes: options.includeNotes });
         ({ sections, excluded, notes } = result);
         break;
@@ -86,7 +87,7 @@ export function runImport(options: ImportOptions): number {
     return 0;
   }
 
-  const db = openDatabase({ dbPath: resolveDbPath(process.env.CAIRN_DB_PATH) });
+  const db = openDatabase({ dbPath: resolveDbPath(process.env[ENV.DB_PATH]) });
   try {
     const repo = new MemoryRepository(db);
     const result = learnSections(repo, sections, options.project ?? null);

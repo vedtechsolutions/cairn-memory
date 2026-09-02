@@ -23,8 +23,8 @@
 import { existsSync, unlinkSync, writeFileSync, readFileSync, mkdirSync, chmodSync, lstatSync, statSync } from 'node:fs';
 import { get, request } from 'node:http';
 import { join } from 'node:path';
-import { homedir } from 'node:os';
 import { FS_PERMS } from '../constants/index.js';
+import { dataDir, FILES } from '../constants/paths.js';
 
 // --- Constants ---
 
@@ -40,13 +40,13 @@ const BUMP_TIMEOUT_MS = 1000;
  *  state-io) and resolve lazily so tests can sandbox them without having to
  *  reorder imports around a module-load-time homedir() capture. */
 export function cairnDir(): string {
-  return process.env.CAIRN_DIR ?? join(homedir(), '.cairn');
+  return dataDir();
 }
 export function socketPath(): string {
-  return join(cairnDir(), 'hook-daemon.sock');
+  return join(cairnDir(), FILES.SOCKET);
 }
 export function pidPath(): string {
-  return join(cairnDir(), 'hook-daemon.pid');
+  return join(cairnDir(), FILES.PID);
 }
 
 /**

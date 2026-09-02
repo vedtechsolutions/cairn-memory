@@ -19,6 +19,44 @@ const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const DEFAULT_TEST_DIR = join(REPO_ROOT, 'dist', 'tests');
 const TEST_FILE_SUFFIX = '.test.js';
 const HERMETIC_PRELOAD = join(REPO_ROOT, 'tests', 'hermetic-env.cjs');
+
+/**
+ * Fail before spawning ANY test child if the generated identity is stale.
+ *
+ * The hermetic preload reads dist/generated/identity.json to learn which env
+ * vars to redirect. `npm test` does not rebuild, and `npm run dev` is only a
+ * TypeScript watch — so a namespace change compiled without `npm run build`
+ * would leave the preload setting the OLD names while the code reads the NEW
+ * ones. Every override would go unread, the whole suite would operate on the
+ * developer's REAL home directory, and it would still pass.
+ *
+ * The in-suite drift test cannot cover this: by the time it runs, the children
+ * are already started and the damage is done. This check has to be here.
+ */
+async function assertIdentityFresh() {
+  const path = join(REPO_ROOT, 'dist', 'generated', 'identity.json');
+  let generated;
+  try {
+    generated = JSON.parse(readFileSync(path, 'utf-8'));
+  } catch (err) {
+    console.error(`run-tests: cannot read ${path} (${err.code ?? err.message}) — run \`npm run build\` first.`);
+    process.exit(1);
+  }
+  const contract = await import(join(REPO_ROOT, 'packages', 'contract', 'dist', 'identity.js'));
+  const drift = [];
+  if (generated.NAMESPACE !== contract.NAMESPACE) drift.push(`NAMESPACE ${generated.NAMESPACE} != ${contract.NAMESPACE}`);
+  if (generated.DATA_DIR !== contract.DATA_DIR_NAME) drift.push(`DATA_DIR ${generated.DATA_DIR} != ${contract.DATA_DIR_NAME}`);
+  if (generated.ENV_PREFIX !== contract.ENV_PREFIX) drift.push(`ENV_PREFIX ${generated.ENV_PREFIX} != ${contract.ENV_PREFIX}`);
+  if (drift.length) {
+    console.error(
+      'run-tests: dist/generated/identity.json is STALE relative to the contract:\n  ' +
+      drift.join('\n  ') +
+      '\nRefusing to run: the hermetic preload would set the old variable names and the suite ' +
+      'would read and write your REAL home directory while still passing. Run `npm run build`.',
+    );
+    process.exit(1);
+  }
+}
 // Root-level TAP plan ("1..N" at column 0); subtests are indented.
 const TAP_PLAN_PATTERN = /^1\.\.(\d+)$/m;
 
@@ -40,7 +78,7 @@ function discoverTestFiles(dir) {
   }
 }
 
-function main() {
+async function main() {
   const testDir = process.argv[2] ? resolve(process.argv[2]) : DEFAULT_TEST_DIR;
   const files = discoverTestFiles(testDir);
   if (files.length === 0) {
@@ -56,6 +94,8 @@ function main() {
   // own guard tests), the inherited NODE_TEST_CONTEXT makes the child runner
   // "skip running files" and exit 0 with zero tests — strip it so the child
   // is always a fresh top-level runner.
+  await assertIdentityFresh();
+
   const childEnv = { ...process.env };
   delete childEnv.NODE_TEST_CONTEXT;
   try {
@@ -105,4 +145,4 @@ function main() {
   }
 }
 
-process.exit(main());
+process.exit(await main());

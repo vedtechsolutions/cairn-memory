@@ -1,3 +1,5 @@
+import { ENV } from '../constants/env.js';
+
 /** Current ISO 8601 timestamp (UTC — the stable form for storage and sync). */
 export function now(): string {
   return new Date().toISOString();
@@ -12,7 +14,7 @@ export function now(): string {
  */
 export function formatTimestamp(iso: string | null | undefined): string {
   if (!iso) return 'never';
-  const tz = process.env.CAIRN_TZ;
+  const tz = process.env[ENV.TZ];
   if (!tz) return iso;
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return iso;

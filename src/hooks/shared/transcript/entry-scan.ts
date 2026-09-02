@@ -8,6 +8,11 @@ import { looksLikeFilePath, classifyCommandBucket } from './classify.js';
 import { isHumanMessage } from './goal-extraction.js';
 import { extractAssistantDecision } from './decision-extraction.js';
 import { isApproachNote, isLikelyErrorOutput } from './signal-extraction.js';
+import { TOOL, qualifiedToolName } from '../../../constants/mcp.js';
+
+/** Hoisted: this scan runs per transcript entry. */
+const QUALIFIED_PLAN = qualifiedToolName(TOOL.PLAN);
+const QUALIFIED_LEARN = qualifiedToolName(TOOL.LEARN);
 
 /** Mutable accumulator state threaded through the tail-pass scanners. */
 export interface ScanState {
@@ -103,7 +108,7 @@ export function scanAssistantEntry(content: ContentBlock[], snapshot: Transcript
       // cairn_plan(create) → capture plan name as the ambient project goal.
       // Last-write-wins across the transcript: the most recent create
       // overrides any earlier one so plan pivots are respected.
-      if (toolName === 'mcp__cairn__cairn_plan' || toolName === 'cairn_plan') {
+      if (toolName === QUALIFIED_PLAN || toolName === TOOL.PLAN) {
         const action = input.action as string | undefined;
         if (action === 'create') {
           const planName = input.name as string | undefined;
@@ -114,7 +119,7 @@ export function scanAssistantEntry(content: ContentBlock[], snapshot: Transcript
       }
 
       // cairn_plan(decide) → extract decision snapshots
-      if (toolName === 'mcp__cairn__cairn_plan' || toolName === 'cairn_plan') {
+      if (toolName === QUALIFIED_PLAN || toolName === TOOL.PLAN) {
         const action = input.action as string | undefined;
         if (action === 'decide') {
           const chose = input.chose as string | undefined;
@@ -129,14 +134,14 @@ export function scanAssistantEntry(content: ContentBlock[], snapshot: Transcript
       }
 
       // cairn_learn(kind: "decision") → also capture decisions
-      if (toolName === 'mcp__cairn__cairn_learn' || toolName === 'cairn_learn') {
+      if (toolName === QUALIFIED_LEARN || toolName === TOOL.LEARN) {
         const kind = input.kind as string | undefined;
         if (kind === 'decision') {
           const content = input.content as string | undefined;
           if (content) {
             snapshot.recentDecisions.push({
               chose: truncate(content, 150),
-              why: '(via cairn_learn)',
+              why: `(via ${TOOL.LEARN})`,
             });
           }
         }

@@ -1,5 +1,4 @@
 import { lstatSync } from 'node:fs';
-import { join } from 'node:path';
 import type { EvidenceRequirementSelection } from './evidence-selector.js';
 import { selectEvidenceRequirements } from './evidence-selector.js';
 import type { LoadedGateConfig } from './gate-config.js';
@@ -8,6 +7,7 @@ import {
   ShadowEvaluationError, type ResolvedShadowIdentity,
 } from './shadow-evaluator-support.js';
 import { WORKTREE_DIGEST_HARD_CEILING_MS } from './worktree-digest.js';
+import { gatesPath } from '../constants/paths.js';
 
 export const SHADOW_EVALUATOR_DEFAULT_BUDGET_MS = 250;
 export const SHADOW_EVALUATOR_HARD_CEILING_MS = WORKTREE_DIGEST_HARD_CEILING_MS;
@@ -61,7 +61,7 @@ export class ShadowDeadline {
 
 export function configEntryPresent(root: string): boolean {
   try {
-    lstatSync(join(root, '.cairn', 'gates.json'));
+    lstatSync(gatesPath(root));
     return true;
   } catch {
     return false;

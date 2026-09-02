@@ -12,6 +12,7 @@ import { projectId } from '../../utils/project-id.js';
 import { parsePlanContent } from '../../utils/plan-parser.js';
 import { readFileSync, existsSync } from 'node:fs';
 import { LIMITS } from '../../constants/index.js';
+import { TOOL } from '../../constants/mcp.js';
 
 export interface PlanBridgeResult {
   /** Message to output, or null */
@@ -82,7 +83,7 @@ function createCairnPlan(
 
   client.planRepo.create({ project, name: planContent.name, steps });
 
-  const msg = `[WAYKEEP] Plan auto-persisted: "${planContent.name}" (${steps.length} steps). Survives compaction. Use cairn_plan(step) to track progress.`;
+  const msg = `[WAYKEEP] Plan auto-persisted: "${planContent.name}" (${steps.length} steps). Survives compaction. Use ${TOOL.PLAN}(step) to track progress.`;
   recordRollup(client.db, input.session_id, ROLLUP_METRICS.INJECTED, 'plan-bridge', estimateTokensFast(msg));
   return { output: msg, action: 'created', steps: steps.length };
 }

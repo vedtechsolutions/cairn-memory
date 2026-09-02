@@ -14,7 +14,7 @@ export function topPitfalls(db: Database.Database, project: string | null, limit
     WHERE invalidated = 0 AND superseded_by IS NULL
       AND kind = 'pitfall'
       AND (project = ? OR project IS NULL)
-    ORDER BY (confidence * (1 + recall_count)) DESC
+    ORDER BY (confidence * (1 + MIN(recall_count, 5))) DESC -- step 6: capped like topDecisions; recall_count is honest (injection-only) since step 7, but unbounded popularity still compounds
     LIMIT ?
   `).all(project, fetchLimit) as MemoryRow[];
 

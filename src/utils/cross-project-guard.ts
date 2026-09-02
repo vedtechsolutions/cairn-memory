@@ -147,7 +147,9 @@ export function passesCrossProjectGuard(
 }
 
 /**
- * Scoping filter for the ACTIVE `cairn_recall` tool — deliberately MORE
+ * Scoping filter for EXPLICIT-project `cairn_recall` calls (bare recall
+ * defaults to the session's project but deliberately skips this guard so
+ * every global stays reachable, as before scope symmetry) — deliberately MORE
  * permissive than `passesCrossProjectGuard` (which is tuned for conservative
  * passive injection). The agent explicitly queried, so a general global lesson
  * SHOULD surface. The only global we block is one that carries ANOTHER

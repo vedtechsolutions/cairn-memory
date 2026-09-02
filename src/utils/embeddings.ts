@@ -11,6 +11,7 @@ import {
 } from '../constants/embedding-models.js';
 import { assertManifestPinned, verifyModelPackage } from './artifact-verification.js';
 import { createVerifiedLoader, type VerifiedLoader } from './verified-loader.js';
+import { ENV } from '../constants/env.js';
 
 /** Which side of asymmetric retrieval an input belongs to. Symmetric models
  *  (minilm-l6) ignore the distinction; prefix models (nomic, gemma) require
@@ -24,14 +25,14 @@ export type EmbeddingRole = 'query' | 'document';
  *  the backfill worker re-embeds mismatched rows (FTS+RRF carry retrieval
  *  during the transition). */
 export function resolveEmbeddingModel(
-  envValue: string | undefined = process.env.CAIRN_EMBEDDING_MODEL,
+  envValue: string | undefined = process.env[ENV.EMBEDDING_MODEL],
 ): EmbeddingModelConfig {
   const key = envValue?.trim() || DEFAULT_EMBEDDING_MODEL_KEY;
   // Object.hasOwn: inherited properties (__proto__, constructor, toString)
   // must get the unknown-key error, not fall through as truthy "configs".
   if (!Object.hasOwn(EMBEDDING_MODELS, key)) {
     throw new Error(
-      `unknown CAIRN_EMBEDDING_MODEL "${key}" — valid keys: ${Object.keys(EMBEDDING_MODELS).join(', ')}`,
+      `unknown ${ENV.EMBEDDING_MODEL} "${key}" — valid keys: ${Object.keys(EMBEDDING_MODELS).join(', ')}`,
     );
   }
   return EMBEDDING_MODELS[key];
@@ -120,8 +121,23 @@ function getLoader(): VerifiedLoader<Extractor> {
 
 const getPipeline = (): Promise<Extractor> => getLoader().get();
 
+/** Hermetic-test override (step 5): lets MCP-level tests exercise the
+ *  hybrid path without loading a real model. Production never sets it.
+ *  The seam is TOTAL: while hooks are set, no code path may fall through
+ *  to the real pipeline — a hooked run that reaches an unprovided member
+ *  throws instead of silently downloading a model. */
+let embeddingTestHooks: {
+  isReady: () => boolean;
+  embedQuery: (text: string) => Promise<Float32Array>;
+  embed?: (text: string) => Promise<Float32Array>;
+} | undefined;
+export function setEmbeddingTestHooks(hooks: typeof embeddingTestHooks): void {
+  embeddingTestHooks = hooks;
+}
+
 /** Check if the embedding model is loaded (non-blocking) */
 export function isEmbeddingReady(): boolean {
+  if (embeddingTestHooks) return embeddingTestHooks.isReady();
   return loader?.isReady() ?? false;
 }
 
@@ -129,6 +145,10 @@ export function isEmbeddingReady(): boolean {
  *  (documents by default); output is truncated + renormalized to the model's
  *  registry dim for MRL models. */
 export async function embed(text: string, role: EmbeddingRole = 'document'): Promise<Float32Array> {
+  if (embeddingTestHooks) {
+    if (embeddingTestHooks.embed) return embeddingTestHooks.embed(text);
+    throw new Error('embedding test hooks are set but embed() was not provided — a hooked test must never reach the real pipeline');
+  }
   const config = getEmbeddingModelConfig();
   const extractor = await getPipeline();
   const output = await extractor(buildEmbeddingInput(config, role, text), { pooling: 'mean', normalize: true });
@@ -137,6 +157,7 @@ export async function embed(text: string, role: EmbeddingRole = 'document'): Pro
 
 /** Embed a retrieval query (asymmetric prefix models need the query side). */
 export function embedQuery(text: string): Promise<Float32Array> {
+  if (embeddingTestHooks) return embeddingTestHooks.embedQuery(text);
   return embed(text, 'query');
 }
 

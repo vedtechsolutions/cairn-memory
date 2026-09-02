@@ -316,9 +316,21 @@ function persistMutationSequence(db: Database.Database, project: string, sequenc
   `).run(mutationSequenceKey(project), String(sequence));
 }
 
+/** Evidence-retention window bounds. Enforced in four places, two of which
+ *  also render the range into an error message — they must not drift. */
+export const EVIDENCE_RETENTION_DAYS = { MIN: 1, MAX: 30, DEFAULT: 30 } as const;
+
+const evidenceDaysOutOfRange = (days: number): boolean =>
+  !Number.isInteger(days)
+  || days < EVIDENCE_RETENTION_DAYS.MIN
+  || days > EVIDENCE_RETENTION_DAYS.MAX;
+
+const evidenceRangeMessage = (): string =>
+  `evidence retention must be ${EVIDENCE_RETENTION_DAYS.MIN}..${EVIDENCE_RETENTION_DAYS.MAX} days`;
+
 function persistEvidenceDays(db: Database.Database, project: string, days: number): void {
-  if (!Number.isInteger(days) || days < 1 || days > 30) {
-    throw new Error('evidence retention must be 1..30 days');
+  if (evidenceDaysOutOfRange(days)) {
+    throw new Error(evidenceRangeMessage());
   }
   db.prepare(`
     INSERT INTO maintenance_meta (key, value) VALUES (?, ?)
@@ -1080,9 +1092,9 @@ export class GovernanceRepository {
     projectDays?: Readonly<Record<string, number>>;
     nowMs?: number;
   } = {}): GovernanceEvidenceCleanupResult {
-    const defaultDays = options.evidenceDays ?? 30;
-    if (!Number.isInteger(defaultDays) || defaultDays < 1 || defaultDays > 30) {
-      throw new Error('evidence retention must be 1..30 days');
+    const defaultDays = options.evidenceDays ?? EVIDENCE_RETENTION_DAYS.DEFAULT;
+    if (evidenceDaysOutOfRange(defaultDays)) {
+      throw new Error(evidenceRangeMessage());
     }
     const nowMs = options.nowMs ?? Date.now();
     const projects = this.db.prepare(`
@@ -1095,7 +1107,7 @@ export class GovernanceRepository {
     const transaction = this.db.transaction(() => {
       for (const { project } of projects) {
         const days = options.projectDays?.[project] ?? persistedEvidenceDays(this.db, project) ?? defaultDays;
-        if (!Number.isInteger(days) || days < 1 || days > 30) {
+        if (evidenceDaysOutOfRange(days)) {
           throw new Error(`invalid evidence retention for project ${project}`);
         }
         const cutoff = new Date(nowMs - days * 86_400_000).toISOString();

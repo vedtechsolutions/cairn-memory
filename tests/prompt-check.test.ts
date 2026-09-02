@@ -59,11 +59,13 @@ describe('extractDecision (real implementation)', () => {
     assert.equal(decision, "let's use SQLite because we need atomic writes");
   });
 
-  it('truncates decisions longer than 200 chars with an ellipsis', () => {
+  it('rejects a single run-on decision sentence over the cap — never truncates', () => {
+    // INVERTED at remediation step 1: this test previously pinned
+    // `slice(0,197)+'...'`, the exact mechanism that persisted 88 unrelated
+    // prompt-prefix fragments in the live store. Replaying those rows showed
+    // sentence-slicing still stored mid-thought junk, so an over-cap
+    // sentence is rejected outright: capture whole, or capture nothing.
     const long = `we decided to use PostgreSQL because ${'the requirements demand it and '.repeat(10)}`;
-    const decision = extractDecision(long);
-    assert.ok(decision);
-    assert.equal(decision.length, 200);
-    assert.ok(decision.endsWith('...'));
+    assert.equal(extractDecision(long), null);
   });
 });

@@ -2,8 +2,9 @@ import { readFileSync, existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { type ContextMode } from '../constants/index.js';
+import { FILES } from '../constants/paths.js';
 
-const STATE_PATH = join(homedir(), '.claude', 'cairn-state.json');
+const STATE_PATH = join(homedir(), '.claude', FILES.CLIENT_STATE);
 
 interface CairnState {
   mode: ContextMode;

@@ -15,6 +15,10 @@
 
 import { ERR } from './errors.js';
 
+/** Shortest id prefix a CAS token may carry. The check and the message it
+ *  throws must move together, so both read it from here. */
+export const TOKEN_ID_PREFIX_MIN_CHARS = 8;
+
 export interface BlockToken {
   code: string;
   idPrefix: string;
@@ -87,7 +91,9 @@ export function parseBlocks(text: string): ParsedBlock[] {
     if (tokened) {
       const [, code, idPrefix, revisionRaw, contentRaw] = tokened;
       if (!TOKEN_CODES.has(code)) throw malformed(`unknown kind code "${code}"`);
-      if (idPrefix.length < 8) throw malformed('token id prefix shorter than 8 chars');
+      if (idPrefix.length < TOKEN_ID_PREFIX_MIN_CHARS) {
+        throw malformed(`token id prefix shorter than ${TOKEN_ID_PREFIX_MIN_CHARS} chars`);
+      }
       const revision = Number(revisionRaw);
       if (!Number.isSafeInteger(revision) || revision < 1) throw malformed('token revision must be a positive integer');
       const content = parseJsonStringOrNull(contentRaw, 'content');

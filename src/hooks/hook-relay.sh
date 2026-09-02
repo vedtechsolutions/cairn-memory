@@ -1,29 +1,40 @@
 #!/usr/bin/env bash
-# Cairn Hook Relay — thin client for the hook socket (embedded in MCP server).
+# Waykeep Hook Relay — thin client for the hook socket (embedded in MCP server).
 # Fire-and-forget for async hooks; waits for response on sync hooks.
 # Usage: bash /opt/cairn/dist/src/hooks/hook-relay.sh [--client <name>] <hook-type>
 
-SOCK="$HOME/.cairn/hook-daemon.sock"
+SCRIPT_DIR="${0%/*}"
+
+# Namespace-derived names. This script ships beside identity.sh (written by
+# scripts/gen-identity.mjs); without it we cannot know the socket path, so we
+# fail open the way every other error path here does rather than guess.
+# shellcheck source=/dev/null
+if [ -r "$SCRIPT_DIR/identity.sh" ]; then
+  . "$SCRIPT_DIR/identity.sh"
+else
+  exit 0
+fi
+
+SOCK="$HOME/$WK_DATA_DIR/$WK_SOCKET_FILE"
 
 # Optional declared client identity (codex, …). Forwarded as a header on the
-# socket path and as CAIRN_CLIENT env on direct-node paths; claude when absent.
+# socket path and as the client env var on direct-node paths; claude when absent.
 CLIENT=""
 if [ "$1" = "--client" ] && [ -n "$2" ]; then
   CLIENT="$2"
   shift 2
 fi
 CLIENT_HDR=()
-[ -n "$CLIENT" ] && CLIENT_HDR=(-H "X-Cairn-Client: $CLIENT")
+[ -n "$CLIENT" ] && CLIENT_HDR=(-H "$WK_CLIENT_HEADER: $CLIENT")
 
 HOOK_TYPE="$1"
-SCRIPT_DIR="${0%/*}"
 
 # Buffer stdin to a temp file (M1): a shell variable strips NUL bytes and
 # trailing newlines while double-buffering up to 256 KB in memory; a file
 # preserves the exact bytes and lets the fallback replay the same input
 # after a failed socket attempt. curl must use --data-binary — plain -d
 # strips newlines from the payload.
-INPUT_FILE=$(mktemp "${TMPDIR:-/tmp}/cairn-hook-XXXXXX") || exit 0
+INPUT_FILE=$(mktemp "${TMPDIR:-/tmp}/${WK_TMP_PREFIX}-XXXXXX") || exit 0
 trap 'rm -f "$INPUT_FILE"' EXIT
 cat > "$INPUT_FILE"
 
@@ -45,7 +56,7 @@ is_standalone() {
 }
 
 if is_standalone "$HOOK_TYPE"; then
-  CAIRN_CLIENT="$CLIENT" node "$SCRIPT_DIR/$HOOK_TYPE.js" < "$INPUT_FILE"
+  env "$WK_ENV_CLIENT=$CLIENT" node "$SCRIPT_DIR/$HOOK_TYPE.js" < "$INPUT_FILE"
   exit 0
 fi
 
@@ -86,7 +97,7 @@ if [ -S "$SOCK" ]; then
     (
       HTTP_CODE=$(curl -s --max-time 3 --unix-socket "$SOCK" "http://localhost/$HOOK_TYPE" -H "Content-Type: application/json" "${CLIENT_HDR[@]}" --data-binary @"$INPUT_FILE" -o /dev/null -w '%{http_code}' 2>/dev/null)
       if [ "$?" = "7" ] || [ "$HTTP_CODE" = "404" ] || [ "$HTTP_CODE" = "410" ]; then
-        CAIRN_CLIENT="$CLIENT" node "$SCRIPT_DIR/$HOOK_TYPE.js" < "$INPUT_FILE" >/dev/null 2>&1
+        env "$WK_ENV_CLIENT=$CLIENT" node "$SCRIPT_DIR/$HOOK_TYPE.js" < "$INPUT_FILE" >/dev/null 2>&1
       fi
       rm -f "$INPUT_FILE"
     ) &
@@ -99,11 +110,11 @@ fi
 # Sync hooks fall back to direct Node.js; async hooks do the same in the
 # background (capture must not vanish just because the daemon is down).
 if is_sync "$HOOK_TYPE"; then
-  [ "$HOOK_TYPE" != "governance-gate" ] && CAIRN_CLIENT="$CLIENT" node "$SCRIPT_DIR/$HOOK_TYPE.js" < "$INPUT_FILE"
+  [ "$HOOK_TYPE" != "governance-gate" ] && env "$WK_ENV_CLIENT=$CLIENT" node "$SCRIPT_DIR/$HOOK_TYPE.js" < "$INPUT_FILE"
 else
   trap - EXIT
   (
-    CAIRN_CLIENT="$CLIENT" node "$SCRIPT_DIR/$HOOK_TYPE.js" < "$INPUT_FILE" >/dev/null 2>&1
+    env "$WK_ENV_CLIENT=$CLIENT" node "$SCRIPT_DIR/$HOOK_TYPE.js" < "$INPUT_FILE" >/dev/null 2>&1
     rm -f "$INPUT_FILE"
   ) &
 fi

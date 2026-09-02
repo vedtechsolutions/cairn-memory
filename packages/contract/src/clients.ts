@@ -10,19 +10,21 @@
  * "who is allowed to".
  *
  * Canonical names are an OPEN set: the constants below are the values
- * Cairn ships adapters for, and integrators introduce new canonical
+ * Waykeep ships adapters for, and integrators introduce new canonical
  * names by registering an adapter — consumers must treat unknown names
  * as valid clients, not errors.
  */
+
+import { ENV_PREFIX, NAMESPACE } from './identity.js';
 
 export const CLIENT_CLAUDE = 'claude';
 export const CLIENT_CODEX = 'codex';
 export const CLIENT_UNKNOWN = 'unknown';
 
 /** Env var the relay sets for direct-node fallback hook processes. */
-export const CLIENT_ENV_VAR = 'CAIRN_CLIENT';
+export const CLIENT_ENV_VAR = `${ENV_PREFIX}_CLIENT` as const;
 
 /** HTTP header carrying declared identity on daemon-socket hook requests.
  *  Stored lowercase (Node's incoming-header form); emitters may send any
  *  casing — comparisons must be case-insensitive. */
-export const CLIENT_HEADER = 'x-cairn-client';
+export const CLIENT_HEADER = `x-${NAMESPACE}-client` as const;

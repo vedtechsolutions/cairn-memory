@@ -63,7 +63,7 @@ describe('Ebbinghaus Continuous Decay', () => {
     assert.ok(Math.abs(mem.confidence - 0.7) < 0.01, `recently recalled should not decay, got ${mem.confidence}`);
   });
 
-  it('should decay slower with higher recall count (spaced repetition)', () => {
+  it('decays identically regardless of recall count (step 7 — popularity is not durability)', () => {
     const oldDate = new Date();
     oldDate.setDate(oldDate.getDate() - 60);
 
@@ -82,10 +82,13 @@ describe('Ebbinghaus Continuous Decay', () => {
 
     const low = repo.findById('low-recall')!;
     const high = repo.findById('high-recall')!;
-    // high-recall has S = 30 * (1 + 10*0.3) = 120, so R = e^(-60/120) ≈ 0.607
-    // low-recall has S = 30, so R = e^(-60/30) = e^(-2) ≈ 0.135
-    assert.ok(high.confidence > low.confidence,
-      `high recall (${high.confidence}) should retain more than low recall (${low.confidence})`);
+    // Inverted by remediation step 7 (M5): stability once multiplied by
+    // (1 + recall_count × 0.3), so 10 recalls meant S 30→120 and the row
+    // barely decayed — exposure had become durability, and the popularity
+    // loop kept noise alive. S is now kind × source only; spaced repetition
+    // works through last_recalled moving the reference point, not the count.
+    assert.equal(high.confidence, low.confidence,
+      `equal-age rows must decay identically whatever their recall_count, got ${high.confidence} vs ${low.confidence}`);
   });
 
   it('should give source weight bonus to corrected memories', () => {

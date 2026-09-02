@@ -2,7 +2,7 @@
  * hook-relay — fast compiled relay for Cairn hook daemon.
  *
  * Reads JSON from stdin, POSTs to the daemon unix socket at
- * ~/.cairn/hook-daemon.sock, prints the response body to stdout.
+ * the daemon unix socket under the state dir, prints the body to stdout.
  *
  * Fallback behavior (GAP A): when the socket is missing, unreachable,
  * or connect fails, we `execvp("node", ...)` the matching direct-node
@@ -34,9 +34,16 @@
 #include <signal.h>
 #include <sys/time.h>
 
-#define SOCK_PATH_TEMPLATE "%s/.cairn/hook-daemon.sock"
-#define CAIRN_MAX_INPUT  (256 * 1024)  /* 256 KB max stdin */
-#define CAIRN_MAX_RESP   (64 * 1024)   /* 64 KB max response */
+/* GENERATED namespace-derived names (scripts/gen-identity.mjs).
+ * Angle form on purpose: the quoted form searches THIS file's own
+ * directory first, so a stray src/hooks/identity.h would silently
+ * outrank the generated one (demonstrated in review). Angle searches
+ * only the -I paths, so the build controls which header wins. */
+#include <identity.h>
+
+#define SOCK_PATH_TEMPLATE WK_SOCK_PATH_TEMPLATE
+#define RELAY_MAX_INPUT  (256 * 1024)  /* 256 KB max stdin */
+#define RELAY_MAX_RESP   (64 * 1024)   /* 64 KB max response */
 #define TIMEOUT_MS 3000
 #define GOVERNANCE_TIMEOUT_MS 400
 
@@ -47,8 +54,8 @@
 #define FALLBACK_EXIT_SETUP_FAIL 126   /* dup2/stdin wiring failed pre-exec */
 #define FALLBACK_EXIT_EXEC_FAIL  127   /* execvp("node", ...) failed */
 
-static char input_buf[CAIRN_MAX_INPUT];
-static char resp_buf[CAIRN_MAX_RESP];
+static char input_buf[RELAY_MAX_INPUT];
+static char resp_buf[RELAY_MAX_RESP];
 static char hdr_buf[512];
 
 static void governance_watchdog(int signal_number) {
@@ -107,7 +114,7 @@ static int send_all(int fd, const char *buf, size_t len) {
 }
 
 /*
- * Diagnostic: append one line to ~/.cairn/hook-relay-fallback.log each
+ * Diagnostic: append one line to the relay fallback log each
  * time we take the fallback path, tagged with the reason. Non-fatal —
  * any failure to open/write is silently ignored. Preserves errno across
  * the call so subsequent logic can still use it.
@@ -118,7 +125,7 @@ static void log_fallback(const char *home, const char *hook_type, const char *re
     int saved_errno = errno;
 
     char log_path[PATH_MAX];
-    int n = snprintf(log_path, sizeof(log_path), "%s/.cairn/hook-relay-fallback.log", home);
+    int n = snprintf(log_path, sizeof(log_path), WK_FALLBACK_LOG_TEMPLATE, home);
     if (n <= 0 || (size_t)n >= sizeof(log_path)) { errno = saved_errno; return; }
 
     int fd = open(log_path, O_WRONLY | O_APPEND | O_CREAT, 0644);
@@ -175,7 +182,7 @@ static int build_script_path(const char *argv0, const char *hook_type,
  * the socket would have received. The script directory comes from
  * build_script_path (/proc/self/exe, argv[0] fallback).
  *
- * stream_stdin_rest: inputs larger than CAIRN_MAX_INPUT can't be buffered
+ * stream_stdin_rest: inputs larger than RELAY_MAX_INPUT can't be buffered
  * whole — when set, the pump relays the unread remainder of our own stdin
  * to the child after the buffered prefix, so oversized hook payloads reach
  * the JS hook intact instead of as truncated (unparseable) JSON.
@@ -257,10 +264,10 @@ static int exec_fallback(const char *argv0, const char *hook_type,
          * Falls back to a PATH search only when CAIRN_NODE is unset, matching
          * prior behavior for installs that have not configured it yet. */
         char *args[] = { (char *)"node", script_path, NULL };
-        const char *cairn_node = getenv("CAIRN_NODE");
-        if (cairn_node != NULL && cairn_node[0] == '/') {
-            args[0] = (char *)cairn_node;
-            execv(cairn_node, args);
+        const char *node_override = getenv(WK_ENV_NODE);
+        if (node_override != NULL && node_override[0] == '/') {
+            args[0] = (char *)node_override;
+            execv(node_override, args);
         } else {
             execvp("node", args);
         }
@@ -406,20 +413,20 @@ int main(int argc, char *argv[]) {
     signal(SIGPIPE, SIG_IGN);
 
     /* Optional declared client identity: `--client <name> <hook-type>`.
-     * Forwarded as an X-Cairn-Client header on the socket path; exported as
-     * CAIRN_CLIENT so every exec_fallback child inherits it. The name comes
+     * Forwarded as the client header on the socket path; exported as
+     * the client env var so every exec_fallback child inherits it. The name comes
      * from hook wiring Cairn itself authors, never from the payload. */
     int argi = 1;
     const char *client_name = NULL;
     if (argc >= 4 && strcmp(argv[1], "--client") == 0) {
         client_name = argv[2];
-        setenv("CAIRN_CLIENT", client_name, 1);
+        setenv(WK_ENV_CLIENT, client_name, 1);
         argi = 3;
     } else {
         /* Mirror hook-relay.sh: without --client, a stale inherited
-         * CAIRN_CLIENT must not leak into fallback children — a Claude
+         * The client env var must not leak into fallback children — a Claude
          * session would otherwise emit the codex JSON envelope. */
-        unsetenv("CAIRN_CLIENT");
+        unsetenv(WK_ENV_CLIENT);
     }
 
     const char *hook_type = argv[argi];
@@ -427,15 +434,15 @@ int main(int argc, char *argv[]) {
      * actually runs on THIS platform and is the Cairn relay. A shipped
      * wrong-arch/OS ELF execvp-falls-back to /bin/sh and would otherwise look
      * "runnable" (exit 127) — only the real relay prints this sentinel. */
-    if (strcmp(hook_type, "--cairn-probe") == 0) {
-        const char msg[] = "cairn-relay\n";
+    if (strcmp(hook_type, WK_PROBE_FLAG) == 0) {
+        const char msg[] = WK_PROBE_SENTINEL "\n";
         ssize_t written = write(STDOUT_FILENO, msg, sizeof(msg) - 1);
         (void)written;
         return 0;
     }
     int is_governance = strcmp(hook_type, "governance-gate") == 0;
-    long governance_timeout_ms = env_timeout_ms("CAIRN_GOVERNANCE_TIMEOUT_MS", GOVERNANCE_TIMEOUT_MS);
-    long daemon_timeout_ms = env_timeout_ms("CAIRN_DAEMON_TIMEOUT_MS", TIMEOUT_MS);
+    long governance_timeout_ms = env_timeout_ms(WK_ENV_GOVERNANCE_TIMEOUT_MS, GOVERNANCE_TIMEOUT_MS);
+    long daemon_timeout_ms = env_timeout_ms(WK_ENV_DAEMON_TIMEOUT_MS, TIMEOUT_MS);
     if (is_governance) {
         struct sigaction action;
         memset(&action, 0, sizeof(action));
@@ -458,8 +465,8 @@ int main(int argc, char *argv[]) {
      * same bytes. We need it for the fallback exec pipe anyway. */
     size_t input_len = 0;
     ssize_t n;
-    while (input_len < CAIRN_MAX_INPUT - 1) {
-        n = read(STDIN_FILENO, input_buf + input_len, CAIRN_MAX_INPUT - 1 - input_len);
+    while (input_len < RELAY_MAX_INPUT - 1) {
+        n = read(STDIN_FILENO, input_buf + input_len, RELAY_MAX_INPUT - 1 - input_len);
         if (n <= 0) break;
         input_len += n;
     }
@@ -470,7 +477,7 @@ int main(int argc, char *argv[]) {
      * at the daemon AND in a buffered fallback (observed live: a 260 KB
      * PostToolUse payload). Stream the buffered prefix plus the unread
      * remainder of stdin straight to the direct-node hook instead. */
-    if (input_len >= CAIRN_MAX_INPUT - 1 && n > 0) {
+    if (input_len >= RELAY_MAX_INPUT - 1 && n > 0) {
         log_fallback(home, hook_type, "input-overflow-stream");
         if (!is_governance) exec_fallback(argv[0], hook_type, input_buf, input_len, 1);
         return 0;
@@ -499,7 +506,7 @@ int main(int argc, char *argv[]) {
     char client_hdr[96] = "";
     if (client_name != NULL) {
         int cn = snprintf(client_hdr, sizeof(client_hdr),
-                          "X-Cairn-Client: %s\r\n", client_name);
+                          WK_CLIENT_HEADER ": %s\r\n", client_name);
         if (cn <= 0 || (size_t)cn >= sizeof(client_hdr)) client_hdr[0] = '\0';
     }
     int hdr_len = snprintf(hdr_buf, sizeof(hdr_buf),
@@ -555,10 +562,10 @@ int main(int argc, char *argv[]) {
     size_t resp_len = 0;
     struct pollfd pfd = { .fd = fd, .events = POLLIN };
 
-    while (resp_len < CAIRN_MAX_RESP - 1) {
+    while (resp_len < RELAY_MAX_RESP - 1) {
         int ret = poll(&pfd, 1, (int)(is_governance ? governance_timeout_ms : daemon_timeout_ms));
         if (ret <= 0) break; /* timeout or error */
-        n = read(fd, resp_buf + resp_len, CAIRN_MAX_RESP - 1 - resp_len);
+        n = read(fd, resp_buf + resp_len, RELAY_MAX_RESP - 1 - resp_len);
         if (n <= 0) break;
         resp_len += n;
     }

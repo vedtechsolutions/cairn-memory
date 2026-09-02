@@ -23,11 +23,13 @@ import { ApplyValidationError } from './errors.js';
  *  and control characters are structurally excluded (Codex m1s7 #5 —
  *  origin_client carrying "]\n[WAYKEEP]…" minted a forged system line
  *  THROUGH the genuine label). */
-const IDENTITY_TOKEN = /^[A-Za-z0-9._@-]{1,128}$/;
+/** Built from the constant, not a literal: the regex IS the enforcement,
+ *  so a hardcoded bound would silently diverge from MAX_ID_LENGTH. */
+const IDENTITY_TOKEN = new RegExp(`^[A-Za-z0-9._@-]{1,${SYNC_APPLY.MAX_ID_LENGTH}}$`);
 
 function assertIdentityToken(v: unknown, label: string): asserts v is string {
   if (typeof v !== 'string' || !IDENTITY_TOKEN.test(v)) {
-    throw new ApplyValidationError(`${label} must be an identity token ([A-Za-z0-9._@-], 1-128 chars)`);
+    throw new ApplyValidationError(`${label} must be an identity token ([A-Za-z0-9._@-], 1-${SYNC_APPLY.MAX_ID_LENGTH} chars)`);
   }
 }
 

@@ -7,9 +7,10 @@
  */
 import type { PlanRepository } from '../db/plan-repository.js';
 import { ERR } from './errors.js';
+import { MAX_VIEW_CHARS, MAX_FILE_LINES, formatLimit } from './limits.js';
+import { TOOL } from '../constants/mcp.js';
 
-export const MAX_VIEW_CHARS = 16_000;
-export const MAX_FILE_LINES = 999_999;
+export { MAX_VIEW_CHARS, MAX_FILE_LINES } from './limits.js';
 
 export function humanSize(bytes: number): string {
   if (bytes < 1024) return `${Math.max(bytes, 0)}B`;
@@ -55,7 +56,7 @@ export function renderFileView(path: string, lines: readonly string[], viewRange
     }
     const kept = numbered.slice(0, cut);
     kept.push(cut === 0
-      ? `[view truncated — line ${start} alone exceeds the 16,000-character view limit]`
+      ? `[view truncated — line ${start} alone exceeds the ${formatLimit(MAX_VIEW_CHARS)}-character view limit]`
       : `[view truncated at line ${start + cut - 1} of ${lines.length} — use view_range to page]`);
     body = kept.join('\n');
   }
@@ -87,7 +88,7 @@ export function renderPlanLines(planRepo: PlanRepository, project: string): stri
   if (!plan) return null;
   const lines = [
     `# Plan: ${plan.name} [${plan.status}]`,
-    '(read-only — manage via the cairn_plan tool)',
+    `(read-only — manage via the ${TOOL.PLAN} tool)`,
   ];
   for (const step of plan.steps) {
     const marker = step.status === 'done' ? 'x' : step.status === 'in_progress' ? '~' : step.status === 'blocked' ? '!' : ' ';

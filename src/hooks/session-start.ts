@@ -24,6 +24,7 @@ import { createHookDbClient } from './shared/db-client.js';
 import { handleSessionStart } from './handlers/session-start-handler.js';
 import { recordTelemetry } from './shared/hook-telemetry.js';
 import { appendFileSync } from 'node:fs';
+import { ENV } from '../constants/env.js';
 
 const _startTime = Date.now();
 const _diagLog = (msg: string) => {
@@ -32,7 +33,7 @@ const _diagLog = (msg: string) => {
 
 try {
   const input = readStdinJson<SessionStartInput>();
-  const dbPath = process.env.CAIRN_DB_PATH ?? undefined;
+  const dbPath = process.env[ENV.DB_PATH] ?? undefined;
   const client = createHookDbClient(dbPath);
 
   const result = handleSessionStart(input, client);

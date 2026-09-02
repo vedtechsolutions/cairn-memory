@@ -9,6 +9,7 @@ import { createHookDbClient } from './shared/db-client.js';
 import { projectId } from '../utils/project-id.js';
 import { recordTelemetry } from './shared/hook-telemetry.js';
 import { TOKEN_BUDGET } from '../constants/index.js';
+import { ENV } from '../constants/env.js';
 
 const _startTime = Date.now();
 try {
@@ -19,7 +20,7 @@ try {
     process.exit(0);
   }
 
-  const dbPath = process.env.CAIRN_DB_PATH ?? undefined;
+  const dbPath = process.env[ENV.DB_PATH] ?? undefined;
   const client = createHookDbClient(dbPath);
   const project = projectId(input.cwd);
 

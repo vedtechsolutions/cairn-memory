@@ -11,6 +11,7 @@ import { getEmbeddingModelConfig } from '../../utils/embeddings.js';
 import { formatTimestamp } from '../../utils/time.js';
 import { STATS_ACTIONS, HEALTH, CONSOLIDATION, type ContextMode } from '../../constants/index.js';
 import { isCritical } from './helpers.js';
+import { TOOL } from '../../constants/mcp.js';
 
 type ContextModeFn = () => ContextMode;
 
@@ -25,7 +26,7 @@ export function registerStatsTools(
   getMode: ContextModeFn,
 ): void {
   server.registerTool(
-    'cairn_stats',
+    TOOL.STATS,
     {
       title: 'Memory Statistics',
       description: 'View memory health, distributions, and analytics. Actions: summary, health, by_kind, by_project, velocity.',
@@ -98,7 +99,7 @@ export function registerStatsTools(
             const rate = impactStats.impactful / impactStats.surfaced * 100;
             lines.push(`Impact: ${impactStats.impactful}/${impactStats.surfaced} surfaced memories had positive impact (${rate.toFixed(0)}%)`);
             if (impactStats.zero_impact > 0) {
-              lines.push(`  ⚠ ${impactStats.zero_impact} memories surfaced ${HEALTH.ZERO_IMPACT_MIN_SURFACES}+ times with zero impact — review with cairn_export`);
+              lines.push(`  ⚠ ${impactStats.zero_impact} memories surfaced ${HEALTH.ZERO_IMPACT_MIN_SURFACES}+ times with zero impact — review with ${TOOL.EXPORT}`);
             }
           }
         } catch {

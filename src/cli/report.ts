@@ -12,9 +12,11 @@ import { existsSync } from 'node:fs';
 import { resolveDbPath } from '../db/db-path.js';
 import { ROLLUP } from '../constants/index.js';
 import { computeRollupReport } from '../db/telemetry-rollup.js';
+import { ENV } from '../constants/env.js';
+import { CONFIG_DISPLAY_PATH } from '../constants/paths.js';
 
 export async function runReport(days: number = ROLLUP.REPORT_DAYS): Promise<number> {
-  const path = resolveDbPath(process.env.CAIRN_DB_PATH);
+  const path = resolveDbPath(process.env[ENV.DB_PATH]);
   if (!existsSync(path)) {
     console.log(`waykeep report — no database yet at ${path} (nothing recorded).`);
     return 0;
@@ -73,7 +75,7 @@ export async function runReport(days: number = ROLLUP.REPORT_DAYS): Promise<numb
     console.log('  Notes: impact-proxy is an estimate, not a measurement; days are UTC.');
     console.log('  Not counted: governance policy nudges, and async-hook text the agent');
     console.log('  never receives (a known delivery gap, tracked separately).');
-    console.log('  Disable recording with {"report":{"rollup":false}} in ~/.cairn/config.json or CAIRN_ROLLUP=0.');
+    console.log(`  Disable recording with {"report":{"rollup":false}} in ${CONFIG_DISPLAY_PATH} or ${ENV.ROLLUP}=0.`);
     return 0;
   } finally {
     db.close();

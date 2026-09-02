@@ -5,6 +5,7 @@ import { deriveProjectIdentityTokens } from '../../../utils/cross-project-guard.
 import { isMetaGoal } from '../transcript-parser.js';
 import { basename, dirname, extname } from 'node:path';
 import type { BriefingContext } from './types.js';
+import { ENV } from '../../../constants/env.js';
 
 /** Generic path segments the fingerprint path already ignores; mirror it here.
  *  The `opt|usr|var|home|root|tmp|etc` roots and `.claude|worktrees` segments
@@ -171,7 +172,7 @@ export function buildBriefingQueryFp(ctx: BriefingContext, plan: Plan | null): C
  * CAIRN_QUERY_CWD overrides process.cwd() so tests pin a stable value.
  */
 function cwdSignalTokens(): string[] {
-  const cwdBase = basename(process.env.CAIRN_QUERY_CWD ?? process.cwd()).toLowerCase();
+  const cwdBase = basename(process.env[ENV.QUERY_CWD] ?? process.cwd()).toLowerCase();
   if (cwdBase.length < 3 || cwdBase.length > 40 || BRIEFING_GENERIC_SEGMENTS.has(cwdBase)) return [];
   return cwdBase.split(/[-_.]/).filter(p => p.length >= 3 && !BRIEFING_GENERIC_SEGMENTS.has(p));
 }

@@ -22,6 +22,7 @@ import { isSystemContent } from '../utils/validation.js';
 import { journalUpsertForId, retireIdsByInvalidation, syncBoundIds } from '../db/memory-repository/journal.js';
 import { computeRecallPrecision } from '../utils/prediction.js';
 import { findConsolidationCandidates, mergedConfidence, mergedTags } from '../utils/consolidation.js';
+import { ENV } from '../constants/env.js';
 
 export interface SessionQuality {
   errorCount: number;
@@ -40,7 +41,7 @@ export interface SessionQuality {
 const _startTime = Date.now();
 try {
   const input = readStdinJson<SessionEndInput>();
-  const dbPath = process.env.CAIRN_DB_PATH ?? undefined;
+  const dbPath = process.env[ENV.DB_PATH] ?? undefined;
   const client = createHookDbClient(dbPath);
 
   const project = projectId(input.cwd);

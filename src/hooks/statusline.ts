@@ -21,6 +21,7 @@ import {
   type ContextMode,
 } from '../constants/index.js';
 import { projectId } from '../utils/project-id.js';
+import { ENV } from '../constants/env.js';
 
 interface StatusLineInput {
   session_id: string;
@@ -79,7 +80,7 @@ try {
   let display = `Waykeep: ${mode} | ${freeUntilCompact}% free`;
 
   if (input.cwd) {
-    const dbPath = process.env.CAIRN_DB_PATH ?? undefined;
+    const dbPath = process.env[ENV.DB_PATH] ?? undefined;
     const db = openReadOnly(dbPath);
     if (db) {
       try {

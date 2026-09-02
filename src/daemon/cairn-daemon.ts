@@ -23,8 +23,9 @@ import { ensureCairnDirSecure, isOwnerOnly } from '../mcp/socket-ownership.js';
 import { assertManifestPinned } from '../utils/artifact-verification.js';
 import { warmupEmbeddings, getEmbeddingModelConfig } from '../utils/embeddings.js';
 import { isRerankEnabled, resolveRerankerModel, warmupReranker } from '../utils/reranker.js';
+import { ENV } from '../constants/env.js';
 
-const DB_PATH = process.env.CAIRN_DB_PATH ?? undefined;
+const DB_PATH = process.env[ENV.DB_PATH] ?? undefined;
 /** Retry cadence while a legacy embedded owner still holds the socket; the
  *  daemon waits for it to exit rather than displacing it. */
 const CLAIM_RETRY_INTERVAL_MS = 10_000;
@@ -77,7 +78,7 @@ async function main(): Promise<void> {
   // quiescent while hooks are live via seen-marker dedup). Standalone
   // daemon only; CAIRN_TAILER=0 disables all adapter workers.
   const workers: { name: string; handle: { stop(): void } }[] = [];
-  if (process.env.CAIRN_TAILER !== '0') {
+  if (process.env[ENV.TAILER] !== '0') {
     for (const set of ADAPTER_WORKERS) {
       for (const start of set.workers) {
         workers.push({ name: set.name, handle: start({ ...client, cache }) });

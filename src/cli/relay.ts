@@ -11,14 +11,15 @@
 import { existsSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
+import { RELAY_PROBE_FLAG, RELAY_PROBE_SENTINEL } from 'waykeep-contract';
 
-/** Bounds the execability probe below; the relay answers `--cairn-probe`
+/** Bounds the execability probe below; the relay answers the probe flag
  *  immediately (before reading stdin or touching the socket), so this is only
  *  a scheduling safety net. */
 const PROBE_TIMEOUT_MS = 2000;
-const PROBE_ARG = '--cairn-probe';
-/** Sentinel the real relay writes to stdout for `--cairn-probe`. */
-const PROBE_SENTINEL = 'cairn-relay';
+const PROBE_ARG: string = RELAY_PROBE_FLAG;
+/** Sentinel the real relay writes to stdout for the probe flag. */
+const PROBE_SENTINEL: string = RELAY_PROBE_SENTINEL;
 
 export interface RelayInvocation {
   kind: 'binary' | 'shell';

@@ -9,13 +9,10 @@
  */
 import type Database from 'better-sqlite3';
 import { ERR } from './errors.js';
+import { FREE_FORM_LIMITS } from './limits.js';
 import { renderFileView } from './view-renderer.js';
 
-export const FREE_FORM_LIMITS = {
-  FILE_BYTES: 65_536,
-  MAX_FILES: 256,
-  AGGREGATE_BYTES: 16 * 1024 * 1024,
-} as const;
+export { FREE_FORM_LIMITS } from './limits.js';
 
 /** Escape LIKE wildcards for use with `ESCAPE '\'` — base64url project
  *  segments legitimately contain `_`, which LIKE treats as a wildcard. */
