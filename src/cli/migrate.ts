@@ -170,10 +170,9 @@ export async function runMigrate(opts: MigrateOptions = {}): Promise<number> {
       console.log(`  moved a pre-existing ${currentDb} aside to ${asideBase}`);
     }
 
-    // WAL-safe online backup from a READ-ONLY source to a PRIVATE, unpublished stage
-    // path. Its random name is known to nothing external, so the copy's content is stable
-    // through verification — closing the race where a writer commits to the KNOWN target
-    // path between the backup and a post-hoc guard baseline (codex). Published atomically.
+    // WAL-safe online backup from a READ-ONLY source to a PRIVATE, unpublished stage path.
+    // Its random name is known to nothing external, so the copy is stable through
+    // verification — no writer can touch it (codex). Then published with one atomic rename.
     const stageDb = join(currentDir, `.migrating-${randomBytes(8).toString('hex')}.db`);
     const cleanupStage = (): void => {
       for (const s of DB_SUFFIXES) { try { unlinkSync(stageDb + s); } catch { /* not present */ } }
@@ -183,12 +182,14 @@ export async function runMigrate(opts: MigrateOptions = {}): Promise<number> {
       const src = new Database(legacyDb, { readonly: true });
       try { await src.backup(stageDb); } finally { src.close(); }
 
-      // Collapse the stage to a SINGLE self-contained file: `.backup()` inherits the
-      // source's WAL mode, so opening the copy spawns -wal/-shm sidecars. A rollback
-      // journal checkpoints all content into the main file and drops them, so the atomic
-      // rename publishes ONE complete inode, nothing orphaned (the daemon re-enables WAL).
+      // Collapse the stage to a SINGLE self-contained file: `.backup()` inherits WAL mode,
+      // so opening the copy spawns -wal/-shm. A rollback journal checkpoints all content in
+      // and drops them, so the atomic rename publishes ONE inode (daemon re-enables WAL).
       const collapse = new Database(stageDb);
-      try { collapse.pragma('journal_mode = DELETE'); } finally { collapse.close(); }
+      try {
+        const mode = String(collapse.pragma('journal_mode = DELETE', { simple: true })).toLowerCase();
+        if (mode !== 'delete') throw new Error(`stage journal_mode is '${mode}', expected 'delete'`);
+      } finally { collapse.close(); }
 
       // Verify the private stage: integrity, foreign-key fidelity, per-table manifest.
       const verify = new Database(stageDb, { readonly: true });
@@ -200,10 +201,9 @@ export async function runMigrate(opts: MigrateOptions = {}): Promise<number> {
         cleanupStage();
         return 1;
       }
-      // Foreign-key fidelity: the copy must carry the IDENTICAL set of FK violations as
-      // the source (SQLite doesn't enforce FKs, so pre-existing dangling refs are normal
-      // data). The full (table, rowid, parent, fkid) set — not just the count — also
-      // catches a count-preserving swap (one orphan resolved, a different row orphaned).
+      // Foreign-key fidelity: the copy carries the IDENTICAL set of FK violations as the
+      // source (SQLite doesn't enforce FKs; pre-existing dangling refs are normal). The full
+      // (table,rowid,parent,fkid) set — not the count — catches a count-preserving swap too.
       const sourceFk = fkViolationKeys(legacyDb);
       const stageFk = fkViolationKeys(stageDb);
       if (sourceFk.length !== stageFk.length || sourceFk.some((k, i) => k !== stageFk[i])) {
@@ -227,18 +227,8 @@ export async function runMigrate(opts: MigrateOptions = {}): Promise<number> {
         console.log(`  note: ${stageFk.length} pre-existing foreign-key violation(s) in ${legacyDir} (SQLite does not enforce FKs) copied faithfully — identical set, not introduced by the migration.`);
       }
 
-      // The SOURCE must not have changed during backup+verify — data_version on the held
-      // source connection, as the LAST source read before we commit. (The stage needs no
-      // such guard: its path is private, so nothing external can have written to it.)
-      if ((guard.pragma('data_version', { simple: true }) as number) !== dataVersionBefore) {
-        console.error(`✗ migration ABORTED — the legacy store was modified during the copy (a writer committed a change, including a possibly value-only one). Stop all agents/daemons and re-run. No marker written; ${legacyDir} stays authoritative.`);
-        cleanupStage();
-        return 1;
-      }
-
-      // Durability, then ATOMIC PUBLISH: fsync the verified stage's content, then rename
-      // it into place — a single atomic step, so the published inode IS the verified one
-      // and no writer can have touched the target path before publication.
+      // Durability, then ATOMIC PUBLISH: fsync the verified stage, then rename it into
+      // place — the published inode IS the verified one; no writer saw the private path.
       try { chmodSync(stageDb, FS_PERMS.FILE); } catch { /* best-effort; the 0700 dir is the access boundary */ }
       try { fsyncStrict(stageDb); }
       catch (err) {
@@ -267,13 +257,23 @@ export async function runMigrate(opts: MigrateOptions = {}): Promise<number> {
       }
     }
 
-    // The published db entry + config entry must be durable before the marker flips
-    // authority (the db CONTENT is already durable from the stage fsync); a swallowed
-    // EIO/ENOSPC would let a crash persist the marker over a not-yet-durable rename.
+    // The published db + config dir entries must be durable before the marker (the db
+    // CONTENT already is, from the stage fsync) — a swallowed EIO/ENOSPC risks a hollow flip.
     try {
       fsyncStrict(currentDir);
     } catch (err) {
       console.error(`✗ migration ABORTED — could not durably fsync ${currentDir} (${(err as Error).message}). No marker written; ${legacyDir} stays authoritative.`);
+      return 1;
+    }
+
+    // The SOURCE guard's data_version, LAST db read before the marker — catches a commit
+    // to the legacy store any time since the stage was verified (through config + fsync).
+    // The verified copy needs no post-publish guard: while the marker is absent,
+    // `resolveStateRoot()` returns the LEGACY store, so no normal opener targets `currentDb`
+    // in the publish→marker window. (Residual: a writer committing in the ~µs before the
+    // atomic publish — closable only by an out-of-B2 store-use lock; legacy is preserved.)
+    if ((guard.pragma('data_version', { simple: true }) as number) !== dataVersionBefore) {
+      console.error(`✗ migration ABORTED — the legacy store was modified during the copy (a writer committed a change, including a possibly value-only one). Stop all agents/daemons and re-run. No marker written; ${legacyDir} stays authoritative.`);
       return 1;
     }
 
