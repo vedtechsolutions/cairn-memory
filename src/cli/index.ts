@@ -15,6 +15,8 @@ Usage:
   waykeep report           Tokens-saved report (--days=N, default 30)
   waykeep import           Migrate memories in (--from codex-memories|memory-md|claude-mem)
   waykeep pack             Manual repo-pack (export|import --dir P [--project ID | --global])
+  waykeep migrate          Migrate the home store ~/.cairn → ~/.waykeep and mark
+                           it authoritative (--dry-run to preview; restart after)
   waykeep migrate-project  Move rows from an old project id to the current one
                            (after a git remote rename; --dry-run to preview)
   waykeep init             Write the client config (--dry-run to preview,
@@ -150,6 +152,23 @@ switch (command) {
       }));
     } catch (err) {
       console.error(`waykeep import: failed — ${(err as Error).message}`);
+      process.exit(1);
+    }
+    break;
+  }
+  case 'migrate': {
+    try {
+      const { runMigrate } = await import('./migrate.js');
+      const args = process.argv.slice(3);
+      const unknown = args.find((a) => a.startsWith('--') && a !== '--dry-run');
+      if (unknown || args.some((a) => !a.startsWith('--'))) {
+        if (unknown) console.error(`migrate: unknown flag ${unknown}`);
+        console.error('usage: waykeep migrate [--dry-run]');
+        process.exit(1);
+      }
+      process.exit(await runMigrate({ dryRun: args.includes('--dry-run') }));
+    } catch (err) {
+      console.error(`waykeep migrate: failed — ${(err as Error).message}`);
       process.exit(1);
     }
     break;
