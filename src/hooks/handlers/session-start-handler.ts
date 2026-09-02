@@ -17,7 +17,7 @@ import { projectId } from '../../utils/project-id.js';
 import { migrateProjectIdentity } from '../../db/project-identity-migration.js';
 import { generateId, now } from '../../utils/index.js';
 import { runMaintenance, runStalenessDetection, updateAnchorsForRenames } from '../../db/maintenance.js';
-import { LIMITS, BRIEFING_BUDGET, CROSS_AGENT_CONTEXT_FRAMING } from '../../constants/index.js';
+import { LIMITS, BRIEFING_BUDGET, CONTEXT_THRESHOLDS, CROSS_AGENT_CONTEXT_FRAMING } from '../../constants/index.js';
 import { readState } from '../shared/state-io.js';
 import { truncateToTokenBudget, estimateTokensFast } from '../../utils/tokens.js';
 import { getGitHash, scanProject, getProjectModuleTerms, getDeletedFiles, getGitRenames, getGitWorkingState } from '../../utils/project-scanner.js';
@@ -313,11 +313,14 @@ export function handleSessionStart(
     }
   } catch { /* best-effort */ }
 
-  // Dynamic budget: scale with available context window
+  // Dynamic budget: scale with available context window. The SAME ladder
+  // the StatusLine uses to pick the mode — hardcoded copies of 50/25/10
+  // here once let a threshold retune change the status line but not the
+  // briefing budget (audit).
   const contextState = readState();
-  const budget = contextState.freeUntilCompact > 50 ? BRIEFING_BUDGET.STARTUP_MAX
-    : contextState.freeUntilCompact > 25 ? BRIEFING_BUDGET.COMPACT_MAX
-    : contextState.freeUntilCompact > 10 ? BRIEFING_BUDGET.MINIMAL_MAX
+  const budget = contextState.freeUntilCompact > CONTEXT_THRESHOLDS.NORMAL ? BRIEFING_BUDGET.STARTUP_MAX
+    : contextState.freeUntilCompact > CONTEXT_THRESHOLDS.COMPACT ? BRIEFING_BUDGET.COMPACT_MAX
+    : contextState.freeUntilCompact > CONTEXT_THRESHOLDS.MINIMAL ? BRIEFING_BUDGET.MINIMAL_MAX
     : BRIEFING_BUDGET.CRITICAL_MAX;
 
   // Phase 2: resume cursor — first prefer the live tracker (still present on

@@ -16,8 +16,8 @@ import { registerPortabilityTools } from './tools/portability-tools.js';
 import { registerStatsTools } from './tools/stats-tool.js';
 import { registerGovernanceTools } from './tools/governance-tools.js';
 import { registerResources } from './resources.js';
-import { getContextMode } from './context-mode.js';
-import { VERSION, EMBEDDING_BACKFILL } from '../constants/index.js';
+import { readState } from '../hooks/shared/state-io.js';
+import { VERSION, EMBEDDING_BACKFILL, type ContextMode } from '../constants/index.js';
 import { assertManifestPinned } from '../utils/artifact-verification.js';
 import { warmupEmbeddings, isEmbeddingReady, embed, embeddingToBuffer, getEmbeddingModelConfig } from '../utils/embeddings.js';
 import { isRerankEnabled, resolveRerankerModel, warmupReranker } from '../utils/reranker.js';
@@ -70,6 +70,12 @@ async function main(): Promise<void> {
   // (for hot-path reads). In-process sharing gives skip-gate invalidation
   // a staleness bound of zero with no IPC cost.
   const sessionCache = new SessionCache();
+
+  // The ONE reader of the StatusLine state file: validated (a forged
+  // `mode: "critical"` must not silence memory tooling — L1), staleness-
+  // bounded, and honoring the WAYKEEP_STATE_PATH override. An MCP-local copy
+  // once skipped all three (audit).
+  const getContextMode = (): ContextMode => readState().mode;
 
   // contextRepo (last arg) lets waykeep_recall build a project query fingerprint
   // for the cross-project guard; undefined keeps the default reranker.
