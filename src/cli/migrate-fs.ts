@@ -64,6 +64,16 @@ export function tableManifest(dbPath: string): Map<string, number> {
   } finally { db.close(); }
 }
 
+/** Number of `PRAGMA foreign_key_check` rows in a store opened READ-ONLY. SQLite
+ *  does NOT enforce foreign keys by default, so a real store can carry dangling
+ *  references (orphaned rows) that are pre-existing data, not corruption — the
+ *  migration compares this between source and copy rather than requiring zero. */
+export function fkViolationCount(dbPath: string): number {
+  const db = new Database(dbPath, { readonly: true });
+  try { return (db.prepare('PRAGMA foreign_key_check').all() as unknown[]).length; }
+  finally { db.close(); }
+}
+
 /** Two files compared byte-for-byte; false if either is unreadable. */
 export function sameBytes(a: string, b: string): boolean {
   try { return readFileSync(a).equals(readFileSync(b)); } catch { return false; }

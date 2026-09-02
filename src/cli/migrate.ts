@@ -38,7 +38,7 @@ import { LEGACY_NAMESPACES, DATA_DIR_NAME, DB_FILENAME } from 'waykeep-contract'
 import { MIGRATION_MARKER, FILES, realHomeDataDir } from '../constants/paths.js';
 import { FS_PERMS } from '../constants/index.js';
 import {
-  LOCK_FILE, DB_SUFFIXES, isFile, lexists, isRegularFile, tableManifest, freeBackupPath,
+  LOCK_FILE, DB_SUFFIXES, isFile, lexists, isRegularFile, tableManifest, fkViolationCount, freeBackupPath,
   fsyncStrict, publishFile, secureTargetDir, acquireLock, releaseLock,
 } from './migrate-fs.js';
 import { planConfig, describeConfig, applyConfig } from './migrate-config.js';
@@ -178,18 +178,26 @@ export async function runMigrate(opts: MigrateOptions = {}): Promise<number> {
     // Verify BEFORE the marker: integrity, foreign keys, and a per-table manifest.
     const verify = new Database(currentDb, { readonly: true });
     let integrity: string;
-    let fkViolations: number;
+    let targetFk: number;
     try {
       integrity = (verify.prepare('PRAGMA integrity_check').get() as { integrity_check: string }).integrity_check;
-      fkViolations = (verify.prepare('PRAGMA foreign_key_check').all() as unknown[]).length;
+      targetFk = (verify.prepare('PRAGMA foreign_key_check').all() as unknown[]).length;
     } finally { verify.close(); }
     if (integrity !== 'ok') {
       console.error(`✗ migration ABORTED — the copied database failed its integrity check (${integrity}). No marker written; ${legacyDir} stays authoritative.`);
       return 1;
     }
-    if (fkViolations > 0) {
-      console.error(`✗ migration ABORTED — the copied database has ${fkViolations} foreign-key violation(s). No marker written; ${legacyDir} stays authoritative.`);
+    // Foreign-key violations that already exist in the legacy store are PRE-EXISTING
+    // data (SQLite does not enforce FKs by default — orphaned rows accumulate), and a
+    // faithful copy preserves them. Abort only if the copy INTRODUCED violations the
+    // source did not have; a real store's dangling references must not block migration.
+    const sourceFk = fkViolationCount(legacyDb);
+    if (targetFk > sourceFk) {
+      console.error(`✗ migration ABORTED — the copy introduced ${targetFk - sourceFk} foreign-key violation(s) not present in the source (copy ${targetFk}, source ${sourceFk}). No marker written; ${legacyDir} stays authoritative.`);
       return 1;
+    }
+    if (targetFk > 0) {
+      console.log(`  note: ${targetFk} pre-existing foreign-key violation(s) in ${legacyDir} (SQLite does not enforce FKs) were copied faithfully — not introduced by the migration.`);
     }
     const targetManifest = tableManifest(currentDb);
     const targetMemories = targetManifest.get('memories') ?? 0;

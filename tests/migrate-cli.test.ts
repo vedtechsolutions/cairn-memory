@@ -92,6 +92,13 @@ function configBackups(dir: string): string[] {
   return readdirSync(dir).filter((f) => f.startsWith(`${FILES.CONFIG}.pre-migrate-`));
 }
 
+/** `PRAGMA foreign_key_check` row count for a store opened READ-ONLY. */
+function fkCount(dbPath: string): number {
+  const db = new Database(dbPath, { readonly: true });
+  try { return (db.prepare('PRAGMA foreign_key_check').all() as unknown[]).length; }
+  finally { db.close(); }
+}
+
 /** Resolve the state root under a controlled HOME, in-process. `resolveStateRoot`
  *  reads `homedir()` (i.e. HOME) live and memoizes, so we swap HOME, clear the
  *  memo, read, then always restore — no nested subprocess (its extra fork under
@@ -417,6 +424,29 @@ describe('waykeep migrate (Phase B2, rehearsed on a copy)', () => {
     } finally {
       guard.close();
     }
+  });
+
+  it('migrates faithfully despite PRE-EXISTING foreign-key violations (real stores accumulate them)', async () => {
+    const home = tempHome();
+    seedLegacyStore(home, 3);
+    const legacyDb = join(home, LEGACY_DIR_NAME, LEGACY_DB_NAME);
+    // SQLite does not enforce FKs by default, so a real store accumulates orphaned
+    // rows (the live ~/.cairn had 7). Reproduce one: a child row with no parent.
+    const seed = new Database(legacyDb);
+    try {
+      seed.pragma('foreign_keys = OFF');
+      seed.exec('CREATE TABLE fk_parent(id INTEGER PRIMARY KEY)');
+      seed.exec('CREATE TABLE fk_child(id INTEGER PRIMARY KEY, pid INTEGER REFERENCES fk_parent(id))');
+      seed.prepare('INSERT INTO fk_child(pid) VALUES (?)').run(999); // orphan → 1 FK violation
+    } finally { seed.close(); }
+    assert.equal(fkCount(legacyDb), 1, 'the seed must carry exactly one pre-existing FK violation');
+
+    assert.equal(await runMigrate({ home }), 0, 'a pre-existing FK violation must NOT block the migration');
+
+    const currentDb = join(home, DATA_DIR_NAME, DB_FILENAME);
+    assert.ok(existsSync(join(home, DATA_DIR_NAME, MIGRATION_MARKER)), 'the marker is written despite the pre-existing violation');
+    assert.equal(fkCount(currentDb), 1, 'the copy faithfully preserves the pre-existing violation (7==7 on the real store)');
+    assert.equal(rowCount(currentDb), 3, 'memories are copied');
   });
 
   it('leaves no temp-file litter behind on success', async () => {
