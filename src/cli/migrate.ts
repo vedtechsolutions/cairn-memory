@@ -259,7 +259,7 @@ export async function runMigrate(opts: MigrateOptions = {}): Promise<number> {
     console.log(`\n✓ migrated ${targetMemories} memories to ${currentDb} and wrote ${markerPath}.`);
     console.log(`  ${legacyDir} is untouched — keep it until you have confirmed the new store, then remove it.`);
     console.log(`  START your agent/daemon now so it serves the new store.`);
-    console.log(`  To roll back: delete ${markerPath} (and, if needed, ${currentDb}); ${legacyDir} still has your data.`);
+    console.log(`  To roll back: stop your agent first, delete ${markerPath}, then restart — authority reverts to ${legacyDir} (the store root is chosen once per process, so a running agent keeps using ${currentDir} until it exits). ${legacyDir} holds this migration's snapshot; anything written to ${currentDir} afterward stays only there.`);
     return 0;
   } finally {
     if (guard) { try { guard.close(); } catch { /* already closed */ } }

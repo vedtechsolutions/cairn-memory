@@ -129,6 +129,34 @@ install off-PATH (cache, then volta → ~/.local → homebrew →
 /usr/local, then the newest nvm version that has waykeep). Neither uses a login
 shell — profile output would corrupt the MCP protocol stream.
 
+## Migrating your store from `~/.cairn` to `~/.waykeep`
+
+Upgrading from a legacy Cairn install? Your memories keep working untouched — the
+`waykeep` binary transparently keeps reading your legacy `~/.cairn` store until
+you migrate it. When you're ready to move to `~/.waykeep`:
+
+```bash
+# Stop your agents/daemon first — a running server keeps the old store open.
+waykeep migrate --dry-run   # preview: what would be copied, and where
+waykeep migrate             # copy ~/.cairn → ~/.waykeep, then restart your agent
+```
+
+It COPIES, never moves — your legacy `~/.cairn` is left intact as a rollback
+backup — copies the database with SQLite's WAL-safe online backup, verifies it
+(integrity + row-count parity) before making `~/.waykeep` authoritative, and
+carries your `config.json` privacy settings across. It is idempotent (safe to
+re-run). Stop your agents first: the command aborts if it detects the hook daemon
+still serving the store, and also aborts if the store changes mid-copy. Restart
+your agent afterward so it serves the new store.
+
+**Rolling back:** stop all agents/daemon first — a running process keeps using
+`~/.waykeep` until it exits (the store root is chosen once per process), so a
+rollback only takes effect on restart. Then delete
+`~/.waykeep/waykeep-migrated.json` and restart; authority reverts to the legacy
+`~/.cairn` store. Note that `~/.cairn` is the snapshot from migration time — any
+memories you added AFTER migrating live only in `~/.waykeep`, so keep `~/.waykeep`
+(don't delete it) if you might want them back.
+
 ## Migrating existing memories
 
 Coming from another memory system? One command each, re-runnable:
