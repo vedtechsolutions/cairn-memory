@@ -124,7 +124,7 @@ export function transformClaudeMem(path?: string): ClaudeMemImport {
     throw new Error(`claude-mem database not found at ${dbPath} (pass --path to the db or its directory)`);
   }
 
-  const scratch = mkdtempSync(join(tmpdir(), 'cairn-claude-mem-'));
+  const scratch = mkdtempSync(join(tmpdir(), 'waykeep-claude-mem-'));
   try {
     const db = openSnapshot(dbPath, scratch);
     try {

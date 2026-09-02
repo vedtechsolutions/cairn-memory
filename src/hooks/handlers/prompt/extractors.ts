@@ -13,7 +13,7 @@ import type { Memory } from '../../../db/memory-repository.js';
  * Two rejection rules; either trips the gate:
  *   1. isMetaGoal(content) — catches session-continuity blurbs ("Resume
  *      point: …", "Next: … then commit", "continue this was where you
- *      were…") that were stored via cairn_learn but aren't durable goals.
+ *      were…") that were stored via waykeep_learn but aren't durable goals.
  *   2. Age > GOAL_REMINDER_MAX_AGE_HOURS — even a well-formed goal memory
  *      stops being relevant once enough time has passed; session-scoped
  *      context rots fast and padding the prompt with last week's plan

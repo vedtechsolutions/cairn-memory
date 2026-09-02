@@ -1,6 +1,6 @@
 import { homedir } from 'node:os';
 import { resolve } from 'node:path';
-import { DB } from '../constants/index.js';
+import { defaultDbPath } from '../constants/paths.js';
 
 /**
  * Resolve the SQLite database path the way every Waykeep process must, so the
@@ -10,7 +10,10 @@ import { DB } from '../constants/index.js';
  */
 export function resolveDbPath(input?: string): string {
   if (!input) {
-    return DB.DEFAULT_PATH.replace('~', homedir());
+    // Phase B: the database follows THE single state-root decision
+    // (paths.ts resolveStateRoot) — never an independent existence check
+    // that could split this process across namespaces.
+    return defaultDbPath();
   }
   if (input === ':memory:') return input;
   if (input.startsWith('~')) return input.replace('~', homedir());

@@ -7,6 +7,7 @@ import {
 } from '../../governance/governance-overrides.js';
 import { deriveGovernanceOverrideContext } from '../../governance/override-context.js';
 import { TOOL } from '../../constants/mcp.js';
+import { registerToolCompat } from './helpers.js';
 
 const OVERRIDE_CLIENT_NAME = 'claude-code';
 
@@ -19,7 +20,7 @@ export function registerGovernanceTools(
   db: Database.Database,
   innerServer: Server,
 ): void {
-  server.registerTool(TOOL.GOVERNANCE_OVERRIDE, {
+  registerToolCompat(server, TOOL.GOVERNANCE_OVERRIDE, {
     title: 'Confirm Governance Override',
     description: 'Request a temporary, session-bound governance gate override. Requires direct user confirmation.',
     inputSchema: z.object({

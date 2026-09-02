@@ -40,7 +40,7 @@ async function main(): Promise<void> {
   // conditions: fail closed via the fatal handler (exit 1) before the
   // database opens, models import, or any other side effect runs.
   assertManifestPinned(getEmbeddingModelConfig(), 'embedding');
-  // Same fail-closed rule for the opt-in reranker: invalid CAIRN_RERANK
+  // Same fail-closed rule for the opt-in reranker: invalid WAYKEEP_RERANK
   // values, unknown model keys, and unpinned manifests must terminate, not
   // run half-configured.
   if (isRerankEnabled()) assertManifestPinned(resolveRerankerModel(), 'reranker');
@@ -71,7 +71,7 @@ async function main(): Promise<void> {
   // a staleness bound of zero with no IPC cost.
   const sessionCache = new SessionCache();
 
-  // contextRepo (last arg) lets cairn_recall build a project query fingerprint
+  // contextRepo (last arg) lets waykeep_recall build a project query fingerprint
   // for the cross-project guard; undefined keeps the default reranker.
   registerMemoryTools(server, memoryRepo, getContextMode, server.server, edgeRepo, sessionCache, undefined, contextRepo);
   registerPlanTool(server, planRepo, memoryRepo, getContextMode, sessionCache);
@@ -82,7 +82,7 @@ async function main(): Promise<void> {
   registerResources(server, planRepo, memoryRepo, getContextMode);
 
   // Start the hook socket in embedded mode — unless another process (the
-  // standalone cairn-daemon service, or a peer agent client's MCP server)
+  // standalone waykeep-daemon service, or a peer agent client's MCP server)
   // already serves it, in which case we share that socket cooperatively.
   //
   // When we DO own it, the shared session cache gives MCP-side memory
@@ -143,7 +143,7 @@ async function runEmbeddingBackfill(repo: MemoryRepository): Promise<void> {
   }
 
   if (total > 0) {
-    console.error(`[cairn] Backfilled embeddings for ${total} memories`);
+    console.error(`[waykeep] Backfilled embeddings for ${total} memories`);
   }
 }
 

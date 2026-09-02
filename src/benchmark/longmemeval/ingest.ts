@@ -16,7 +16,8 @@
  *   - uniform confidence in retrieval-only mode;
  *   - the live store must never be touched.
  */
-import { resolve } from 'node:path';
+import { LEGACY_NAMESPACES } from 'waykeep-contract';
+import { resolve, join, dirname } from 'node:path';
 import type Database from 'better-sqlite3';
 import { openDatabase } from '../../db/connection.js';
 import { MemoryRepository } from '../../db/memory-repository.js';
@@ -64,13 +65,18 @@ export interface QuestionStore {
 }
 
 /** Refuse to operate anywhere near the live store — the benchmark must be
- *  impossible to point at ~/.cairn by accident. */
+ *  impossible to point at ~/.waykeep by accident. */
 export function assertNotLiveStore(dbPath: string): void {
   if (dbPath === ':memory:') return;
   const resolved = resolve(dbPath);
-  const liveDir = realHomeDataDir();
-  if (resolved === liveDir || resolved.startsWith(liveDir + '/')) {
-    throw new Error(`benchmark refuses to touch the live store directory: ${resolved}`);
+  // The LEGACY data dirs stay protected too: until the namespace migration
+  // completes, the user's real store still lives under the old name — the
+  // rename must never open a window where the benchmark can write it.
+  const liveDirs = [realHomeDataDir(), ...LEGACY_NAMESPACES.map(ns => join(dirname(realHomeDataDir()), `.${ns}`))];
+  for (const liveDir of liveDirs) {
+    if (resolved === liveDir || resolved.startsWith(liveDir + '/')) {
+      throw new Error(`benchmark refuses to touch the live store directory: ${resolved}`);
+    }
   }
 }
 

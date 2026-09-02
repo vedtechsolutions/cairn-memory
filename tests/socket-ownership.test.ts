@@ -22,12 +22,13 @@ import { spawn, type ChildProcess } from 'node:child_process';
 
 import { createHookDbClient, type HookDbClient } from '../src/hooks/shared/db-client.js';
 import { SessionCache } from '../src/hooks/shared/session-cache.js';
+import { ENV } from '../src/constants/env.js';
 
 // socket-ownership resolves its socket/PID paths lazily from CAIRN_DIR, so
 // pointing CAIRN_DIR at a sandbox before anything starts is sufficient.
 const stateDir = mkdtempSync(join(tmpdir(), 'cairn-socket-ownership-'));
-process.env.CAIRN_DIR = join(stateDir, '.cairn');
-process.env.CAIRN_STATE_PATH = join(stateDir, 'cairn-state.json');
+process.env[ENV.DIR] = join(stateDir, '.cairn');
+process.env[ENV.STATE_PATH] = join(stateDir, 'cairn-state.json');
 
 const SOCKET_PATH = join(stateDir, '.cairn', 'hook-daemon.sock');
 const PID_PATH = join(stateDir, '.cairn', 'hook-daemon.pid');

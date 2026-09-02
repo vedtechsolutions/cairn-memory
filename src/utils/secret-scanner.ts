@@ -4,10 +4,10 @@
  * command, a config snippet) never lands in the database and never rides along
  * a later promote/export/sync.
  *
- * Coverage boundary: scrubbing runs on every CAPTURE path — cairn_learn,
- * cairn_correct(update), the decision/pitfall gateways, and cairn_ingest
+ * Coverage boundary: scrubbing runs on every CAPTURE path — waykeep_learn,
+ * waykeep_correct(update), the decision/pitfall gateways, and waykeep_ingest
  * learn-mode all funnel through create()/storeMemory()/update(). The strict
- * byte-exact RESTORE path (cairn_ingest restore → restoreRecord) is a trusted
+ * byte-exact RESTORE path (waykeep_ingest restore → restoreRecord) is a trusted
  * round-trip of an already-scanned export and deliberately preserves bytes; it
  * is the one write path that does not re-scan (see portability.ts).
  *

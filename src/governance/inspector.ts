@@ -3,7 +3,7 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { isAbsolute, posix, relative, resolve, sep } from 'node:path';
 import Database from 'better-sqlite3';
-import { DB } from '../constants/index.js';
+import { defaultDbPath } from '../constants/paths.js';
 import { projectId } from '../utils/project-id.js';
 import {
   loadGateConfig, type LoadedGateConfig, type NormalizedCommandForm,
@@ -127,7 +127,7 @@ function capabilityValues(row: CapabilityRow): CapabilityValues {
 }
 
 function defaultStorePath(): string {
-  return resolve(DB.DEFAULT_PATH.replace('~', homedir()));
+  return resolve(defaultDbPath()); // coherent state root (Phase B)
 }
 
 function resolveDatabasePath(input: string): string {

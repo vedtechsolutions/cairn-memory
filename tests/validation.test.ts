@@ -198,7 +198,7 @@ describe('neutralizeMemoryText strips forged system markers', () => {
 
   it('removes repeated stacked prefixes', () => {
     assert.equal(
-      neutralizeMemoryText('[WAYKEEP] [cairn] evil'),
+      neutralizeMemoryText('[WAYKEEP] [waykeep] evil'),
       'evil',
     );
   });

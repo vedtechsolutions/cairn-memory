@@ -6,6 +6,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { DATA_DIR_NAME } from 'waykeep-contract';
 import {
   canonicalGateConfigJson, GateConfigError, loadGateConfig, parseGateConfig,
 } from '../src/governance/gate-config.js';
@@ -23,7 +24,7 @@ afterEach(() => {
 function tempProject(label: string): string {
   const root = mkdtempSync(join(tmpdir(), `cairn-gates-${label}-`));
   tempDirs.push(root);
-  mkdirSync(join(root, '.cairn'));
+  mkdirSync(join(root, DATA_DIR_NAME));
   return root;
 }
 
@@ -51,7 +52,7 @@ function baseConfig(): Record<string, unknown> {
 }
 
 function writeConfig(root: string, value: unknown): string {
-  const path = join(root, '.cairn', 'gates.json');
+  const path = join(root, DATA_DIR_NAME, 'gates.json');
   writeFileSync(path, typeof value === 'string' ? value : JSON.stringify(value), 'utf8');
   return path;
 }
@@ -80,7 +81,7 @@ describe('governance gate config v1', () => {
 
     const loaded = loadGateConfig(root);
     assert.equal(loaded.projectRoot, root);
-    assert.equal(loaded.configPath, join(root, '.cairn', 'gates.json'));
+    assert.equal(loaded.configPath, join(root, DATA_DIR_NAME, 'gates.json'));
     assert.deepEqual(loaded.config.defaults, {
       level: 'advise', evaluationTimeoutMs: 250, retention: { evidenceDays: 30 },
     });
@@ -174,7 +175,7 @@ describe('governance gate config v1', () => {
     writeFileSync(escapedConfig, JSON.stringify(baseConfig()));
 
     const configRoot = tempProject('config-symlink');
-    symlinkSync(escapedConfig, join(configRoot, '.cairn', 'gates.json'));
+    symlinkSync(escapedConfig, join(configRoot, DATA_DIR_NAME, 'gates.json'));
     assert.equal(errorCode(() => loadGateConfig(configRoot)), 'path-escape');
 
     const cwdRoot = tempProject('cwd-symlink');
@@ -190,13 +191,26 @@ describe('governance gate config v1', () => {
     writeConfig(root, baseConfig());
     assert.equal(errorCode(() => loadGateConfig(root, { configPath: '../gates.json' })), 'invalid-config-path');
     assert.equal(errorCode(() => loadGateConfig(root, {
-      configPath: '.cairn/../.cairn/gates.json',
+      configPath: `${DATA_DIR_NAME}/../${DATA_DIR_NAME}/gates.json`,
     })), 'invalid-config-path');
     assert.equal(errorCode(() => loadGateConfig(root, { configPath: 'gates.json' })), 'invalid-config-path');
-    assert.doesNotThrow(() => loadGateConfig(root, { configPath: '.cairn/gates.json' }));
+    // The legacy location is rejected while ABSENT (an alternate path)…
+    assert.equal(errorCode(() => loadGateConfig(root, { configPath: '.cairn/gates.json' })), 'invalid-config-path');
+    assert.doesNotThrow(() => loadGateConfig(root, { configPath: `${DATA_DIR_NAME}/gates.json` }));
     assert.doesNotThrow(() => loadGateConfig(root, {
-      configPath: join(root, '.cairn', 'gates.json'),
+      configPath: join(root, DATA_DIR_NAME, 'gates.json'),
     }));
+  });
+
+  it('honors a LEGACY .cairn/gates.json when the current path is absent (Phase-B fallback)', () => {
+    const root = tempProject('legacy-fallback');
+    rmSync(join(root, DATA_DIR_NAME), { recursive: true, force: true });
+    mkdirSync(join(root, '.cairn'), { recursive: true });
+    writeFileSync(join(root, '.cairn', 'gates.json'), JSON.stringify(baseConfig()));
+    assert.doesNotThrow(() => loadGateConfig(root),
+      'a repo configured before the flip must not silently lose governance');
+    assert.doesNotThrow(() => loadGateConfig(root, { configPath: '.cairn/gates.json' }),
+      'the existing legacy path may also be requested explicitly');
   });
 
   it('rejects duplicate JSON keys before the native parser can discard them', () => {

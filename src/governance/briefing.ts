@@ -11,7 +11,7 @@ import {
   type CapabilityDegradationReason, type ShadowResult, type ShadowVerdictReason,
 } from './verdict-types.js';
 import { sanitize } from '../utils/validation.js';
-import { gatesPath } from '../constants/paths.js';
+import { gatesPath, legacyGatesPaths } from '../constants/paths.js';
 
 export interface GovernanceBriefingSection {
   rules: string[];
@@ -68,8 +68,13 @@ function capabilityRow(row: ClientRow | undefined): GovernanceClientCapabilityRo
 
 function configPresent(projectRoot: string): boolean {
   try {
-    lstatSync(gatesPath(realpathSync.native(resolve(projectRoot))));
-    return true;
+    const root = realpathSync.native(resolve(projectRoot));
+    // Phase-B compat: un-migrated repos keep gates under the legacy dir —
+    // governance presence must see them or the flip silently disarms it.
+    for (const p of [gatesPath(root), ...legacyGatesPaths(root)]) {
+      try { lstatSync(p); return true; } catch { /* next */ }
+    }
+    return false;
   } catch {
     return false;
   }

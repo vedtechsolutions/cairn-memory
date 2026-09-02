@@ -12,6 +12,16 @@ import {
   type PlanStatus,
   type StepStatus,
 } from '../constants/index.js';
+import { NAMESPACE, LEGACY_NAMESPACES } from 'waykeep-contract';
+
+/**
+ * Regex alternation of the CURRENT brand plus every RETIRED one — derived from
+ * the contract, never hardcoded (codex B1 review: the injection-sanitization
+ * boundary must retire/extend with LEGACY_NAMESPACES, or the centralize-then-flip
+ * contract is broken and a forged `[CAIRN …]`/`[WAYKEEP …]` prefix could slip a
+ * fake system voice past the sanitizer). The names are controlled ASCII slugs
+ * with no regex metacharacters, so interpolation is injection-safe. */
+export const BRAND_MARKER_ALTERNATION = [NAMESPACE, ...LEGACY_NAMESPACES].join('|');
 
 // --- Type Guards ------------------------------------------------------------
 
@@ -280,6 +290,6 @@ export function neutralizeMemoryText(input: string): string {
     // pattern misses an otherwise pixel-identical forgery (formatter
     // review C1): U+200B..U+200D and U+FEFF are stripped everywhere.
     .replace(/[\u200B-\u200D\uFEFF]/g, '')
-    .replace(/^(?:\s*\[\s*(?:cairn|waykeep)\b[^\]\n]*\]\s*)+/gi, '')
+    .replace(new RegExp(`^(?:\\s*\\[\\s*(?:${BRAND_MARKER_ALTERNATION})\\b[^\\]\\n]*\\]\\s*)+`, 'gi'), '')
     .trim();
 }

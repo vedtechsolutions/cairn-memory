@@ -1,6 +1,6 @@
 /**
  * Cross-encoder reranker service — lazy singleton mirroring embeddings.ts.
- * Opt-in via CAIRN_RERANK=1; model via CAIRN_RERANK_MODEL. MCP-server only:
+ * Opt-in via WAYKEEP_RERANK=1; model via WAYKEEP_RERANK_MODEL. MCP-server only:
  * hook processes must never load models.
  *
  * Failure semantics: INVALID configuration fails closed (throw — resolved
@@ -16,7 +16,7 @@ import { assertManifestPinned, verifyArtifacts as verifyArtifactsGeneric, verify
 import { createVerifiedLoader, type VerifiedLoader } from './verified-loader.js';
 import { ENV } from '../constants/env.js';
 
-/** CAIRN_RERANK contract: unset/''/'0' = off, '1' = on, anything else is a
+/** WAYKEEP_RERANK contract: unset/''/'0' = off, '1' = on, anything else is a
  *  misconfiguration and fails closed rather than guessing intent. */
 export function isRerankEnabled(envValue: string | undefined = process.env[ENV.RERANK]): boolean {
   if (envValue === undefined || envValue === '' || envValue === '0') return false;
@@ -71,7 +71,7 @@ function getLoader(): VerifiedLoader<RerankerPipeline> {
       },
       verify: () => verifyModelPackage(config, 'reranker'),
       onPoison: (err) => {
-        console.error(`[cairn] reranker artifact verification FAILED — reranking disabled for this process: ${err.message}`);
+        console.error(`[waykeep] reranker artifact verification FAILED — reranking disabled for this process: ${err.message}`);
       },
     });
   }
@@ -87,7 +87,7 @@ export function isRerankerReady(): boolean {
 /** Pre-warm the model (fire-and-forget; MCP server startup). */
 export function warmupReranker(): void {
   getPipeline().catch(err => {
-    console.error('[cairn] Reranker warmup failed (will retry on use):', err);
+    console.error('[waykeep] Reranker warmup failed (will retry on use):', err);
   });
 }
 
@@ -157,7 +157,7 @@ export async function rerank(query: string, candidates: RerankCandidate[]): Prom
   const { logits } = await pipeline.model(inputs);
   const scores = scoresFromLogits(logits.data, candidates.length);
   if (scores === null) {
-    console.error(`[cairn] reranker returned unusable output (${logits.data.length} logits for ${candidates.length} candidates, or non-finite scores) — falling back`);
+    console.error(`[waykeep] reranker returned unusable output (${logits.data.length} logits for ${candidates.length} candidates, or non-finite scores) — falling back`);
     return null;
   }
   return orderByScore(candidates, scores);

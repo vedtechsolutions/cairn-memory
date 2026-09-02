@@ -11,9 +11,10 @@ import type { SyncEntityEnvelope, SyncEvent, PortableRecord } from 'waykeep-cont
 import { openDatabase } from '../src/db/connection.js';
 import { MemoryRepository } from '../src/db/memory-repository.js';
 import { syncEligibility, transmitEligibility, selectProjectRows, type EligibilityContext } from '../src/db/sync-eligibility.js';
-import { cairnConfigHealth, cairnConfigSnapshot, resetConfigCacheForTests } from '../src/config/cairn-config.js';
+import { waykeepConfigHealth, waykeepConfigSnapshot, resetConfigCacheForTests } from '../src/config/waykeep-config.js';
 import { SessionCache } from '../src/hooks/shared/session-cache.js';
 import { applyEventBatch, hashCanonical } from '../src/db/sync-apply/index.js';
+import { ENV } from '../src/constants/env.js';
 
 const PROJECT = 'elig-proj';
 
@@ -144,39 +145,39 @@ describe('sync eligibility (D10 fail-closed predicate)', () => {
 describe('config health surface (D8 item 5)', () => {
   let dir: string;
   beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'waykeep-cfg-')); resetConfigCacheForTests(); });
-  afterEach(() => { delete process.env.CAIRN_CONFIG_PATH; resetConfigCacheForTests(); rmSync(dir, { recursive: true, force: true }); });
+  afterEach(() => { delete process.env[ENV.CONFIG_PATH]; resetConfigCacheForTests(); rmSync(dir, { recursive: true, force: true }); });
 
   it('absent config is healthy (defaults are a valid state); broken JSON and bad sections are unhealthy', () => {
-    process.env.CAIRN_CONFIG_PATH = join(dir, 'absent.json');
-    assert.equal(cairnConfigHealth().healthy, true);
+    process.env[ENV.CONFIG_PATH] = join(dir, 'absent.json');
+    assert.equal(waykeepConfigHealth().healthy, true);
 
     const p = join(dir, 'config.json');
-    process.env.CAIRN_CONFIG_PATH = p;
+    process.env[ENV.CONFIG_PATH] = p;
     writeFileSync(p, '{not json');
-    const broken = cairnConfigHealth();
+    const broken = waykeepConfigHealth();
     assert.equal(broken.healthy, false);
     assert.match(String(broken.problem), /invalid JSON/);
 
     writeFileSync(p, JSON.stringify({ scope: { privateProjects: 'oops' } }));
-    const badSection = cairnConfigHealth();
+    const badSection = waykeepConfigHealth();
     assert.equal(badSection.healthy, false);
     assert.match(String(badSection.problem), /scope/);
 
     writeFileSync(p, JSON.stringify({ scope: { privateProjects: ['secret-proj'] } }));
-    assert.equal(cairnConfigHealth().healthy, true);
+    assert.equal(waykeepConfigHealth().healthy, true);
   });
 
   it('H5: the snapshot pairs health and policy from ONE read — healthy can never accompany another version\'s policy', () => {
     const p = join(dir, 'snap.json');
-    process.env.CAIRN_CONFIG_PATH = p;
+    process.env[ENV.CONFIG_PATH] = p;
     writeFileSync(p, JSON.stringify({ scope: { privateProjects: ['secret-proj'] } }));
-    const good = cairnConfigSnapshot();
+    const good = waykeepConfigSnapshot();
     assert.equal(good.health.healthy, true);
     assert.ok(good.config.scope.privateProjects.has('secret-proj'), 'the SAME bytes produced both fields');
     assert.ok(good.identity, 'file identity recorded');
 
     writeFileSync(p, '{broken');
-    const bad = cairnConfigSnapshot();
+    const bad = waykeepConfigSnapshot();
     assert.equal(bad.health.healthy, false);
     assert.equal(bad.config.scope.privateProjects.size, 0, 'unhealthy pairs with the EMPTY config, atomically');
     assert.deepEqual(bad.health.badSections, ['(document)']);
@@ -184,9 +185,9 @@ describe('config health surface (D8 item 5)', () => {
 
   it('H6: health names bad sections so doctor can render section-accurate impact', () => {
     const p = join(dir, 'sections.json');
-    process.env.CAIRN_CONFIG_PATH = p;
+    process.env[ENV.CONFIG_PATH] = p;
     writeFileSync(p, JSON.stringify({ scope: { privateProjects: ['x'] }, report: { rollups: true } }));
-    const h = cairnConfigHealth();
+    const h = waykeepConfigHealth();
     assert.equal(h.healthy, false, 'sync is disabled for ANY unhealthy config');
     assert.deepEqual(h.badSections, ['report'], 'only the report section is named — scope stays active locally');
   });

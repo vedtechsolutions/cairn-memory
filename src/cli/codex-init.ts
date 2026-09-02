@@ -17,10 +17,13 @@ import { existsSync, readFileSync, writeFileSync, copyFileSync, renameSync } fro
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { CLIENT_CODEX } from '../constants/clients.js';
-import { CAIRN_HOOK_DIR_MARKER } from '../constants/index.js';
+import { isWaykeepHookCommand } from '../constants/index.js';
 import { ENV } from '../constants/env.js';
 import { FILES, BACKUP_SUFFIX } from '../constants/paths.js';
 import { MCP_SERVER_NAME } from '../constants/mcp.js';
+import { LEGACY_NAMESPACES } from 'waykeep-contract';
+import { parse as parseToml } from 'smol-toml';
+import { isDeepStrictEqual } from 'node:util';
 
 /** ~/.codex, overridable for hermetic tests. */
 export function codexDir(): string {
@@ -105,12 +108,12 @@ export function codexHookCount(file: CodexHooksFile): number {
 
 /** The sorted Waykeep command strings in a hooks file — trust is hash-pinned
  *  per handler, so a changed command set means Codex will re-review. */
-export function cairnCommandSet(file: Partial<CodexHooksFile>): string[] {
+export function waykeepCommandSet(file: Partial<CodexHooksFile>): string[] {
   const commands: string[] = [];
   for (const groups of Object.values(file.hooks ?? {})) {
     for (const g of groups) {
       for (const h of g.hooks) {
-        if (h.command.includes(CAIRN_HOOK_DIR_MARKER)) commands.push(h.command);
+        if (isWaykeepHookCommand(h.command)) commands.push(h.command);
       }
     }
   }
@@ -129,22 +132,22 @@ export function cairnCommandSet(file: Partial<CodexHooksFile>): string[] {
  */
 export function mergeCodexHooks(existing: Partial<CodexHooksFile>, generated: CodexHooksFile): CodexHooksFile {
   const hooks: Record<string, CodexMatcherGroup[]> = { ...(existing.hooks ?? {}) };
-  for (const [event, cairnGroups] of Object.entries(generated.hooks)) {
+  for (const [event, waykeepGroups] of Object.entries(generated.hooks)) {
     const merged: CodexMatcherGroup[] = [];
     let placed = false;
     for (const group of hooks[event] ?? []) {
-      const foreign = group.hooks.filter((h) => !h.command.includes(CAIRN_HOOK_DIR_MARKER));
+      const foreign = group.hooks.filter((h) => !isWaykeepHookCommand(h.command));
       if (foreign.length === group.hooks.length) {
         merged.push(group); // purely foreign — untouched
       } else if (foreign.length > 0) {
         merged.push({ ...group, hooks: foreign }); // mixed — keep the foreign handlers, same slot
       } else if (!placed) {
-        merged.push(...cairnGroups); // first all-Waykeep slot — replace in place
+        merged.push(...waykeepGroups); // first all-Waykeep slot — replace in place
         placed = true;
       }
       // later all-Waykeep groups: dropped (stale duplicates)
     }
-    if (!placed) merged.push(...cairnGroups);
+    if (!placed) merged.push(...waykeepGroups);
     hooks[event] = merged;
   }
   return { description: generated.description, hooks };
@@ -250,7 +253,7 @@ export function trustedCommandsIn(configToml: string, hooksJsonPath: string, fil
     if (!entry.trusted) continue;
     const cmd = commandAt(file, entry);
     if (cmd === null) continue;
-    if (shadow !== null && cmd.includes(CAIRN_HOOK_DIR_MARKER) && shadow[entry.key] !== cmd) continue;
+    if (shadow !== null && isWaykeepHookCommand(cmd) && shadow[entry.key] !== cmd) continue;
     out.push(cmd);
   }
   return out;
@@ -282,27 +285,69 @@ export function codexMcpBlock(serverPath: string): string | null {
   return `\n[mcp_servers.${MCP_SERVER_NAME}]\ncommand = '${process.execPath}'\nargs = ['${serverPath}']\n`;
 }
 
-/** True when config.toml already declares our MCP server in ANY valid
- *  TOML form — appending a second declaration is a parse error that stops
- *  Codex from starting at all. Forms: [mcp_servers.<name>] header (bare or
- *  quoted), dotted top-level key, or a bare key inside [mcp_servers].
- *
- *  The name is interpolated into these patterns unescaped, which is safe
- *  only because it is a controlled ASCII slug with no regex metacharacters
- *  (see NAMESPACE in waykeep-contract). */
-export function hasCairnMcpServer(configToml: string): boolean {
-  const N = MCP_SERVER_NAME;
-  if (new RegExp(`^\\s*\\[mcp_servers\\.(?:${N}|"${N}")\\]`, 'm').test(configToml)) return true;
-  if (new RegExp(`^\\s*mcp_servers\\.(?:${N}|"${N}")\\.`, 'm').test(configToml)) return true;
-  const lines = configToml.split('\n');
-  const bareKey = new RegExp(`^\\s*(?:${N}|"${N}")\\s*[=.]`);
-  for (let i = 0; i < lines.length; i++) {
-    if (!/^\s*\[mcp_servers\]\s*$/.test(lines[i])) continue;
-    for (let j = i + 1; j < lines.length && !lines[j].trimStart().startsWith('['); j++) {
-      if (bareKey.test(lines[j])) return true;
+/** True when `configToml` is syntactically valid TOML. Init must NOT append an
+ *  MCP block to a config it cannot parse — that would compound a broken file. */
+export function configTomlParses(configToml: string): boolean {
+  try { parseToml(configToml); return true; } catch { return false; }
+}
+
+/**
+ * Verify a `pruneTrustKeys` result removed ONLY the intended `hooks.state` keys
+ * and altered NOTHING else. pruneTrustKeys is line-based, so a `[hooks.state.…]`
+ * -shaped line inside a user's MULTILINE STRING could be deleted while leaving
+ * syntactically-valid TOML — a silent edit a re-parse alone would miss (codex
+ * B1 review). We parse both sides, delete the intended keys from the BEFORE
+ * object, and deep-compare: any remaining difference means the prune touched
+ * something it should not have, so the caller refuses to write.
+ */
+export function pruneRemovedOnly(before: string, after: string, removedKeys: ReadonlySet<string>): boolean {
+  let b: Record<string, unknown>, a: Record<string, unknown>;
+  try { b = parseToml(before) as Record<string, unknown>; a = parseToml(after) as Record<string, unknown>; }
+  catch { return false; }
+  const hooks = b['hooks'];
+  if (hooks && typeof hooks === 'object') {
+    const state = (hooks as Record<string, unknown>)['state'];
+    if (state && typeof state === 'object') {
+      for (const k of removedKeys) delete (state as Record<string, unknown>)[k];
+      if (Object.keys(state as object).length === 0) delete (hooks as Record<string, unknown>)['state'];
+      if (Object.keys(hooks as object).length === 0) delete b['hooks'];
     }
   }
-  return false;
+  return isDeepStrictEqual(b, a);
+}
+
+/**
+ * True when config.toml declares the `mcp_servers.<name>` server in ANY valid
+ * TOML form — appending a duplicate is a parse error that stops Codex starting.
+ *
+ * Parsed with a REAL TOML parser (smol-toml), because a hand-rolled reader kept
+ * missing valid forms across many review rounds — nested inline tables (a
+ * `waykeep` key under some OTHER server's `env`), unicode-escaped quoted keys
+ * (`"waykeep"`), array-of-tables, comments, quoting and whitespace (codex
+ * B1 review). The parser resolves the full key structure, so we simply check
+ * `mcp_servers.<name>` as an own property. Unparseable TOML returns false — the
+ * caller (runCodexInit) checks `configTomlParses` and refuses to append there.
+ */
+function configDeclaresMcpServer(configToml: string, name: string): boolean {
+  let parsed: unknown;
+  try { parsed = parseToml(configToml); } catch { return false; }
+  const servers = (parsed as { mcp_servers?: unknown } | null)?.mcp_servers;
+  return typeof servers === 'object' && servers !== null
+    && Object.prototype.hasOwnProperty.call(servers, name);
+}
+
+export function hasWaykeepMcpServer(configToml: string): boolean {
+  return configDeclaresMcpServer(configToml, MCP_SERVER_NAME);
+}
+
+/** Retired-namespace MCP servers (e.g. `cairn`) still declared in config.toml.
+ *  Unlike the Claude JSON config, this tool is append-only for Codex's TOML
+ *  (splicing an existing section risks corrupting hand-written config), so an
+ *  upgraded install may still carry a legacy `[mcp_servers.cairn]` that starts
+ *  a duplicate server under the retired name. We DETECT and warn rather than
+ *  silently leave it (codex B1 review); the user removes it in one edit. */
+export function detectLegacyMcpServers(configToml: string): string[] {
+  return LEGACY_NAMESPACES.filter(ns => configDeclaresMcpServer(configToml, ns));
 }
 
 export interface TrustCount { trusted: number; disabled: number }
@@ -322,7 +367,7 @@ export function countTrustedHooksIn(configToml: string, hooksJsonPath: string, f
     if (file === undefined) return true; // no join context — raw count
     const cmd = commandAt(file, e);
     if (cmd === null) return false; // stale position can never re-match
-    if (shadow !== null && cmd.includes(CAIRN_HOOK_DIR_MARKER) && shadow[e.key] !== cmd) return false;
+    if (shadow !== null && isWaykeepHookCommand(cmd) && shadow[e.key] !== cmd) return false;
     return true;
   };
   return {
@@ -366,8 +411,17 @@ export function runCodexInit(relayCmd: string, serverPath: string, dryRun: boole
   }
 
   let config = existsSync(codexConfigPath()) ? readFileSync(codexConfigPath(), 'utf-8') : '';
-  const mcpRegistered = hasCairnMcpServer(config);
-  const mcpBlock = mcpRegistered ? null : codexMcpBlock(serverPath);
+  // Never append an MCP block into TOML we cannot parse — that compounds a
+  // broken file. An empty config is trivially fine (codex B1 review).
+  const configParses = config.trim().length === 0 || configTomlParses(config);
+  const mcpRegistered = configParses && hasWaykeepMcpServer(config);
+  const candidateBlock = (mcpRegistered || !configParses) ? null : codexMcpBlock(serverPath);
+  // Even with the server ABSENT, appending `[mcp_servers.<name>]` can produce
+  // INVALID TOML when `mcp_servers` is a foreign INLINE table (which cannot be
+  // extended by a section) — verify the concatenation parses before committing
+  // to it, or init would corrupt a valid config (codex B1 review).
+  const mcpAppendUnsafe = candidateBlock !== null && !configTomlParses(config + candidateBlock);
+  const mcpBlock = mcpAppendUnsafe ? null : candidateBlock;
 
   const trustEntries = parseTrustState(config, codexHooksPath());
   // The legacy command THIS relay would emit — built through the
@@ -401,7 +455,7 @@ export function runCodexInit(relayCmd: string, serverPath: string, dryRun: boole
     // hash counted as trust for Waykeep's session-start).
     const cmd = commandAt(merged, e);
     return oldShadow !== null && cmd !== null
-      && cmd.includes(CAIRN_HOOK_DIR_MARKER) && oldShadow[e.key] !== cmd;
+      && isWaykeepHookCommand(cmd) && oldShadow[e.key] !== cmd;
   });
   const invalidatesTrust = invalidated.some((e) => e.trusted);
 
@@ -411,12 +465,19 @@ export function runCodexInit(relayCmd: string, serverPath: string, dryRun: boole
     console.log(`  = keeping deprecated '${LEGACY_POST_TOOL_ROUTE}' PostToolUse route — trusted wiring preserved.`);
     console.log(`    Migrate with \`waykeep init --migrate-routes\` when convenient (one re-trust in codex).`);
   }
-  if (mcpRegistered) {
+  if (!configParses) {
+    console.log(`  ! config.toml is not valid TOML — init will NOT modify it. Fix the syntax, then re-run to add [mcp_servers.${MCP_SERVER_NAME}] (command: ${process.execPath}, args: ["${serverPath}"])`);
+  } else if (mcpRegistered) {
     console.log(`  = config.toml [mcp_servers.${MCP_SERVER_NAME}] already registered`);
+  } else if (mcpAppendUnsafe) {
+    console.log(`  ! config.toml declares mcp_servers as an inline table that a [mcp_servers.${MCP_SERVER_NAME}] section cannot extend — add ${MCP_SERVER_NAME} to that inline table manually (command: ${process.execPath}, args: ["${serverPath}"])`);
   } else if (mcpBlock === null) {
     console.log(`  ! config.toml: a path contains a single quote, which init cannot express in TOML — add [mcp_servers.${MCP_SERVER_NAME}] manually (command: ${process.execPath}, args: ["${serverPath}"])`);
   } else {
     console.log(`  ✓ config.toml [mcp_servers.${MCP_SERVER_NAME}] — ${dryRun ? 'would append' : 'appending'}`);
+  }
+  for (const ns of detectLegacyMcpServers(config)) {
+    console.log(`  ! config.toml still declares the retired [mcp_servers.${ns}] — it starts a duplicate server under the old namespace. Remove that block manually (this tool won't rewrite existing TOML).`);
   }
 
   if (!dryRun) {
@@ -426,13 +487,26 @@ export function runCodexInit(relayCmd: string, serverPath: string, dryRun: boole
     // hashes still count as "trusted" and Codex silently skips them).
     let wroteConfig = false;
     try {
-      if (mcpBlock !== null || invalidated.length > 0) {
-        backupOnce(codexConfigPath());
-        let next = pruneTrustKeys(config, new Set(invalidated.map((e) => e.key)));
-        if (mcpBlock !== null) next = next + mcpBlock;
-        atomicWrite(codexConfigPath(), next);
-        config = next;
-        wroteConfig = true;
+      // Never rewrite a config we could not parse — the "will NOT modify it"
+      // promise covers the trust-prune path too, not just the MCP append
+      // (codex B1 review): pruneTrustKeys on invalid TOML would mangle it.
+      if (configParses && (mcpBlock !== null || invalidated.length > 0)) {
+        const removedKeys = new Set(invalidated.map((e) => e.key));
+        const pruned = pruneTrustKeys(config, removedKeys);
+        const next = mcpBlock !== null ? pruned + mcpBlock : pruned;
+        // Two guards before committing (codex B1 review): (1) the prune removed
+        // ONLY the intended trust keys and mangled nothing else — a line-based
+        // edit could delete a `[hooks.state…]`-shaped line inside a user's
+        // multiline string while STILL parsing; (2) the FINAL text re-parses
+        // (append safety). Fail either → leave the config untouched.
+        if (pruneRemovedOnly(config, pruned, removedKeys) && configTomlParses(next)) {
+          backupOnce(codexConfigPath());
+          atomicWrite(codexConfigPath(), next);
+          config = next;
+          wroteConfig = true;
+        } else {
+          console.log(`  ! config.toml left UNCHANGED — the trust-prune/append would alter or invalidate it (edit it by hand). Re-run \`waykeep init\` afterward.`);
+        }
       }
       backupOnce(codexHooksPath());
       atomicWrite(codexHooksPath(), `${JSON.stringify(merged, null, 2)}\n`);

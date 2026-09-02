@@ -33,6 +33,7 @@ import { projectId } from '../src/utils/project-id.js';
 import type { PreToolUseInput, UserPromptSubmitInput, SubagentStartInput } from '../src/hooks/shared/hook-io.js';
 
 import { applyHostileRow, assertGolden } from './helpers/hostile-row.js';
+import { TOOL } from '../src/constants/mcp.js';
 
 const CWD = '/tmp/m1-exit-handler-goldens-cwd';
 const PROJECT = projectId(CWD);
@@ -133,14 +134,14 @@ describe('M1-exit: MCP malicious goldens (real transport)', () => {
 
   it('cairn_recall renders the hostile team row labeled and defanged', async () => {
     applyHostileRow(db, PROJECT, 'pitfall');
-    const text = await call('cairn_recall', { query: 'hostile pitfall lesson', project: PROJECT });
+    const text = await call(TOOL.RECALL, { query: 'hostile pitfall lesson', project: PROJECT });
     assert.ok(text.includes('waykeep-team'), 'recall MUST surface the row');
     assertGolden(text, 'mcp recall');
   });
 
   it('cairn_expand renders the hostile team row labeled and defanged', async () => {
     const id = applyHostileRow(db, PROJECT, 'pitfall');
-    const text = await call('cairn_expand', { ids: [`pit:${id.slice(0, 8)}`] });
+    const text = await call(TOOL.EXPAND, { ids: [`pit:${id.slice(0, 8)}`] });
     assert.ok(text.includes('waykeep-team'), 'expand MUST render the row');
     assertGolden(text, 'mcp expand');
   });

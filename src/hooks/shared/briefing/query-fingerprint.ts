@@ -160,7 +160,7 @@ export function buildBriefingQueryFp(ctx: BriefingContext, plan: Plan | null): C
 /**
  * Tokens contributed by the cwd-basename last-resort signal. Gated strictly
  * so absolute-path roots (/opt, /home, /tmp) don't leak; split on
- * hyphen/underscore/dot so `cairn-test-abc123` → ['cairn','test','abc123'],
+ * hyphen/underscore/dot so `waykeep-test-abc123` → ['waykeep','test','abc123'],
  * each part re-filtered against the generic set + length gate.
  *
  * A1 neutrality contract: a signal of last resort may only ever HELP —
@@ -169,7 +169,7 @@ export function buildBriefingQueryFp(ctx: BriefingContext, plan: Plan | null): C
  * so they can never flip the cold-start policy to narrow and drop
  * same-project memories. Without that exclusion, briefing behavior varied
  * with the checkout directory's name (CI workspace/, verification worktrees).
- * CAIRN_QUERY_CWD overrides process.cwd() so tests pin a stable value.
+ * WAYKEEP_QUERY_CWD overrides process.cwd() so tests pin a stable value.
  */
 function cwdSignalTokens(): string[] {
   const cwdBase = basename(process.env[ENV.QUERY_CWD] ?? process.cwd()).toLowerCase();

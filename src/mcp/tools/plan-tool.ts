@@ -1,5 +1,5 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { canReadPrivate } from '../../config/cairn-config.js';
+import { canReadPrivate } from '../../config/waykeep-config.js';
 import { sessionProjectId } from '../../utils/session-project.js';
 import * as z from 'zod/v4';
 import type { PlanRepository, Plan, PlanStep } from '../../db/plan-repository.js';
@@ -7,6 +7,7 @@ import type { MemoryRepository } from '../../db/memory-repository.js';
 import type { SessionCache } from '../../hooks/shared/session-cache.js';
 import { TOKEN_BUDGET, STEP_STATUSES, CONFIDENCE, type ContextMode } from '../../constants/index.js';
 import { TOOL } from '../../constants/mcp.js';
+import { registerToolCompat } from './helpers.js';
 
 type ContextModeFn = () => ContextMode;
 
@@ -17,7 +18,7 @@ export function registerPlanTool(
   getMode: ContextModeFn,
   sessionCache?: SessionCache,
 ): void {
-  server.registerTool(
+  registerToolCompat(server, 
     TOOL.PLAN,
     {
       title: 'Plan Management',
@@ -72,7 +73,7 @@ export function registerPlanTool(
       switch (params.action) {
         case 'create':
           // Store under the RESOLVED id: an alias ('cairn' for
-          // 'cairn-abc123') creating under the raw string would park the
+          // 'waykeep-abc123') creating under the raw string would park the
           // plan at an id the privacy guard never matches (reproduced by
           // review). Genuinely new names resolve to themselves.
           return handleCreate(planRepo, memoryRepo, { ...params, project: project ?? params.project }, sessionCache);

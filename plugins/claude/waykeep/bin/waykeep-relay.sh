@@ -14,6 +14,21 @@
 #      that are not symlinks at all (review: suffix-strip alone silently
 #      no-opped every hook on those layouts)
 set -u
+# SECURITY: never derive a cache/hook dir from a RELATIVE HOME — a planted
+# `<cwd>/.waykeep/plugin-hook-dir` in an untrusted project could redirect
+# execution to an attacker-controlled hook directory or executable. Resolve the
+# passwd home when HOME is not absolute; if that fails, drop HOME so no
+# CWD-relative cache is ever used (codex B1 review).
+case "${HOME:-}" in
+  /*) : ;;
+  *)
+    _wk_u="$(id -un 2>/dev/null)"
+    _wk_h=""
+    [ -n "$_wk_u" ] && eval "_wk_h=~$_wk_u" 2>/dev/null
+    case "${_wk_h:-}" in /*) HOME="$_wk_h" ;; *) HOME="" ;; esac
+    export HOME
+    ;;
+esac
 fail() {
   # A missing/broken install must not break the host agent's hook
   # pipeline: say why on stderr (hook debug output; `waykeep doctor`
@@ -24,7 +39,20 @@ fail() {
 # NEVER a world-writable fallback: with no HOME and no plugin-data dir
 # there is NO cache — a /tmp cache let any local user plant a path and
 # have the next hook exec it (review, demonstrated).
-CACHE_DIR="${CLAUDE_PLUGIN_DATA:-${HOME:+$HOME/.cairn}}"
+# Cache dir mirrors resolveStateRoot(): the current dir is authoritative
+# only with the migration marker; otherwise an EXISTING legacy DB FILE
+# wins (un-migrated window); otherwise current. NEVER mkdir the legacy dir
+# for a fresh install — that would define the store under the retired name.
+if [ -n "${CLAUDE_PLUGIN_DATA:-}" ]; then
+  CACHE_DIR="$CLAUDE_PLUGIN_DATA"
+elif [ -n "${HOME:-}" ] && [ ! -f "$HOME/.waykeep/waykeep-migrated.json" ] \
+     && [ -f "$HOME/.cairn/cairn.db" ]; then
+  CACHE_DIR="$HOME/.cairn"
+elif [ -n "${HOME:-}" ]; then
+  CACHE_DIR="$HOME/.waykeep"
+else
+  CACHE_DIR=""
+fi
 CACHE="${CACHE_DIR:+$CACHE_DIR/plugin-hook-dir}"
 BIN="$(command -v waykeep || command -v cairn || true)"
 [ -n "$BIN" ] || fail "waykeep is not installed or not on PATH"

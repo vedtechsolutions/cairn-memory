@@ -1,10 +1,10 @@
 {
   "mcpServers": {
-    "cairn": {
+    "waykeep": {
       "command": "${CLAUDE_PLUGIN_ROOT}/bin/waykeep-mcp.sh",
       "args": [],
       "env": {
-        "CAIRN_LOG_LEVEL": "info"
+        "WAYKEEP_LOG_LEVEL": "info"
       }
     }
   }

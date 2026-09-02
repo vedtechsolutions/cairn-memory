@@ -9,9 +9,10 @@ import { openDatabase } from '../src/db/connection.js';
 import { GovernanceRuleRepository } from '../src/governance/rule-repository.js';
 import { evaluateShadowStop } from '../src/governance/shadow-evaluator.js';
 import { projectId } from '../src/utils/project-id.js';
+import { ENV } from '../src/constants/env.js';
 
 const roots: string[] = [];
-const LIVE_BENCHMARK = process.env.CAIRN_RUN_SHADOW_BENCHMARK === '1';
+const LIVE_BENCHMARK = process.env[ENV.RUN_SHADOW_BENCHMARK] === '1';
 
 interface RecordedBenchmark {
   protocol: { samples_per_size: number; budget_ms: number };

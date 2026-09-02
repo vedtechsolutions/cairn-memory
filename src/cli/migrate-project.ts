@@ -17,7 +17,7 @@ import { openDatabase } from '../db/connection.js';
 import { resolveDbPath } from '../db/db-path.js';
 import { countProjectRows, moveProjectRows } from '../db/project-identity-migration.js';
 import { projectId } from '../utils/project-id.js';
-import { isPrivateProject } from '../config/cairn-config.js';
+import { isPrivateProject } from '../config/waykeep-config.js';
 import { ENV } from '../constants/env.js';
 
 /** Mirrors the MCP tools' project-param shape: sane charset, 200-char cap. */

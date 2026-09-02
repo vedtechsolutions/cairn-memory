@@ -7,7 +7,8 @@ import { join } from 'node:path';
 import { openDatabase } from '../src/db/connection.js';
 import { MemoryRepository } from '../src/db/memory-repository.js';
 import { packExport, packImport, parsePackRecord, PACK_EXT } from '../src/pack/pack.js';
-import { resetConfigCacheForTests } from '../src/config/cairn-config.js';
+import { resetConfigCacheForTests } from '../src/config/waykeep-config.js';
+import { ENV } from '../src/constants/env.js';
 
 const PROJECT = 'pack-proj';
 
@@ -195,7 +196,7 @@ describe('free manual repo-pack (D12 / R16b)', () => {
 
   it('bulk export excludes private projects; naming one explicitly is allowed; prune removes only stale pack files', () => {
     repo.create({ content: 'shared project lesson', kind: 'fact', project: PROJECT, skipDedup: true, skipConflictDetection: true });
-    process.env.CAIRN_CONFIG_PATH = join(dir, 'config.json');
+    process.env[ENV.CONFIG_PATH] = join(dir, 'config.json');
     writeFileSync(join(dir, 'config.json'), JSON.stringify({ scope: { privateProjects: ['secret-proj'] } }));
     try {
       resetConfigCacheForTests();
@@ -219,7 +220,7 @@ describe('free manual repo-pack (D12 / R16b)', () => {
       assert.ok(readdirSync(dir).includes('unrelated.txt'), 'non-pack files untouched');
       assert.ok(beforePrune.length > packFiles().length - 1, 'sanity');
     } finally {
-      delete process.env.CAIRN_CONFIG_PATH;
+      delete process.env[ENV.CONFIG_PATH];
       resetConfigCacheForTests();
     }
   });
@@ -309,14 +310,14 @@ describe('free manual repo-pack (D12 / R16b)', () => {
     const r = packExport(db, dir, PROJECT);
     assert.equal(r.redactions.length, 1, 'a secret resting in TAGS is reported');
 
-    process.env.CAIRN_CONFIG_PATH = join(dir, 'broken.json');
+    process.env[ENV.CONFIG_PATH] = join(dir, 'broken.json');
     writeFileSync(join(dir, 'broken.json'), '{not json');
     try {
       resetConfigCacheForTests();
       assert.throws(() => packExport(db, dir, 'all-shared'), /unhealthy/, 'bulk export refuses fail-closed');
       packExport(db, dir, PROJECT); // named scope still allowed
     } finally {
-      delete process.env.CAIRN_CONFIG_PATH;
+      delete process.env[ENV.CONFIG_PATH];
       resetConfigCacheForTests();
     }
   });
@@ -380,7 +381,7 @@ describe('free manual repo-pack (D12 / R16b)', () => {
     const { execFile } = await import('node:child_process');
     const { promisify } = await import('node:util');
     const run = promisify(execFile);
-    const env = { ...process.env, CAIRN_DB_PATH: join(dir, 'cli.db') };
+    const env = { ...process.env, [ENV.DB_PATH]: join(dir, 'cli.db') };
     const r = await run(process.execPath, ['dist/src/cli/index.js', 'pack', 'export', '--dir', '-dash-dir', '--project', 'p'], { env, cwd: process.cwd() }).catch((e) => e as { code?: number; stderr?: string });
     assert.notEqual((r as { code?: number }).code ?? 0, 0, 'exits non-zero');
     assert.ok(!readdirSync(process.cwd()).includes('-dash-dir'), 'no stray directory');
@@ -399,7 +400,7 @@ echo invoked > "${marker}"
 exit 0
 `);
       chmodSync(join(binDir, 'git'), 0o755);
-      const env = { ...process.env, PATH: `${binDir}:${process.env.PATH}`, CAIRN_DB_PATH: join(dir, 'rt.db') };
+      const env = { ...process.env, PATH: `${binDir}:${process.env.PATH}`, [ENV.DB_PATH]: join(dir, 'rt.db') };
       await run(process.execPath, ['dist/src/cli/index.js', 'pack', 'export', '--dir', join(dir, 'rtpack'), '--project', 'p'], { env, cwd: process.cwd() });
       await run(process.execPath, ['dist/src/cli/index.js', 'pack', 'import', '--dir', join(dir, 'rtpack'), '--project', 'p'], { env, cwd: process.cwd() }).catch(() => null);
       assert.ok(!readdirSync(binDir).includes('git-was-called'), 'git was never invoked by either command');

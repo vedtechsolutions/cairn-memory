@@ -61,7 +61,7 @@ const NAMESPACED_VALUES = [
  * complete and false-positive-free: it catches `process.env.X`, aliased
  * (`const e = process.env; e.X`), destructured, object-literal keys and bare
  * strings inside messages, while ignoring unrelated identifiers that merely
- * begin with the same prefix (e.g. CAIRN_HOOK_DIR_MARKER, a path fragment
+ * begin with the same prefix (e.g. WAYKEEP_HOOK_DIR_MARKER, a path fragment
  * constant, not an environment variable).
  *
  * Known limit: an env name that is not yet in the ENV table cannot be
@@ -184,7 +184,21 @@ describe('the MCP surface is never spelled inline', () => {
     const offenders: string[] = [];
     for (const file of SCANNED) {
       const code = stripComments(readFileSync(file, 'utf-8'));
-      const hits = LEGACY_NAMESPACES.filter(ns => new RegExp(`\\b${ns}[_.-]`).test(code));
+      // Every escaped form the earlier lowercase-\b${ns}[_.-] pattern missed
+      // (codex + Claude B1 review): identifier/separator (`cairn_`, `.cairn`,
+      // `cairn-`), URI scheme (`cairn://`), qualified MCP name
+      // (`mcp__cairn__`), and bracket tags (`[cairn ...]`, `[CAIRN]`). All
+      // case-insensitive. This runs on SRC only (docs/manifests are swept
+      // by their own tests below); comments were already stripped, so a
+      // 'Formerly Cairn' note in prose cannot reach here.
+      const legacyForms = (ns: string): RegExp[] => [
+        new RegExp(`[_.\\-/]${ns}[_.\\-/]`, 'i'), // .cairn/ cairn- cairn. cairn_ /cairn- (incl. trailing slash)
+        new RegExp(`\\b${ns}_[a-z]`, 'i'),         // cairn_recall
+        new RegExp(`${ns}://`, 'i'),                 // cairn://
+        new RegExp(`mcp__${ns}__`, 'i'),             // mcp__cairn__
+        new RegExp(`\\[${ns}[ :\\]]`, 'i'),          // [cairn ...] [cairn:...] [CAIRN]
+      ];
+      const hits = LEGACY_NAMESPACES.filter(ns => legacyForms(ns).some(re => re.test(code)));
       if (hits.length) offenders.push(`${relative(REPO, file)} -> ${hits.join(', ')}`);
     }
     assert.deepEqual(offenders, [],

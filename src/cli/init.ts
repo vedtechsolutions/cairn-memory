@@ -14,21 +14,17 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { resolveRelay, relayBinaryPath, relayShellPath } from './relay.js';
 import { runCodexInit } from './codex-init.js';
-import { CAIRN_HOOK_DIR_MARKER } from '../constants/index.js';
+import { isWaykeepHookCommand } from '../constants/index.js';
 import { ENV } from '../constants/env.js';
 import { BACKUP_SUFFIX } from '../constants/paths.js';
 import { MCP_SERVER_NAME } from '../constants/mcp.js';
+import { LEGACY_NAMESPACES } from 'waykeep-contract';
 
 /** Package root: dist/src/cli/ → the install root that holds dist/. */
 const PKG_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const HOOK_DIR = join(PKG_ROOT, 'dist', 'src', 'hooks');
 const SERVER = join(PKG_ROOT, 'dist', 'src', 'mcp', 'server.js');
 
-/** Every Waykeep hook — relay or node-form, current or legacy — lives under
- *  the marker directory, so one substring identifies Waykeep entries across
- *  reinstalls; a user's own hook pointing into a Waykeep install's hooks dir
- *  is effectively impossible. */
-const CAIRN_HOOK_MARKERS = [CAIRN_HOOK_DIR_MARKER];
 
 interface HookCommand { type: 'command'; command: string; async?: boolean }
 interface HookMatcher { matcher: string; hooks: HookCommand[] }
@@ -41,7 +37,7 @@ function one(matcher: string, ...hooks: HookCommand[]): HookMatcher[] { return [
 /** The canonical Waykeep hook set (mirrors README section 3), built against the
  *  resolved relay command prefix (compiled binary or shell fallback).
  *  Exported for tests that assert the generated commands per relay form. */
-export function cairnHooks(relayCmd: string): HookMap {
+export function waykeepHooks(relayCmd: string): HookMap {
   const relay = (sub: string): HookCommand => ({ type: 'command', command: `${relayCmd} ${sub}` });
   const relayAsync = (sub: string): HookCommand => ({ type: 'command', command: `${relayCmd} ${sub}`, async: true });
   return {
@@ -66,11 +62,11 @@ export function cairnHooks(relayCmd: string): HookMap {
   };
 }
 
-function cairnMcpServer(): Record<string, unknown> {
+function waykeepMcpServer(): Record<string, unknown> {
   return { command: 'node', args: [SERVER], env: { [ENV.LOG_LEVEL]: 'info' } };
 }
 
-function cairnStatusLine(): Record<string, unknown> {
+function waykeepStatusLine(): Record<string, unknown> {
   return { type: 'command', command: `node ${join(HOOK_DIR, 'statusline.js')}` };
 }
 
@@ -78,44 +74,95 @@ function cairnStatusLine(): Record<string, unknown> {
  *  malformed entry (no hooks array — user-authored settings are
  *  arbitrary JSON) is NOT ours: treating it as foreign preserves it,
  *  where `.some` on undefined aborted the whole init (review). */
-function isCairnEntry(entry: HookMatcher): boolean {
+function isWaykeepEntry(entry: HookMatcher): boolean {
   return Array.isArray(entry.hooks)
-    && entry.hooks.some(h => CAIRN_HOOK_MARKERS.some(marker => typeof h?.command === 'string' && h.command.includes(marker)));
+    && entry.hooks.some(h => typeof h?.command === 'string' && isWaykeepHookCommand(h.command));
 }
 
 /** Remove Waykeep HANDLERS from entries, at handler granularity: a MIXED
  *  entry (a Waykeep handler beside the user's own) keeps its foreign
  *  handlers — entry-level removal deleted them (review). Entries left
  *  empty drop; returns null when nothing remains for the event. */
-function sweepCairnHandlers(entries: HookMatcher[]): { kept: HookMatcher[] | null; swept: boolean } {
+function sweepWaykeepHandlers(entries: HookMatcher[]): { kept: HookMatcher[] | null; swept: boolean } {
   let swept = false;
   const kept: HookMatcher[] = [];
   for (const entry of entries) {
-    if (!isCairnEntry(entry)) { kept.push(entry); continue; }
+    if (!isWaykeepEntry(entry)) { kept.push(entry); continue; }
     swept = true;
-    const foreign = entry.hooks.filter(h => !CAIRN_HOOK_MARKERS.some(marker => typeof h?.command === 'string' && h.command.includes(marker)));
+    const foreign = entry.hooks.filter(h => !(typeof h?.command === 'string' && isWaykeepHookCommand(h.command)));
     if (foreign.length > 0) kept.push({ ...entry, hooks: foreign });
   }
   return { kept: kept.length > 0 ? kept : null, swept };
+}
+
+/** The `args` strings of an mcpServers entry (empty for a malformed one). */
+function serverArgs(entry: unknown): string[] {
+  if (!entry || typeof entry !== 'object') return [];
+  const args = (entry as { args?: unknown }).args;
+  return Array.isArray(args) ? args.filter((a): a is string => typeof a === 'string') : [];
+}
+
+const normalizePath = (p: string): string => p.replace(/\\/g, '/');
+
+/**
+ * True when an entry launches OUR EXACT server.js — THIS install's absolute
+ * path. This is the only case safe to auto-remove: an in-place pre-rename alias
+ * of the very server we are installing. A foreign server, OR the same product
+ * installed at a different path, is never our exact path, so a suffix match
+ * (which could delete `…/other-project/dist/src/mcp/server.js`) is unsafe
+ * (codex B1 review). Windows backslashes are normalized on both sides.
+ */
+function referencesOurServer(entry: unknown): boolean {
+  const target = normalizePath(SERVER);
+  return serverArgs(entry).some(a => normalizePath(a) === target);
+}
+
+/** True when an entry launches SOME waykeep/cairn server.js (any install) —
+ *  used only to WARN, never to delete. */
+function looksLikeWaykeepServer(entry: unknown): boolean {
+  return serverArgs(entry).some(a => normalizePath(a).endsWith('/dist/src/mcp/server.js'));
+}
+
+/**
+ * Categorize stale legacy-namespace MCP keys (e.g. `cairn`). `removed` are keys
+ * launching OUR exact server (auto-deleted — the pre-rename alias of this
+ * install). `suspect` are keys launching a waykeep/cairn server at a DIFFERENT
+ * path (a relocated old install, OR a foreign one we must not delete): left in
+ * place and reported so the operator can remove them by hand. Everything else
+ * is untouched. Removed with the legacy namespace at Phase D.
+ */
+function sweepLegacyMcpServers(servers: Record<string, unknown>): { removed: string[]; suspect: string[] } {
+  const removed: string[] = [];
+  const suspect: string[] = [];
+  for (const ns of LEGACY_NAMESPACES) {
+    if (servers[ns] === undefined) continue;
+    if (referencesOurServer(servers[ns])) {
+      delete servers[ns];
+      removed.push(ns);
+    } else if (looksLikeWaykeepServer(servers[ns])) {
+      suspect.push(ns);
+    }
+  }
+  return { removed, suspect };
 }
 
 interface MergePlan { changed: string[]; skipped: string[]; result: Settings }
 
 /**
  * Merge Waykeep's config into existing settings without clobbering the user's:
- * the `cairn` MCP server is set (other servers kept); each hook event gets
- * Waykeep's entries with any prior Waykeep entries replaced and non-Waykeep entries
- * preserved; StatusLine is set only when absent or already Waykeep's.
+ * the `waykeep` MCP server is set (other servers kept, stale legacy keys swept);
+ * each hook event gets Waykeep's entries with any prior Waykeep entries replaced
+ * and non-Waykeep entries preserved; StatusLine is set only when absent or Waykeep's.
  */
 function mergeSettings(existing: Settings, relayCmd: string, statuslineOnly = false): MergePlan {
   const changed: string[] = [];
   const skipped: string[] = [];
   const result: Settings = { ...existing };
 
-  const statusIsCairn = typeof existing.statusLine === 'object' && existing.statusLine !== null
-    && String((existing.statusLine as { command?: string }).command ?? '').includes('dist/src/hooks/statusline');
-  if (existing.statusLine === undefined || statusIsCairn) {
-    result.statusLine = cairnStatusLine();
+  const statusIsWaykeep = typeof existing.statusLine === 'object' && existing.statusLine !== null
+    && isWaykeepHookCommand(String((existing.statusLine as { command?: string }).command ?? ''));
+  if (existing.statusLine === undefined || statusIsWaykeep) {
+    result.statusLine = waykeepStatusLine();
     changed.push('statusLine');
   } else {
     skipped.push('statusLine (a non-Waykeep StatusLine is already set — left untouched)');
@@ -129,7 +176,7 @@ function mergeSettings(existing: Settings, relayCmd: string, statuslineOnly = fa
     const hooks: HookMap = { ...(existing.hooks ?? {}) };
     let sweptEvents = 0;
     for (const [event, entries] of Object.entries(hooks)) {
-      const { kept, swept } = sweepCairnHandlers(entries);
+      const { kept, swept } = sweepWaykeepHandlers(entries);
       if (swept) {
         if (kept) hooks[event] = kept;
         else delete hooks[event];
@@ -140,27 +187,47 @@ function mergeSettings(existing: Settings, relayCmd: string, statuslineOnly = fa
       result.hooks = hooks;
       changed.push(`hooks (${sweptEvents} event(s) of settings-wired Waykeep hooks removed — the plugin provides them)`);
     }
-    const existingServer = (existing.mcpServers ?? {})[MCP_SERVER_NAME] as { args?: unknown[] } | undefined;
-    if (existingServer && JSON.stringify(existingServer).includes('dist/src/mcp/server.js')) {
-      const servers = { ...(existing.mcpServers ?? {}) };
+    // Sweep BOTH the current server key and any stale legacy key (e.g.
+    // `cairn`) that references our server — a --statusline-only run under the
+    // plugin must not leave a settings-wired server double-registered, and an
+    // upgraded install may still carry the retired-name entry (codex B1 review).
+    const servers = { ...(existing.mcpServers ?? {}) };
+    let removedServer = false;
+    if (referencesOurServer(servers[MCP_SERVER_NAME])) {
       delete servers[MCP_SERVER_NAME];
-      result.mcpServers = servers;
+      removedServer = true;
       changed.push(`mcpServers.${MCP_SERVER_NAME} removed (the plugin provides it)`);
     }
+    const swept = sweepLegacyMcpServers(servers);
+    for (const ns of swept.removed) {
+      removedServer = true;
+      changed.push(`mcpServers.${ns} removed (retired namespace — the plugin provides it)`);
+    }
+    for (const ns of swept.suspect) {
+      skipped.push(`mcpServers.${ns} left in place — launches a waykeep server at a DIFFERENT install path; remove it by hand if that install is retired`);
+    }
+    if (removedServer) result.mcpServers = servers;
     skipped.push('hooks + MCP wiring (plugin-managed — --statusline-only)');
     return { changed, skipped, result };
   }
 
   const servers = { ...(existing.mcpServers ?? {}) };
-  servers[MCP_SERVER_NAME] = cairnMcpServer();
+  servers[MCP_SERVER_NAME] = waykeepMcpServer();
+  const swept = sweepLegacyMcpServers(servers);
+  for (const ns of swept.removed) {
+    changed.push(`mcpServers.${ns} removed (retired namespace — replaced by ${MCP_SERVER_NAME})`);
+  }
+  for (const ns of swept.suspect) {
+    skipped.push(`mcpServers.${ns} left in place — launches a waykeep server at a DIFFERENT install path; remove it by hand if that install is retired`);
+  }
   result.mcpServers = servers;
   changed.push(`mcpServers.${MCP_SERVER_NAME}`);
 
   const hooks: HookMap = { ...(existing.hooks ?? {}) };
-  const desired = cairnHooks(relayCmd);
-  for (const [event, cairnEntries] of Object.entries(desired)) {
-    const preserved = (hooks[event] ?? []).filter(entry => !isCairnEntry(entry));
-    hooks[event] = [...preserved, ...cairnEntries];
+  const desired = waykeepHooks(relayCmd);
+  for (const [event, waykeepEntries] of Object.entries(desired)) {
+    const preserved = (hooks[event] ?? []).filter(entry => !isWaykeepEntry(entry));
+    hooks[event] = [...preserved, ...waykeepEntries];
   }
   // Orphan sweep: Waykeep entries under events the CURRENT hook set no
   // longer wires (e.g. FileChanged after its removal) would otherwise
@@ -168,7 +235,7 @@ function mergeSettings(existing: Settings, relayCmd: string, statuslineOnly = fa
   // them (review). Foreign entries under those events are untouched.
   for (const [event, entries] of Object.entries(hooks)) {
     if (Object.hasOwn(desired, event)) continue;
-    const { kept, swept } = sweepCairnHandlers(entries);
+    const { kept, swept } = sweepWaykeepHandlers(entries);
     if (swept) {
       if (kept) hooks[event] = kept;
       else delete hooks[event];

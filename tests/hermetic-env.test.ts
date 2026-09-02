@@ -11,18 +11,19 @@ import { join } from 'node:path';
 import { homedir } from 'node:os';
 
 import { getTrackerPath } from '../src/hooks/shared/edit-tracker.js';
+import { ENV } from '../src/constants/env.js';
 
 describe('hermetic test environment', () => {
   it('CAIRN_DIR is overridden away from the real ~/.cairn', () => {
-    assert.ok(process.env.CAIRN_DIR, 'preload must set CAIRN_DIR');
-    assert.notEqual(process.env.CAIRN_DIR, join(homedir(), '.cairn'));
-    assert.ok(getTrackerPath('canary').startsWith(process.env.CAIRN_DIR as string));
+    assert.ok(process.env[ENV.DIR], 'preload must set CAIRN_DIR');
+    assert.notEqual(process.env[ENV.DIR], join(homedir(), '.cairn'));
+    assert.ok(getTrackerPath('canary').startsWith(process.env[ENV.DIR] as string));
   });
 
   it('CAIRN_STATE_PATH is overridden away from the real ~/.claude', () => {
-    assert.ok(process.env.CAIRN_STATE_PATH, 'preload must set CAIRN_STATE_PATH');
+    assert.ok(process.env[ENV.STATE_PATH], 'preload must set CAIRN_STATE_PATH');
     assert.notEqual(
-      process.env.CAIRN_STATE_PATH,
+      process.env[ENV.STATE_PATH],
       join(homedir(), '.claude', 'cairn-state.json'),
     );
   });

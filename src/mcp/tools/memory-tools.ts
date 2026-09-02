@@ -10,11 +10,11 @@ import { LEARNABLE_KINDS, LIMITS, BRIEFING_MODE, RELEVANCE, FINGERPRINT, CONFIDE
 import { RERANK } from '../../constants/reranker-models.js';
 import { generateFingerprint } from '../../utils/fingerprint.js';
 import { surfacesInScopedRecall } from '../../utils/cross-project-guard.js';
-import { canReadPrivate } from '../../config/cairn-config.js';
+import { canReadPrivate } from '../../config/waykeep-config.js';
 import { sessionProjectId } from '../../utils/session-project.js';
 import type { ContextRepository } from '../../db/context-repository.js';
 import { isRerankEnabled, rerank } from '../../utils/reranker.js';
-import { isCritical } from './helpers.js';
+import { isCritical , registerToolCompat } from './helpers.js';
 import { sanitize } from '../../utils/validation.js';
 import { scrubSecrets } from '../../utils/secret-scanner.js';
 import {
@@ -61,9 +61,9 @@ export function registerMemoryTools(
   rerankerImpl: RerankerImpl = { isEnabled: isRerankEnabled, rerank },
   contextRepo?: ContextRepository,
 ): void {
-  // --- cairn_recall ----------------------------------------------------------
+  // --- waykeep_recall ----------------------------------------------------------
 
-  server.registerTool(
+  registerToolCompat(server, 
     TOOL.RECALL,
     {
       title: 'Recall Memories',
@@ -84,7 +84,7 @@ export function registerMemoryTools(
       // Resolve a bare project name (e.g. "cairn") to its full id for scoping.
       //
       // SYMMETRY (remediation step 2): when `project` is omitted, default to
-      // the session's own project — the same default `cairn_learn` applies —
+      // the session's own project — the same default `waykeep_learn` applies —
       // so a lesson stored by this session is visible to this session's next
       // bare recall. Before this, bare recall searched GLOBAL-ONLY, and a
       // freshly learned project-scoped pitfall was unreachable seconds later
@@ -167,7 +167,7 @@ export function registerMemoryTools(
         if (reordered === null) {
           // Transient unavailability — degrade EXPLICITLY, never silently
           rerankFallback = true;
-          console.error('[cairn] rerank unavailable — returning RRF order (labeled)');
+          console.error('[waykeep] rerank unavailable — returning RRF order (labeled)');
         } else {
           const byId = new Map(results.map(r => [r.memory.id, r]));
           results = reordered.map(c => byId.get(c.id)).filter((r): r is NonNullable<typeof r> => r !== undefined);
@@ -257,9 +257,9 @@ export function registerMemoryTools(
     },
   );
 
-  // --- cairn_learn -----------------------------------------------------------
+  // --- waykeep_learn -----------------------------------------------------------
 
-  server.registerTool(
+  registerToolCompat(server, 
     TOOL.LEARN,
     {
       title: 'Learn Memory',
@@ -431,9 +431,9 @@ export function registerMemoryTools(
     return { content: [{ type: 'text', text: 'error: this memory belongs to a private project — modify it from a session inside that project' }], isError: true };
   };
 
-  // --- cairn_correct ---------------------------------------------------------
+  // --- waykeep_correct ---------------------------------------------------------
 
-  server.registerTool(
+  registerToolCompat(server, 
     TOOL.CORRECT,
     {
       title: 'Correct Memory',
@@ -474,9 +474,9 @@ export function registerMemoryTools(
     },
   );
 
-  // --- cairn_forget ----------------------------------------------------------
+  // --- waykeep_forget ----------------------------------------------------------
 
-  server.registerTool(
+  registerToolCompat(server, 
     TOOL.FORGET,
     {
       title: 'Forget Memory',
@@ -495,9 +495,9 @@ export function registerMemoryTools(
     },
   );
 
-  // --- cairn_strengthen ------------------------------------------------------
+  // --- waykeep_strengthen ------------------------------------------------------
 
-  server.registerTool(
+  registerToolCompat(server, 
     TOOL.STRENGTHEN,
     {
       title: 'Strengthen Memory',
@@ -515,9 +515,9 @@ export function registerMemoryTools(
     },
   );
 
-  // --- cairn_weaken ----------------------------------------------------------
+  // --- waykeep_weaken ----------------------------------------------------------
 
-  server.registerTool(
+  registerToolCompat(server, 
     TOOL.WEAKEN,
     {
       title: 'Weaken Memory',
@@ -537,16 +537,16 @@ export function registerMemoryTools(
       return { content: [{ type: 'text', text: result.invalidated ? 'invalidated' : 'ok' }] };
     },
   );
-  // --- cairn_expand ----------------------------------------------------------
+  // --- waykeep_expand ----------------------------------------------------------
   // Progressive-disclosure companion to the index briefing. The index emits
   // short lines prefixed with stable type-coded IDs (dec:xxxxxxxx,
   // pit:xxxxxxxx, cor:xxxxxxxx); Claude passes a subset of those IDs here
   // to pull full content, why, how_to_apply, confidence, and effectiveness
-  // when it actually needs the detail. SNR gates match cairn_recall:
+  // when it actually needs the detail. SNR gates match waykeep_recall:
   // invalidated memories are skipped, low-confidence probation items are
   // suppressed.
 
-  server.registerTool(
+  registerToolCompat(server, 
     TOOL.EXPAND,
     {
       title: 'Expand Memory IDs',
@@ -600,9 +600,9 @@ export function registerMemoryTools(
     },
   );
 
-  // --- cairn_cleanup ---------------------------------------------------------
+  // --- waykeep_cleanup ---------------------------------------------------------
 
-  server.registerTool(
+  registerToolCompat(server, 
     TOOL.CLEANUP,
     {
       title: 'Cleanup Memories',

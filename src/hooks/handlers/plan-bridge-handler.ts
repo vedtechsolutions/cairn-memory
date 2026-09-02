@@ -47,7 +47,7 @@ export function handlePlanBridge(
     if (input.tool_response && typeof input.tool_response === 'string') {
       const parsed = parsePlanContent(input.tool_response);
       if (parsed && parsed.steps.length >= 2) {
-        return createCairnPlan(input, parsed, client);
+        return createWaykeepPlan(input, parsed, client);
       }
     }
     return { output: null, action: 'no-plan-found' };
@@ -63,7 +63,7 @@ export function handlePlanBridge(
       const content = readFileSync(filePath, 'utf-8');
       const parsed = parsePlanContent(content);
       if (parsed && parsed.steps.length >= 2) {
-        return createCairnPlan(input, parsed, client);
+        return createWaykeepPlan(input, parsed, client);
       }
     } catch { continue; }
   }
@@ -71,7 +71,7 @@ export function handlePlanBridge(
   return { output: null, action: 'no-plan-found' };
 }
 
-function createCairnPlan(
+function createWaykeepPlan(
   input: PostToolUseInput,
   planContent: { name: string; steps: string[] },
   client: HookDbClient,

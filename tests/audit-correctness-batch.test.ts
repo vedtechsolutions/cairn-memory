@@ -18,6 +18,7 @@ import { MemoryRepository } from '../src/db/memory-repository.js';
 import { runAutoPromotion } from '../src/db/maintenance.js';
 import { saveTracker, loadTracker, updateTracker, deleteTracker, getTrackerPath } from '../src/hooks/shared/edit-tracker.js';
 import { escapeLikePattern } from '../src/utils/validation.js';
+import { ENV } from '../src/constants/env.js';
 
 describe('H3 — JS vector fallback scan is capped', () => {
   it('fallback query orders by confidence and applies the scan-limit constant', () => {
@@ -111,14 +112,14 @@ describe('H6 — tracker saves are atomic (torn-write fix)', () => {
 
   beforeEach(() => {
     // Hermetic: point the tracker at a temp dir instead of the real ~/.cairn
-    prevCairnDir = process.env.CAIRN_DIR;
+    prevCairnDir = process.env[ENV.DIR];
     tmpCairnDir = mkdtempSync(join(tmpdir(), 'cairn-h6-'));
-    process.env.CAIRN_DIR = tmpCairnDir;
+    process.env[ENV.DIR] = tmpCairnDir;
   });
   afterEach(() => {
     deleteTracker(SESSION);
-    if (prevCairnDir === undefined) delete process.env.CAIRN_DIR;
-    else process.env.CAIRN_DIR = prevCairnDir;
+    if (prevCairnDir === undefined) delete process.env[ENV.DIR];
+    else process.env[ENV.DIR] = prevCairnDir;
     rmSync(tmpCairnDir, { recursive: true, force: true });
   });
 

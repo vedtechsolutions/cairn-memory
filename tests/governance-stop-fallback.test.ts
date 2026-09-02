@@ -7,6 +7,7 @@ import { join, resolve } from 'node:path';
 import { openDatabase } from '../src/db/connection.js';
 import { projectId } from '../src/utils/project-id.js';
 import { nodeGrandchildSkipReason } from './spawn-probe.js';
+import { ENV } from '../src/constants/env.js';
 
 function runFallback(script: string, input: string, env: NodeJS.ProcessEnv): Promise<{
   status: number | null; stdout: string; stderr: string;
@@ -45,7 +46,7 @@ describe('standalone Stop fallback shadow wiring', () => {
           cwd: root, stop_hook_active: false, last_assistant_message: 'short',
           client_name: 'claude-code', client_installation_id: 'fallback-install',
         }),
-        { ...process.env, CAIRN_DB_PATH: dbPath, CAIRN_DIR: state },
+        { ...process.env, [ENV.DB_PATH]: dbPath, [ENV.DIR]: state },
       );
       assert.equal(result.status, 0, result.stderr);
       assert.equal(result.stdout, '', 'shadow verdict must never reach stdout');

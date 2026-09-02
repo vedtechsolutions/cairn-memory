@@ -7,7 +7,8 @@ import { openDatabase } from '../src/db/connection.js';
 import { MemoryRepository } from '../src/db/memory-repository.js';
 import { runMigrateProject } from '../src/cli/migrate-project.js';
 import { projectId, __resetProjectIdCacheForTests } from '../src/utils/project-id.js';
-import { resetConfigCacheForTests } from '../src/config/cairn-config.js';
+import { resetConfigCacheForTests } from '../src/config/waykeep-config.js';
+import { ENV } from '../src/constants/env.js';
 
 const cleanup: string[] = [];
 function tempDir(prefix: string): string {
@@ -47,10 +48,10 @@ function projectOf(dbPath: string, memoryId: string): string | undefined {
 }
 
 beforeEach(() => {
-  savedEnv.CAIRN_DB_PATH = process.env.CAIRN_DB_PATH;
-  savedEnv.CAIRN_CONFIG_PATH = process.env.CAIRN_CONFIG_PATH;
-  process.env.CAIRN_DB_PATH = join(tempDir('waykeep-migdb-'), 'test.db');
-  process.env.CAIRN_CONFIG_PATH = join(tempDir('waykeep-migcfg-'), 'config.json');
+  savedEnv.CAIRN_DB_PATH = process.env[ENV.DB_PATH];
+  savedEnv.CAIRN_CONFIG_PATH = process.env[ENV.CONFIG_PATH];
+  process.env[ENV.DB_PATH] = join(tempDir('waykeep-migdb-'), 'test.db');
+  process.env[ENV.CONFIG_PATH] = join(tempDir('waykeep-migcfg-'), 'config.json');
   resetConfigCacheForTests();
   __resetProjectIdCacheForTests();
 });
@@ -67,7 +68,7 @@ after(() => {
 describe('migrate-project CLI', () => {
   it('moves rows from the old id to the current project id', () => {
     const repo = repoWithRemote('git@github.com:acme/renamed.git');
-    const dbPath = process.env.CAIRN_DB_PATH as string;
+    const dbPath = process.env[ENV.DB_PATH] as string;
     const memoryId = seedDb(dbPath, OLD_ID, 'survives the remote rename');
 
     assert.equal(runMigrateProject({ oldId: OLD_ID, dryRun: false, cwd: repo }), 0);
@@ -76,7 +77,7 @@ describe('migrate-project CLI', () => {
 
   it('dry run reports without writing', () => {
     const repo = repoWithRemote('git@github.com:acme/renamed.git');
-    const dbPath = process.env.CAIRN_DB_PATH as string;
+    const dbPath = process.env[ENV.DB_PATH] as string;
     const memoryId = seedDb(dbPath, OLD_ID, 'stays put on dry run');
 
     assert.equal(runMigrateProject({ oldId: OLD_ID, dryRun: true, cwd: repo }), 0);
@@ -100,9 +101,9 @@ describe('migrate-project CLI', () => {
 
   it('fails closed when the old project is private and the current id is not', () => {
     const repo = repoWithRemote('git@github.com:acme/renamed.git');
-    const dbPath = process.env.CAIRN_DB_PATH as string;
+    const dbPath = process.env[ENV.DB_PATH] as string;
     const memoryId = seedDb(dbPath, OLD_ID, 'private content must not lose its scope');
-    writeFileSync(process.env.CAIRN_CONFIG_PATH as string,
+    writeFileSync(process.env[ENV.CONFIG_PATH] as string,
       JSON.stringify({ scope: { privateProjects: [OLD_ID] } }));
     resetConfigCacheForTests();
 
@@ -112,9 +113,9 @@ describe('migrate-project CLI', () => {
 
   it('migrates when both the old and current ids are private', () => {
     const repo = repoWithRemote('git@github.com:acme/renamed.git');
-    const dbPath = process.env.CAIRN_DB_PATH as string;
+    const dbPath = process.env[ENV.DB_PATH] as string;
     const memoryId = seedDb(dbPath, OLD_ID, 'private content moving to a private id');
-    writeFileSync(process.env.CAIRN_CONFIG_PATH as string,
+    writeFileSync(process.env[ENV.CONFIG_PATH] as string,
       JSON.stringify({ scope: { privateProjects: [OLD_ID, projectId(repo)] } }));
     resetConfigCacheForTests();
 

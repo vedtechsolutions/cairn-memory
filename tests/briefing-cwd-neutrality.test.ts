@@ -16,6 +16,7 @@ import { PlanRepository } from '../src/db/plan-repository.js';
 import { compileBriefing, type BriefingContext } from '../src/hooks/shared/briefing-compiler.js';
 import type { ContextFingerprint } from '../src/utils/fingerprint.js';
 import type { ProjectContext } from '../src/utils/project-scanner.js';
+import { ENV } from '../src/constants/env.js';
 
 const CAIRN_PROJECT = 'cairn-test';
 const TS_FP: ContextFingerprint = {
@@ -63,18 +64,18 @@ describe('A1 — briefing is neutral to checkout directory basename', () => {
     db = openDatabase({ dbPath: ':memory:' });
     memRepo = new MemoryRepository(db);
     planRepo = new PlanRepository(db);
-    savedCwdOverride = process.env.CAIRN_QUERY_CWD;
+    savedCwdOverride = process.env[ENV.QUERY_CWD];
   });
 
   afterEach(() => {
     db.close();
-    if (savedCwdOverride === undefined) delete process.env.CAIRN_QUERY_CWD;
-    else process.env.CAIRN_QUERY_CWD = savedCwdOverride;
+    if (savedCwdOverride === undefined) delete process.env[ENV.QUERY_CWD];
+    else process.env[ENV.QUERY_CWD] = savedCwdOverride;
   });
 
   for (const cwd of NEUTRAL_CWDS) {
     it(`surfaces same-project memories when cwd is ${cwd}`, () => {
-      process.env.CAIRN_QUERY_CWD = cwd;
+      process.env[ENV.QUERY_CWD] = cwd;
       memRepo.create({
         content: 'Cairn-specific pitfall about hook telemetry schema',
         kind: 'pitfall',
@@ -93,7 +94,7 @@ describe('A1 — briefing is neutral to checkout directory basename', () => {
   }
 
   it('still blocks unfingerprinted cross-project globals under a neutral cwd', () => {
-    process.env.CAIRN_QUERY_CWD = NEUTRAL_CWDS[0];
+    process.env[ENV.QUERY_CWD] = NEUTRAL_CWDS[0];
     memRepo.create({
       content: 'Odoo 19 kanban templates do not have kanban_image function',
       kind: 'pitfall',
@@ -114,9 +115,9 @@ describe('A1 — briefing is neutral to checkout directory basename', () => {
       fingerprint: TS_FP,
     });
 
-    process.env.CAIRN_QUERY_CWD = '/opt/cairn';
+    process.env[ENV.QUERY_CWD] = '/opt/cairn';
     const projectNamed = compileBriefing(memRepo, planRepo, makeCtx()).text;
-    process.env.CAIRN_QUERY_CWD = '/home/ci/workspace';
+    process.env[ENV.QUERY_CWD] = '/home/ci/workspace';
     const neutral = compileBriefing(memRepo, planRepo, makeCtx()).text;
 
     assert.equal(neutral, projectNamed, 'briefing must not vary with checkout dir name');

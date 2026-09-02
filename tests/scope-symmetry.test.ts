@@ -24,6 +24,7 @@ import { MemoryRepository } from '../src/db/memory-repository.js';
 import { registerMemoryTools } from '../src/mcp/tools/memory-tools.js';
 import { EdgeRepository } from '../src/db/edge-repository.js';
 import { setSessionProjectForTests } from '../src/utils/session-project.js';
+import { TOOL } from '../src/constants/mcp.js';
 
 const SESSION_PROJECT = 'proj-symmetry';
 
@@ -60,42 +61,42 @@ const call = async (name: string, args: Record<string, unknown>) => {
 
 describe('learn/recall scope symmetry', () => {
   it('GATE: learn without project, bare recall same session — the sentinel returns', async () => {
-    const learned = await call('cairn_learn', {
+    const learned = await call(TOOL.LEARN, {
       kind: 'pitfall',
       content: 'sentinel: validate the sqlite backup api against a live writer before trusting it',
     });
     assert.equal(learned.isError, false, learned.text);
 
-    const recalled = await call('cairn_recall', { query: 'validate sqlite backup api live writer' });
+    const recalled = await call(TOOL.RECALL, { query: 'validate sqlite backup api live writer' });
     assert.equal(recalled.isError, false);
     assert.match(recalled.text, /sentinel: validate the sqlite backup api/,
       'a lesson learned by this session must be visible to this session\'s next bare recall');
   });
 
   it('learn without project actually stored under the session project (not global)', async () => {
-    await call('cairn_learn', { kind: 'pitfall', content: 'sentinel: scoped storage check for symmetry' });
+    await call(TOOL.LEARN, { kind: 'pitfall', content: 'sentinel: scoped storage check for symmetry' });
     const row = db.prepare("SELECT project FROM memories WHERE content LIKE 'sentinel: scoped storage%'").get() as { project: string | null };
     assert.equal(row.project, SESSION_PROJECT);
   });
 
   it('bare recall still returns fingerprint-less globals alongside session rows', async () => {
     repo.create({ content: 'global wisdom about sqlite backup api verification', kind: 'fact', project: null, confidence: 0.8 });
-    await call('cairn_learn', { kind: 'pitfall', content: 'sentinel: project row about sqlite backup api' });
-    const recalled = await call('cairn_recall', { query: 'sqlite backup api' });
+    await call(TOOL.LEARN, { kind: 'pitfall', content: 'sentinel: project row about sqlite backup api' });
+    const recalled = await call(TOOL.RECALL, { query: 'sqlite backup api' });
     assert.match(recalled.text, /global wisdom/);
     assert.match(recalled.text, /sentinel: project row/);
   });
 
   it('an explicit project argument is still respected verbatim', async () => {
     repo.create({ content: 'other-project row about backup api', kind: 'fact', project: 'proj-other', confidence: 0.8 });
-    const recalled = await call('cairn_recall', { query: 'backup api', project: 'proj-other' });
+    const recalled = await call(TOOL.RECALL, { query: 'backup api', project: 'proj-other' });
     assert.match(recalled.text, /other-project row/);
   });
 
   it("scope:'global' returns only globals — the documented explicit global mode", async () => {
     repo.create({ content: 'globalonly row about backup api', kind: 'fact', project: null, confidence: 0.8 });
-    await call('cairn_learn', { kind: 'pitfall', content: 'sentinel: session row backup api again' });
-    const recalled = await call('cairn_recall', { query: 'backup api', scope: 'global' });
+    await call(TOOL.LEARN, { kind: 'pitfall', content: 'sentinel: session row backup api again' });
+    const recalled = await call(TOOL.RECALL, { query: 'backup api', scope: 'global' });
     assert.match(recalled.text, /globalonly row/);
     assert.ok(!/sentinel: session row/.test(recalled.text), 'session rows excluded under scope:global');
   });
@@ -107,7 +108,7 @@ describe('learn/recall scope symmetry', () => {
     const mine = repo.create({ content: 'session entry row about edge smuggling probes', kind: 'fact', project: SESSION_PROJECT, confidence: 0.8 });
     const foreign = repo.create({ content: 'foreign project payload behind an edge', kind: 'fact', project: 'proj-other', confidence: 0.9 });
     edgeRepo.createEdge(mine.id, foreign.id, 'co_occurred', 1.0);
-    const recalled = await call('cairn_recall', { query: 'edge smuggling probes' });
+    const recalled = await call(TOOL.RECALL, { query: 'edge smuggling probes' });
     assert.match(recalled.text, /session entry row/);
     assert.ok(!/foreign project payload/.test(recalled.text),
       'graph enrichment must scope neighbors to target-project-or-global');
@@ -122,7 +123,7 @@ describe('learn/recall scope symmetry', () => {
       repo.create({ content: `session filler row number ${i} about the backup api window`, kind: 'fact', project: SESSION_PROJECT, confidence: 0.9 });
     }
     repo.create({ content: 'globalcrowd row about the backup api window', kind: 'fact', project: null, confidence: 0.5 });
-    const recalled = await call('cairn_recall', { query: 'backup api window', scope: 'global' });
+    const recalled = await call(TOOL.RECALL, { query: 'backup api window', scope: 'global' });
     assert.match(recalled.text, /globalcrowd row/,
       'the global must surface no matter how many session rows outrank it');
     assert.ok(!/session filler/.test(recalled.text));
@@ -131,10 +132,10 @@ describe('learn/recall scope symmetry', () => {
   it('learn with NO derivable session project errors instead of silently storing global', async () => {
     setSessionProjectForTests(null);
     try {
-      const learned = await call('cairn_learn', { kind: 'pitfall', content: 'sentinel: null session scope decision' });
+      const learned = await call(TOOL.LEARN, { kind: 'pitfall', content: 'sentinel: null session scope decision' });
       assert.equal(learned.isError, true, learned.text);
       assert.match(learned.text, /pass `project` explicitly/);
-      const explicitGlobal = await call('cairn_learn', { kind: 'pitfall', content: 'sentinel: chosen global row', project: null });
+      const explicitGlobal = await call(TOOL.LEARN, { kind: 'pitfall', content: 'sentinel: chosen global row', project: null });
       assert.equal(explicitGlobal.isError, false, explicitGlobal.text);
       const row = db.prepare("SELECT project FROM memories WHERE content LIKE 'sentinel: chosen global%'").get() as { project: string | null };
       assert.equal(row.project, null);
@@ -145,7 +146,7 @@ describe('learn/recall scope symmetry', () => {
 
   it('bare recall does NOT leak other projects\' rows', async () => {
     repo.create({ content: 'unrelated project secret about backup api', kind: 'fact', project: 'proj-other', confidence: 0.9 });
-    const recalled = await call('cairn_recall', { query: 'backup api' });
+    const recalled = await call(TOOL.RECALL, { query: 'backup api' });
     assert.ok(!/unrelated project secret/.test(recalled.text),
       'session-default scoping must not widen into OTHER projects');
   });

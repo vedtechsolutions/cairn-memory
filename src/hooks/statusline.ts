@@ -4,15 +4,14 @@
  * Configured in settings.json under "statusLine" key (NOT a hook event).
  * Receives JSON via stdin with context_window data.
  * Outputs status text to stdout for CLI display.
- * Writes mode to cairn-state.json for MCP server to read.
+ * Writes mode to waykeep-state.json for MCP server to read.
  *
  * Uses a lightweight read-only DB connection (skips schema migration)
  * since this runs on every turn and only needs to read counts.
  */
 import Database from 'better-sqlite3';
 import { readFileSync, existsSync } from 'node:fs';
-import { homedir } from 'node:os';
-import { writeState, type CairnState } from './shared/state-io.js';
+import { writeState, type WaykeepState } from './shared/state-io.js';
 import {
   CONTEXT_THRESHOLDS,
   AUTOCOMPACT_BUFFER_TOKENS,
@@ -20,6 +19,7 @@ import {
   DB,
   type ContextMode,
 } from '../constants/index.js';
+import { defaultDbPath } from '../constants/paths.js';
 import { projectId } from '../utils/project-id.js';
 import { ENV } from '../constants/env.js';
 
@@ -37,7 +37,7 @@ interface StatusLineInput {
 
 /** Open a lightweight read-only connection — no schema migration, no WAL pragma */
 function openReadOnly(dbPath?: string): Database.Database | null {
-  const resolved = dbPath ?? DB.DEFAULT_PATH.replace('~', homedir());
+  const resolved = dbPath ?? defaultDbPath(); // coherent state root (Phase B)
   if (resolved === ':memory:' || !existsSync(resolved)) return null;
   try {
     const db = new Database(resolved, { readonly: true });
@@ -73,7 +73,7 @@ try {
   }
 
   // Write mode to shared state file
-  const state: CairnState = { mode, freeUntilCompact };
+  const state: WaykeepState = { mode, freeUntilCompact };
   writeState(state);
 
   // Build display string with DB metadata

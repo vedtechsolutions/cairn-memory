@@ -1,10 +1,10 @@
 {
-  "_comment": "High/critical advisories accepted with a review-by date. The CI audit gate (scripts/audit-gate.mjs) fails on any production high/critical package NOT listed here, and also fails on any entry whose reviewBy date has passed. Every entry must be unreachable in Cairn's runtime and re-justified by reviewBy.",
+  "_comment": "High/critical advisories accepted with a review-by date. The CI audit gate (scripts/audit-gate.mjs) fails on any production high/critical package NOT listed here, and also fails on any entry whose reviewBy date has passed. Every entry must be unreachable in Waykeep's runtime and re-justified by reviewBy.",
   "allow": [
     {
       "package": "sharp",
       "severity": "high",
-      "reason": "libvips CVEs in the transformers.js image pipeline; Cairn embeds text only and never invokes the image path.",
+      "reason": "libvips CVEs in the transformers.js image pipeline; Waykeep embeds text only and never invokes the image path.",
       "reviewBy": "2026-11-30"
     },
     {
@@ -16,7 +16,7 @@
     {
       "package": "adm-zip",
       "severity": "high",
-      "reason": "4GB-allocation from a crafted ZIP via onnxruntime-node model unpacking; Cairn only unpacks pinned, hash-verified model archives, never arbitrary ones.",
+      "reason": "4GB-allocation from a crafted ZIP via onnxruntime-node model unpacking; Waykeep only unpacks pinned, hash-verified model archives, never arbitrary ones.",
       "reviewBy": "2026-11-30"
     },
     {

@@ -24,7 +24,7 @@ import { fileURLToPath } from 'node:url';
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT_DIR = join(REPO, 'dist', 'generated');
 
-const { NAMESPACE, DATA_DIR_NAME, DB_FILENAME, ENV_PREFIX, MCP_SERVER_NAME,
+const { NAMESPACE, DATA_DIR_NAME, DB_FILENAME, ENV_PREFIX, MCP_SERVER_NAME, LEGACY_NAMESPACES,
         RELAY_PROBE_FLAG, RELAY_PROBE_SENTINEL } =
   await import(join(REPO, 'packages', 'contract', 'dist', 'identity.js'));
 const { CLIENT_HEADER, CLIENT_ENV_VAR } =
@@ -50,6 +50,20 @@ const IDENTITY = {
   PROBE_SENTINEL: RELAY_PROBE_SENTINEL,
   /** mktemp template prefix for the shell relay's spool file. */
   TMP_PREFIX: `${NAMESPACE}-hook`,
+  /** Phase-B transitional: legacy data dirs the relays fall back to for the
+   *  hook socket while the OLD daemon still owns it (pre-Phase-C window).
+   *  Removed with the legacy namespace at Phase D. */
+  LEGACY_DATA_DIRS: LEGACY_NAMESPACES.map((ns) => `.${ns}`),
+  /** Retired namespaces + their UPPERCASE env prefixes — the harnesses use
+   *  these to scrub a developer's real CAIRN_* env out of hermetic runs,
+   *  so the transitional legacy-env bootstrap can't leak into tests. */
+  LEGACY_NAMESPACES: [...LEGACY_NAMESPACES],
+  LEGACY_ENV_PREFIXES: LEGACY_NAMESPACES.map((ns) => ns.toUpperCase()),
+  /** Marker the B2 migration writes; the relays choose the current store
+   *  dir when it exists (mirrors resolveStateRoot's marker-first rule). */
+  MIGRATION_MARKER: `${NAMESPACE}-migrated.json`,
+  /** Legacy database filename, for the relays' un-migrated fallback test. */
+  LEGACY_DB_FILE: LEGACY_NAMESPACES.length ? `${LEGACY_NAMESPACES[0]}.db` : DB_FILENAME,
   ENV: { ...ENV, CLIENT: CLIENT_ENV_VAR },
 };
 
@@ -85,7 +99,16 @@ const hLines = [
   '',
   '/* Built by literal concatenation so the pieces stay independently named. */',
   '#define WK_SOCK_PATH_TEMPLATE "%s/" WK_DATA_DIR "/" WK_SOCKET_FILE',
-  '#define WK_FALLBACK_LOG_TEMPLATE "%s/" WK_DATA_DIR "/" WK_FALLBACK_LOG_FILE',
+  `#define WK_LEGACY_DATA_DIR "${cEscape(IDENTITY.LEGACY_DATA_DIRS[0] ?? IDENTITY.DATA_DIR)}"`,
+  '#define WK_LEGACY_SOCK_PATH_TEMPLATE "%s/" WK_LEGACY_DATA_DIR "/" WK_SOCKET_FILE',
+  `#define WK_MIGRATION_MARKER "${cEscape(IDENTITY.MIGRATION_MARKER)}"`,
+  `#define WK_LEGACY_DB_FILE "${cEscape(IDENTITY.LEGACY_DB_FILE)}"`,
+  `#define WK_ENV_DIR "${cEscape(IDENTITY.ENV.DIR)}"`,
+  `#define WK_LEGACY_ENV_DIR "${cEscape(IDENTITY.LEGACY_ENV_PREFIXES.length ? IDENTITY.LEGACY_ENV_PREFIXES[0] + '_DIR' : IDENTITY.ENV.DIR)}"`,
+  `#define WK_LEGACY_ENV_NODE "${cEscape(IDENTITY.LEGACY_ENV_PREFIXES.length ? IDENTITY.LEGACY_ENV_PREFIXES[0] + '_NODE' : IDENTITY.ENV.NODE)}"`,
+  `#define WK_LEGACY_ENV_GOVERNANCE_TIMEOUT_MS "${cEscape(IDENTITY.LEGACY_ENV_PREFIXES.length ? IDENTITY.LEGACY_ENV_PREFIXES[0] + '_GOVERNANCE_TIMEOUT_MS' : IDENTITY.ENV.GOVERNANCE_TIMEOUT_MS)}"`,
+  `#define WK_LEGACY_ENV_DAEMON_TIMEOUT_MS "${cEscape(IDENTITY.LEGACY_ENV_PREFIXES.length ? IDENTITY.LEGACY_ENV_PREFIXES[0] + '_DAEMON_TIMEOUT_MS' : IDENTITY.ENV.DAEMON_TIMEOUT_MS)}"`,
+  `#define WK_LEGACY_ENV_CLIENT "${cEscape(IDENTITY.LEGACY_ENV_PREFIXES.length ? IDENTITY.LEGACY_ENV_PREFIXES[0] + '_CLIENT' : IDENTITY.ENV.CLIENT)}"`,
   '',
   '#endif /* WAYKEEP_IDENTITY_H */',
   '',
@@ -98,8 +121,14 @@ const shLines = [
   `WK_NAMESPACE='${shEscape(IDENTITY.NAMESPACE)}'`,
   `WK_DATA_DIR='${shEscape(IDENTITY.DATA_DIR)}'`,
   `WK_SOCKET_FILE='${shEscape(IDENTITY.SOCKET_FILE)}'`,
+  `WK_LEGACY_DATA_DIR='${shEscape(IDENTITY.LEGACY_DATA_DIRS[0] ?? IDENTITY.DATA_DIR)}'`,
+  `WK_MIGRATION_MARKER='${shEscape(IDENTITY.MIGRATION_MARKER)}'`,
+  `WK_LEGACY_DB_FILE='${shEscape(IDENTITY.LEGACY_DB_FILE)}'`,
+  `WK_ENV_DIR='${shEscape(IDENTITY.ENV.DIR)}'`,
+  `WK_LEGACY_ENV_DIR='${shEscape(IDENTITY.LEGACY_ENV_PREFIXES.length ? IDENTITY.LEGACY_ENV_PREFIXES[0] + '_DIR' : IDENTITY.ENV.DIR)}'`,
   `WK_CLIENT_HEADER='${shEscape(IDENTITY.CLIENT_HEADER)}'`,
   `WK_ENV_CLIENT='${shEscape(IDENTITY.ENV.CLIENT)}'`,
+  `WK_LEGACY_ENV_CLIENT='${shEscape(IDENTITY.LEGACY_ENV_PREFIXES.length ? IDENTITY.LEGACY_ENV_PREFIXES[0] + '_CLIENT' : IDENTITY.ENV.CLIENT)}'`,
   `WK_TMP_PREFIX='${shEscape(IDENTITY.TMP_PREFIX)}'`,
   `WK_PROBE_FLAG='${shEscape(IDENTITY.PROBE_FLAG)}'`,
   `WK_PROBE_SENTINEL='${shEscape(IDENTITY.PROBE_SENTINEL)}'`,

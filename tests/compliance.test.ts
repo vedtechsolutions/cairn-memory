@@ -171,20 +171,24 @@ describe('extractDecisionSigils', () => {
 // --- Layer 2a: Compliance Nudge ---
 
 describe('Compliance Nudge', () => {
-  it('should detect Cairn MCP tool calls in transcript text', () => {
-    // Simulate transcript content with MCP tool calls
-    const withCairn = 'mcp__cairn__cairn_recall some query here';
-    assert.ok(/mcp__cairn__|"cairn_(recall|plan|learn|export|remind)"/.test(withCairn));
+  // The detection pattern derives from the MCP constants in production
+  // (helpers.ts TOOL_CALL_PATTERN) — these fixtures derive the SAME way so
+  // the compliance nudge tests survive a namespace flip.
+  const CALL_PATTERN = new RegExp(`mcp__${MCP_SERVER_NAME}__|"(?:${TOOL.RECALL}|${TOOL.PLAN}|${TOOL.LEARN}|${TOOL.EXPORT}|${TOOL.REMIND})"`);
+
+  it('should detect Waykeep MCP tool calls in transcript text', () => {
+    const withTool = `${qualifiedToolName(TOOL.RECALL)} some query here`;
+    assert.ok(CALL_PATTERN.test(withTool));
   });
 
-  it('should detect unprefixed cairn tool calls', () => {
-    const withCairn = '{"name": "cairn_recall", "input": {}}';
-    assert.ok(/mcp__cairn__|"cairn_(recall|plan|learn|export|remind)"/.test(withCairn));
+  it('should detect unprefixed tool calls', () => {
+    const withTool = `{"name": "${TOOL.RECALL}", "input": {}}`;
+    assert.ok(CALL_PATTERN.test(withTool));
   });
 
-  it('should NOT match non-cairn tool calls', () => {
+  it('should NOT match non-memory tool calls', () => {
     const withoutCairn = '{"name": "Read", "input": {"file_path": "/opt/cairn/foo.ts"}}';
-    assert.ok(!/mcp__cairn__|"cairn_(recall|plan|learn|export|remind)"/.test(withoutCairn));
+    assert.ok(!CALL_PATTERN.test(withoutCairn));
   });
 });
 
@@ -227,6 +231,7 @@ describe('Decision Reminder Logic', () => {
 // --- EditTracker new fields ---
 
 import { loadTracker } from '../src/hooks/shared/edit-tracker.js';
+import { TOOL, MCP_SERVER_NAME, qualifiedToolName } from '../src/constants/mcp.js';
 
 describe('EditTracker compliance fields', () => {
   it('should have complianceNudgeFired field defaulting to false', () => {

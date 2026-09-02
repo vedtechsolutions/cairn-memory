@@ -74,7 +74,7 @@ export function openDatabase(options: ConnectionOptions = {}): Database.Database
   }
 
   const db = new Database(dbPath, {
-    verbose: options.verbose ? (msg: unknown) => console.error('[cairn-db]', msg) : undefined,
+    verbose: options.verbose ? (msg: unknown) => console.error('[waykeep-db]', msg) : undefined,
   });
 
   // Restrict the DB file to its owner. Older installs left it world-readable
@@ -515,7 +515,7 @@ function checkIntegrity(dbPath: string, verbose?: boolean): boolean {
     testDb.close();
     const ok = result.length === 1 && result[0].integrity_check === 'ok';
     if (!ok && verbose) {
-      console.error('[cairn-db] Integrity check failed:', result);
+      console.error('[waykeep-db] Integrity check failed:', result);
     }
     return ok;
   } catch {
@@ -526,7 +526,7 @@ function checkIntegrity(dbPath: string, verbose?: boolean): boolean {
 function recoverCorruptDb(dbPath: string, verbose?: boolean): void {
   const backupPath = `${dbPath}.corrupt.${Date.now()}`;
   if (verbose) {
-    console.error(`[cairn-db] Database corrupt. Backing up to ${backupPath} and creating fresh DB.`);
+    console.error(`[waykeep-db] Database corrupt. Backing up to ${backupPath} and creating fresh DB.`);
   }
   try {
     copyFileSync(dbPath, backupPath);
@@ -537,6 +537,6 @@ function recoverCorruptDb(dbPath: string, verbose?: boolean): void {
       if (existsSync(sidecar)) unlinkSync(sidecar);
     }
   } catch (err) {
-    console.error('[cairn-db] Recovery failed:', err);
+    console.error('[waykeep-db] Recovery failed:', err);
   }
 }

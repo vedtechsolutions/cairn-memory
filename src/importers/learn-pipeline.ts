@@ -1,6 +1,6 @@
 /**
  * Shared learn-mode ingestion — the ONE path every importer and the MCP
- * cairn_ingest v1 branch ride. Untrusted markdown gets the same defenses
+ * waykeep_ingest v1 branch ride. Untrusted markdown gets the same defenses
  * everywhere: neutralizeMemoryText (a forged "[WAYKEEP]" prefix in an
  * imported file must never impersonate the system voice), sanitize on
  * tags, and the repository gateway's dedup/merge. Extracted so the CLI
@@ -55,7 +55,7 @@ export interface LearnResult {
 export interface LearnOptions {
   /** Exact repeats: false (default — bulk CLI imports) makes them TRUE
    *  no-ops (idempotent re-runs never inflate confidence or mutate
-   *  tags); true (the MCP cairn_ingest path) keeps the gateway's
+   *  tags); true (the MCP waykeep_ingest path) keeps the gateway's
    *  reinforcement semantics its tool description promises. A source
    *  file gaining a keyword between CLI re-imports is deliberately not
    *  picked up — idempotency wins there (review R3, decided). */

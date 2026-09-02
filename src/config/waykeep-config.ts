@@ -1,6 +1,6 @@
 /**
- * Waykeep's config file — ~/.cairn/config.json, overridable via
- * CAIRN_CONFIG_PATH (same hermeticity pattern as CAIRN_CODEX_DIR: tests
+ * Waykeep's config file — ~/.waykeep/config.json, overridable via
+ * WAYKEEP_CONFIG_PATH (same hermeticity pattern as WAYKEEP_CODEX_DIR: tests
  * point it into a temp dir and can never read a real user's config).
  *
  * TOLERANT READER, absent-equals-default: no file, unreadable file,
@@ -18,30 +18,30 @@
 import { readFileSync, statSync } from 'node:fs';
 import { configPath as sharedConfigPath } from '../constants/paths.js';
 
-export interface CairnScopeConfig {
+export interface WaykeepScopeConfig {
   /** Projects whose memories never surface OUTSIDE the project — on any
    *  surface, regardless of fingerprint overlap. Inside the project
    *  everything behaves normally. */
   privateProjects: ReadonlySet<string>;
 }
 
-export interface CairnReportConfig {
+export interface WaykeepReportConfig {
   /** telemetry_rollup writes (default true). Only a literal false
    *  disables — the report is default-on, opt-out. */
   rollup: boolean;
 }
 
-export interface CairnConfig {
-  scope: CairnScopeConfig;
-  report: CairnReportConfig;
+export interface WaykeepConfig {
+  scope: WaykeepScopeConfig;
+  report: WaykeepReportConfig;
 }
 
-const EMPTY_CONFIG: CairnConfig = {
+const EMPTY_CONFIG: WaykeepConfig = {
   scope: { privateProjects: new Set() },
   report: { rollup: true },
 };
 
-export function cairnConfigPath(): string {
+export function waykeepConfigPath(): string {
   return sharedConfigPath();
 }
 
@@ -50,7 +50,7 @@ export function cairnConfigPath(): string {
  *  replace) share a timestamp, which for THIS file means a stale privacy
  *  policy served indefinitely. A very fresh mtime (within its granularity
  *  of now) is additionally never cached, so back-to-back edits re-read. */
-interface ConfigCache { path: string; mtimeMs: number; size: number; ino: number; config: CairnConfig }
+interface ConfigCache { path: string; mtimeMs: number; size: number; ino: number; config: WaykeepConfig }
 let cache: ConfigCache | null = null;
 const MTIME_GRANULARITY_MS = 2;
 /** One warning per problem per file VERSION (mtime+size+ino — mtime alone
@@ -67,7 +67,7 @@ let warnedIdentity: string | null = null;
  * (falls back to ITS default, warning names the section). Unknown
  * TOP-LEVEL keys are ignored per the additive contract.
  */
-function parseConfig(raw: string): { config: CairnConfig; badSections: string[] } {
+function parseConfig(raw: string): { config: WaykeepConfig; badSections: string[] } {
   const parsed = JSON.parse(raw) as unknown;
   if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
     return { config: EMPTY_CONFIG, badSections: ['(document)'] };
@@ -90,7 +90,7 @@ function parseConfig(raw: string): { config: CairnConfig; badSections: string[] 
  *  NON-empty block without a well-formed privateProjects list is almost
  *  certainly a typo — and a typo silently deactivating every private
  *  project is the failure the warning exists for. */
-function parseScope(raw: unknown): CairnScopeConfig | 'bad-shape' {
+function parseScope(raw: unknown): WaykeepScopeConfig | 'bad-shape' {
   if (raw === undefined) return EMPTY_CONFIG.scope;
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return 'bad-shape';
   const list = (raw as { privateProjects?: unknown }).privateProjects;
@@ -107,7 +107,7 @@ function parseScope(raw: unknown): CairnScopeConfig | 'bad-shape' {
 /** report block: absent = defaults; a literal rollup:false disables; any
  *  other malformed shape warns like the scope block (same fail-open-with-
  *  signal policy — a silently ignored opt-out is a broken promise too). */
-function parseReport(raw: unknown): CairnReportConfig | 'bad-shape' {
+function parseReport(raw: unknown): WaykeepReportConfig | 'bad-shape' {
   if (raw === undefined) return { rollup: true };
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return 'bad-shape';
   const rollup = (raw as { rollup?: unknown }).rollup;
@@ -118,8 +118,8 @@ function parseReport(raw: unknown): CairnReportConfig | 'bad-shape' {
   return { rollup };
 }
 
-export function loadCairnConfig(): CairnConfig {
-  const path = cairnConfigPath();
+export function loadWaykeepConfig(): WaykeepConfig {
+  const path = waykeepConfigPath();
   // throwIfNoEntry covers only ENOENT; any OTHER stat error (EACCES, a
   // directory in the path replaced by a file, ...) must honor the
   // tolerant-reader contract too — empty config, but WITH a signal: an
@@ -129,7 +129,7 @@ export function loadCairnConfig(): CairnConfig {
     st = statSync(path, { throwIfNoEntry: false });
   } catch (err) {
     if (warnedIdentity !== 'stat-error') {
-      console.error(`[cairn] config at ${path} could not be read (${(err as NodeJS.ErrnoException).code ?? 'stat failed'}) — scope settings are INACTIVE`);
+      console.error(`[waykeep] config at ${path} could not be read (${(err as NodeJS.ErrnoException).code ?? 'stat failed'}) — scope settings are INACTIVE`);
       warnedIdentity = 'stat-error';
     }
     cache = null;
@@ -146,7 +146,7 @@ export function loadCairnConfig(): CairnConfig {
     return cache.config;
   }
   const identity = `${st.mtimeMs}:${st.size}:${st.ino}`;
-  let config: CairnConfig;
+  let config: WaykeepConfig;
   let problem: string | null = null;
   try {
     const parsed = parseConfig(readFileSync(path, 'utf-8'));
@@ -164,7 +164,7 @@ export function loadCairnConfig(): CairnConfig {
   // version, NAMING the broken section (a warning pointing at the wrong
   // block is worse than none).
   if (problem !== null && warnedIdentity !== identity) {
-    console.error(`[cairn] config at ${path} ${problem}`);
+    console.error(`[waykeep] config at ${path} ${problem}`);
     warnedIdentity = identity;
   }
   if (Date.now() - st.mtimeMs >= MTIME_GRANULARITY_MS) {
@@ -184,7 +184,7 @@ export function loadCairnConfig(): CairnConfig {
  * valid, deliberate state). Consumed by the eligibility predicate and
  * `waykeep doctor`.
  */
-export interface CairnConfigHealth {
+export interface WaykeepConfigHealth {
   healthy: boolean;
   /** Human-readable problem when unhealthy; null when healthy. */
   problem: string | null;
@@ -194,9 +194,9 @@ export interface CairnConfigHealth {
   path: string;
 }
 
-export interface CairnConfigSnapshot {
-  config: CairnConfig;
-  health: CairnConfigHealth;
+export interface WaykeepConfigSnapshot {
+  config: WaykeepConfig;
+  health: WaykeepConfigHealth;
   /** File identity of the bytes BOTH fields derive from; null when the
    *  file is absent. */
   identity: string | null;
@@ -206,14 +206,14 @@ export interface CairnConfigSnapshot {
  * ONE-READ config snapshot (slice-6 Codex H5): health and policy derive
  * from the SAME bytes, so `healthy: true` can never pair with a policy
  * from a different file version — the raceable
- * cairnConfigHealth()-then-loadCairnConfig() pattern produced exactly
+ * waykeepConfigHealth()-then-loadWaykeepConfig() pattern produced exactly
  * the fail-open combination D10 forbids (healthy + empty
  * privateProjects). A post-read stat detects mid-read replacement:
  * one retry, then fail CLOSED as unhealthy. Every D10 decision must use
  * one snapshot; transmit takes a fresh one.
  */
-export function cairnConfigSnapshot(): CairnConfigSnapshot {
-  const path = cairnConfigPath();
+export function waykeepConfigSnapshot(): WaykeepConfigSnapshot {
+  const path = waykeepConfigPath();
   for (let attempt = 0; attempt < 2; attempt++) {
     let st: ReturnType<typeof statSync>;
     try {
@@ -270,8 +270,8 @@ export function cairnConfigSnapshot(): CairnConfigSnapshot {
   return { config: EMPTY_CONFIG, health: { healthy: false, problem: 'unreachable', badSections: ['(io)'], path }, identity: null };
 }
 
-export function cairnConfigHealth(): CairnConfigHealth {
-  return cairnConfigSnapshot().health;
+export function waykeepConfigHealth(): WaykeepConfigHealth {
+  return waykeepConfigSnapshot().health;
 }
 
 /** True when the project is marked private in the scope config. Null
@@ -279,7 +279,7 @@ export function cairnConfigHealth(): CairnConfigHealth {
  *  promote time, not here. */
 export function isPrivateProject(project: string | null): boolean {
   if (!project) return false;
-  return loadCairnConfig().scope.privateProjects.has(project);
+  return loadWaykeepConfig().scope.privateProjects.has(project);
 }
 
 /**

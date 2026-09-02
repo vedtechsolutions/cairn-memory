@@ -17,7 +17,7 @@
  * preserve round-trip fidelity; capture-path scrubbing is the guarantee.
  */
 import type Database from 'better-sqlite3';
-import { isPrivateProject } from '../../config/cairn-config.js';
+import { isPrivateProject } from '../../config/waykeep-config.js';
 import { writeFreeForm } from '../../memory-tool/free-form-store.js';
 import { journalUpsertForId, type JournalOptions } from './journal.js';
 import {
@@ -152,7 +152,7 @@ export function restoreRecord(
   // Scope-policy invariant, enforced at the REPOSITORY boundary so no
   // restore caller can bypass it. Mutation follows readability: ANY
   // overwrite of an existing private row requires standing (the session
-  // runs inside that project — cairn_correct refuses the same row from
+  // runs inside that project — waykeep_correct refuses the same row from
   // the same session, and restore must not be the workaround). A SCOPE
   // change additionally requires the explicit acknowledgment. Either
   // throw aborts the whole document (all-or-nothing preserved). A fresh

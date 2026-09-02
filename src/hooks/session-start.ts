@@ -28,7 +28,7 @@ import { ENV } from '../constants/env.js';
 
 const _startTime = Date.now();
 const _diagLog = (msg: string) => {
-  try { appendFileSync('/tmp/cairn-session-start-diag.log', `[${new Date().toISOString()}] ${msg}\n`); } catch {}
+  try { appendFileSync('/tmp/waykeep-session-start-diag.log', `[${new Date().toISOString()}] ${msg}\n`); } catch {}
 };
 
 try {
@@ -49,6 +49,6 @@ try {
 } catch (err) {
   _diagLog(`ERROR: ${String(err)}`);
   recordTelemetry('session-start', 'error', _startTime, false, String(err));
-  console.error('[cairn] SessionStart hook error:', err);
+  console.error('[waykeep] SessionStart hook error:', err);
   process.exit(0);
 }

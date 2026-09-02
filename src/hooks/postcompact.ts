@@ -31,6 +31,6 @@ try {
   }
 } catch (err) {
   recordTelemetry('postcompact', 'error', _startTime, false, String(err));
-  console.error('[cairn] PostCompact hook error:', err);
+  console.error('[waykeep] PostCompact hook error:', err);
   process.exit(0);
 }

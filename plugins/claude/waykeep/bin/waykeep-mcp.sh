@@ -7,11 +7,34 @@
 # `waykeep` is preferred over the legacy `cairn` alias everywhere below
 # so a leftover cairn-memory install can never displace the current one.
 set -u
+# SECURITY: never derive a cache dir from a RELATIVE HOME — a planted
+# `<cwd>/.waykeep/plugin-bin` in an untrusted project could redirect execution.
+# Resolve the passwd home when HOME is not absolute; drop it if that fails
+# (codex B1 review).
+case "${HOME:-}" in
+  /*) : ;;
+  *)
+    _wk_u="$(id -un 2>/dev/null)"
+    _wk_h=""
+    [ -n "$_wk_u" ] && eval "_wk_h=~$_wk_u" 2>/dev/null
+    case "${_wk_h:-}" in /*) HOME="$_wk_h" ;; *) HOME="" ;; esac
+    export HOME
+    ;;
+esac
 fail() { echo "waykeep plugin: $1 (npm install -g waykeep)" >&2; exit 1; }
 BIN="$(command -v waykeep || command -v cairn || true)"
 if [ -z "$BIN" ]; then
   # The hook launcher's cache records the bin it resolved (identity-keyed).
-  CACHE_DIR="${CLAUDE_PLUGIN_DATA:-${HOME:+$HOME/.cairn}}"
+  # Mirror resolveStateRoot(): the current dir is authoritative only when
+  # it holds the migration marker (marker-only, mirroring
+  # resolveStateRoot): a bare or empty ~/.waykeep must not shadow a
+  # populated legacy store (codex B1 review).
+  if [ -n "${HOME:-}" ] && [ ! -f "$HOME/.waykeep/waykeep-migrated.json" ] \
+     && [ -f "$HOME/.cairn/cairn.db" ]; then
+    CACHE_DIR="${CLAUDE_PLUGIN_DATA:-$HOME/.cairn}"
+  else
+    CACHE_DIR="${CLAUDE_PLUGIN_DATA:-${HOME:+$HOME/.waykeep}}"
+  fi
   if [ -n "$CACHE_DIR" ] && [ -f "$CACHE_DIR/plugin-hook-dir" ]; then
     CACHED="$(cat "$CACHE_DIR/plugin-hook-dir" 2>/dev/null || true)"
     # The dir is the LAST |segment; strip it to keep the full bin path

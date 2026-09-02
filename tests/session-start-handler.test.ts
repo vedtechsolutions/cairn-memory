@@ -30,6 +30,7 @@ import { loadTracker } from '../src/hooks/shared/edit-tracker.js';
 import { writeState } from '../src/hooks/shared/state-io.js';
 import { projectId } from '../src/utils/project-id.js';
 import { BRIEFING_BUDGET } from '../src/constants/index.js';
+import { ENV } from '../src/constants/env.js';
 
 const FULL_HEADER = '[Waykeep Memory Briefing]';
 const INDEX_HEADER = '[Waykeep Memory Briefing — index]';
@@ -68,17 +69,17 @@ beforeEach(() => {
 
   // Trackers live under CAIRN_DIR — give each test its own directory so
   // loadTracker/saveTracker/cleanupOrphanTrackers never share state.
-  savedCairnDir = process.env.CAIRN_DIR;
+  savedCairnDir = process.env[ENV.DIR];
   trackerDir = mkdtempSync(join(tmpdir(), 'cairn-ssh-tracker-'));
-  process.env.CAIRN_DIR = trackerDir;
+  process.env[ENV.DIR] = trackerDir;
 });
 
 afterEach(() => {
   db.close();
   if (savedCairnDir === undefined) {
-    delete process.env.CAIRN_DIR;
+    delete process.env[ENV.DIR];
   } else {
-    process.env.CAIRN_DIR = savedCairnDir;
+    process.env[ENV.DIR] = savedCairnDir;
   }
   rmSync(cwd, { recursive: true, force: true });
   rmSync(trackerDir, { recursive: true, force: true });
@@ -215,6 +216,8 @@ describe('briefing content', () => {
     const plain = handleSessionStart(makeInput(randomUUID(), 'startup'), client);
     assert.doesNotMatch(plain.output, /Cairn Governance/u);
 
+    // Deliberately the LEGACY dir: un-migrated repos keep their governance
+    // through the Phase-B fallback (a flip must never silently disarm it).
     mkdirSync(join(cwd, '.cairn'));
     writeFileSync(join(cwd, '.cairn', 'gates.json'), '{}');
     const governed = handleSessionStart(makeInput(randomUUID(), 'startup'), client);

@@ -7,7 +7,7 @@ Local-first shared memory for AI coding agents. One persistent memory across ses
 [![node](https://img.shields.io/node/v/waykeep.svg)](https://nodejs.org)
 [![CI](https://github.com/vedtechsolutions/waykeep/actions/workflows/ci.yml/badge.svg)](https://github.com/vedtechsolutions/waykeep/actions/workflows/ci.yml)
 
-> **Formerly Cairn.** Published on npm as [`waykeep`](https://www.npmjs.com/package/waykeep) — installs the `waykeep` CLI (the `cairn` bin still works). Existing installs keep everything: your data stays in `~/.cairn` and MCP tool names keep their `cairn_` prefix. Upgrading is `npm uninstall -g cairn-memory && npm install -g waykeep && waykeep init` — the uninstall first, because npm refuses to hand the `cairn` bin from one package name to another; init then re-points hook wiring at the new install location (Codex asks to trust its hook entries once; that's the path move, not new behavior). The old [`cairn-memory`](https://www.npmjs.com/package/cairn-memory) package is deprecated but keeps working until you switch.
+> **Formerly Cairn — fully renamed as of v6.0.0.** Published on npm as [`waykeep`](https://www.npmjs.com/package/waykeep); installs the `waykeep` CLI (a `cairn` bin alias remains for the transition). MCP tools are now `waykeep_*` under the `waykeep` server, state lives in `~/.waykeep` with `waykeep.db`, and env vars are `WAYKEEP_*`. **Existing installs keep everything**: until you migrate, the new binary keeps reading your `~/.cairn` store, honors `CAIRN_*` env vars and legacy `.cairn/gates.json` project configs, and `waykeep init` re-points client wiring to the new install (Codex asks to trust its hook entries once). Your data is NOT moved yet — the binary transparently keeps reading `~/.cairn` until a later release migrates it; nothing you do risks the store. Upgrade: `npm uninstall -g cairn-memory && npm install -g waykeep && waykeep init`. The old [`cairn-memory`](https://www.npmjs.com/package/cairn-memory) package is deprecated.
 
 ## Why
 
@@ -33,7 +33,7 @@ waykeep doctor                  # health check
 > [docs/INSTALL.md](docs/INSTALL.md#1-install-the-package)
 > (`npm install -g waykeep --allow-scripts=better-sqlite3,onnxruntime-node,sharp,protobufjs`).
 
-Then, instead of `waykeep init`, you can wire your agent through its plugin marketplace — this repository is one (the npm package from the first step is still required — **waykeep >= 5.5.0** — the plugins are thin):
+Then, instead of `waykeep init`, you can wire your agent through its plugin marketplace — this repository is one (the npm package from the first step is still required — **waykeep >= 6.0.0** — the plugins are thin):
 
 ```text
 # Claude Code
@@ -90,7 +90,7 @@ Codex task groups keep their structure: working directories map to project scope
 
 ## Private projects
 
-Mark a project private in `~/.cairn/config.json` and its memories never surface anywhere else — not in briefings, injections, subagent context, or recall:
+Mark a project private in `~/.waykeep/config.json` (un-migrated installs: `~/.cairn/config.json`) and its memories never surface anywhere else — not in briefings, injections, subagent context, or recall:
 
 ```json
 { "v": 1, "scope": { "privateProjects": ["clientwork-aaaa1111"] } }
@@ -129,23 +129,23 @@ Codex gets the same experience through its own 10-hook set (`waykeep init` wires
 
 | Tool | Purpose |
 |------|---------|
-| `cairn_recall` / `cairn_learn` | Retrieve relevant memories; store distilled lessons |
-| `cairn_correct` / `cairn_forget` | Fix, invalidate, or delete a memory |
-| `cairn_strengthen` / `cairn_weaken` | Confidence feedback |
-| `cairn_plan` | Plans: steps, decisions, notes, completion |
-| `cairn_remind` / `cairn_reminder_list` / `cairn_reminder_delete` | Trigger-action reminders |
-| `cairn_ingest` / `cairn_export` | Round-trip markdown import/export (learn or strict-restore modes) |
-| `cairn_promote` | Project memory → global (private projects require acknowledgment) |
-| `cairn_stats` / `cairn_cleanup` | Health, statistics, confirmed bulk cleanup |
-| `cairn_expand` | Expand compact briefing IDs into full detail |
-| `cairn_governance_override` | Record an explicit override of an advisory governance warning |
+| `waykeep_recall` / `waykeep_learn` | Retrieve relevant memories; store distilled lessons |
+| `waykeep_correct` / `waykeep_forget` | Fix, invalidate, or delete a memory |
+| `waykeep_strengthen` / `waykeep_weaken` | Confidence feedback |
+| `waykeep_plan` | Plans: steps, decisions, notes, completion |
+| `waykeep_remind` / `waykeep_reminder_list` / `waykeep_reminder_delete` | Trigger-action reminders |
+| `waykeep_ingest` / `waykeep_export` | Round-trip markdown import/export (learn or strict-restore modes) |
+| `waykeep_promote` | Project memory → global (private projects require acknowledgment) |
+| `waykeep_stats` / `waykeep_cleanup` | Health, statistics, confirmed bulk cleanup |
+| `waykeep_expand` | Expand compact briefing IDs into full detail |
+| `waykeep_governance_override` | Record an explicit override of an advisory governance warning |
 
-Resources: `cairn://plan/{project}/active` and `cairn://briefing/{project}` — full state, no token budget.
+Resources: `waykeep://plan/{project}/active` and `waykeep://briefing/{project}` — full state, no token budget.
 
 ## Database
 
-- `~/.cairn/cairn.db` (override: `CAIRN_DB_PATH`) — SQLite WAL + FTS5 + sqlite-vec, schema v32
-- Embeddings: 384-dim local (all-MiniLM-L6-v2 by default), hybrid FTS+vector search with RRF; optional cross-encoder rerank (`CAIRN_RERANK=1`)
+- `~/.waykeep/waykeep.db` (override: `WAYKEEP_DB_PATH`; un-migrated installs keep `~/.cairn/cairn.db`) — SQLite WAL + FTS5 + sqlite-vec, schema v32
+- Embeddings: 384-dim local (all-MiniLM-L6-v2 by default), hybrid FTS+vector search with RRF; optional cross-encoder rerank (`WAYKEEP_RERANK=1`)
 - Everything is local. Nothing leaves your machine.
 
 ## Development

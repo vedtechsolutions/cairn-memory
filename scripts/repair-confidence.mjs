@@ -16,15 +16,14 @@
  *     memory is never lowered or touched.
  *
  * Usage:
- *   node scripts/repair-confidence.mjs                 # dry run against ~/.cairn/cairn.db
+ *   node scripts/repair-confidence.mjs                 # dry run against ~/.waykeep/waykeep.db (legacy ~/.cairn/cairn.db until migration)
  *   node scripts/repair-confidence.mjs --db /path/x.db # dry run against another store
  *   node scripts/repair-confidence.mjs --execute       # backup, migrate, re-analyze, apply
  *
  * The recalled-but-never-impactful review cohort goes to a CSV (default
- * ~/.cairn/repair-review-<timestamp>.csv) for human triage — those memories
+ * <state dir>/repair-review-<timestamp>.csv) for human triage — those memories
  * have no outcome evidence and are never auto-lifted.
  */
-import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { writeFileSync } from 'node:fs';
 import Database from 'better-sqlite3';
@@ -37,9 +36,15 @@ const argValue = (flag) => {
   return i >= 0 && i + 1 < args.length ? args[i + 1] : null;
 };
 
-const dbPath = argValue('--db') ?? join(homedir(), '.cairn', 'cairn.db');
+// THE coherent state root (Phase B): mutating the DB while the running
+// server serves a different root would corrupt/split state — a
+// standalone existsSync check independently recreated the fork hazard
+// (codex B1 review). resolveStateRoot is marker-aware and shared.
+const { resolveStateRoot } = await import('../dist/src/constants/paths.js');
+const ROOT = resolveStateRoot();
+const dbPath = argValue('--db') ?? join(ROOT.dir, ROOT.dbFilename);
 const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-const csvPath = argValue('--csv') ?? join(homedir(), '.cairn', `repair-review-${stamp}.csv`);
+const csvPath = argValue('--csv') ?? join(ROOT.dir, `repair-review-${stamp}.csv`);
 
 function report(analysis) {
   const byKind = new Map();

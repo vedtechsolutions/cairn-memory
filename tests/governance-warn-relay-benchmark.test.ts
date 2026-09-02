@@ -11,11 +11,12 @@ import { SessionCache } from '../src/hooks/shared/session-cache.js';
 import { GovernanceRuleRepository } from '../src/governance/rule-repository.js';
 import { projectId } from '../src/utils/project-id.js';
 import { prepareRelayDir, runRelay } from './relay-harness.js';
+import { ENV } from '../src/constants/env.js';
 
-const LIVE_BENCHMARK = process.env.CAIRN_RUN_WARN_RELAY_BENCHMARK === '1';
+const LIVE_BENCHMARK = process.env[ENV.RUN_WARN_RELAY_BENCHMARK] === '1';
 const stateRoot = mkdtempSync(join(tmpdir(), 'cairn-warn-relay-benchmark-'));
-const cairnDir = join(stateRoot, '.cairn');
-process.env.CAIRN_DIR = cairnDir;
+const waykeepDir = join(stateRoot, '.cairn');
+process.env[ENV.DIR] = waykeepDir;
 
 interface RecordedBenchmark {
   protocol: { samples_per_size: number; budget_ms: number };
@@ -61,7 +62,7 @@ describe('governance warn relay spawn-to-warm-daemon latency', () => {
 
   before(async () => {
     if (!LIVE_BENCHMARK) return;
-    mkdirSync(cairnDir, { recursive: true });
+    mkdirSync(waykeepDir, { recursive: true });
     client = createHookDbClient(':memory:');
     cache = new SessionCache();
     const { startHookSocket } = await import('../src/mcp/hook-socket.js');

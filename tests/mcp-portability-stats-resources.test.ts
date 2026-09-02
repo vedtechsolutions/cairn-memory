@@ -25,10 +25,12 @@ import { registerPortabilityTools } from '../src/mcp/tools/portability-tools.js'
 import { registerStatsTools } from '../src/mcp/tools/stats-tool.js';
 import { registerResources } from '../src/mcp/resources.js';
 import { HEALTH, LIMITS, PROMOTION, type ContextMode } from '../src/constants/index.js';
+import { TOOL, MCP_URI_SCHEME } from '../src/constants/mcp.js';
+import { MCP_SERVER_NAME } from '../src/constants/mcp.js';
 
 // --- Harness ------------------------------------------------------------------
 
-const CRITICAL_TEXT = '[cairn silent — context critical]';
+const CRITICAL_TEXT = `[${MCP_SERVER_NAME} silent — context critical]`;
 
 interface ToolTextContent {
   type: 'text';
@@ -104,7 +106,7 @@ async function readResourceText(client: Client, uri: string): Promise<string> {
 
 // --- cairn_export ---------------------------------------------------------------
 
-describe('cairn_export', () => {
+describe(TOOL.EXPORT, () => {
   let h: Harness;
   beforeEach(async () => { h = await startHarness(); });
   afterEach(async () => { await h.close(); });
@@ -124,7 +126,7 @@ describe('cairn_export', () => {
       confidence: 0.8,
     });
 
-    const result = await callTool(h.client, 'cairn_export');
+    const result = await callTool(h.client, TOOL.EXPORT);
     assert.notEqual(result.isError, true);
     const text = textOf(result);
 
@@ -145,7 +147,7 @@ describe('cairn_export', () => {
     h.memoryRepo.create({ content: 'Redis eviction silently drops queued jobs', kind: 'pitfall', project: 'proj-a', confidence: 0.9 });
     h.memoryRepo.create({ content: 'The staging cluster runs postgres sixteen', kind: 'fact', project: 'proj-a', confidence: 0.9 });
 
-    const text = textOf(await callTool(h.client, 'cairn_export', { kind: 'pitfall' }));
+    const text = textOf(await callTool(h.client, TOOL.EXPORT, { kind: 'pitfall' }));
     assert.ok(text.includes('# Memories: 1'));
     assert.match(text, /## Pitfall: Redis eviction silently drops queued jobs/);
     assert.ok(!text.includes('## Fact:'), 'fact must be excluded by kind filter');
@@ -155,7 +157,7 @@ describe('cairn_export', () => {
     h.memoryRepo.create({ content: 'Strong lesson about migration ordering constraints', kind: 'fact', project: null, confidence: 0.9 });
     h.memoryRepo.create({ content: 'Weak hunch about flaky network timeouts', kind: 'fact', project: null, confidence: 0.2 });
 
-    const text = textOf(await callTool(h.client, 'cairn_export', { min_confidence: 0.5 }));
+    const text = textOf(await callTool(h.client, TOOL.EXPORT, { min_confidence: 0.5 }));
     assert.ok(text.includes('# Memories: 1'));
     assert.ok(text.includes('Strong lesson about migration ordering constraints'));
     assert.ok(!text.includes('Weak hunch'), 'low-confidence memory must be filtered out');
@@ -166,7 +168,7 @@ describe('cairn_export', () => {
     h.memoryRepo.create({ content: 'Beta project deploys from release branches', kind: 'fact', project: 'proj-b', confidence: 0.9 });
     h.memoryRepo.create({ content: 'Global preference for tabs over spaces everywhere', kind: 'fact', project: null, confidence: 0.9 });
 
-    const text = textOf(await callTool(h.client, 'cairn_export', { project: 'proj-a' }));
+    const text = textOf(await callTool(h.client, TOOL.EXPORT, { project: 'proj-a' }));
     assert.ok(text.includes('Alpha project uses trunk-based development'));
     assert.ok(text.includes('Global preference for tabs over spaces everywhere'), 'globals must be included in project export');
     assert.ok(!text.includes('Beta project'), 'other projects must be excluded');
@@ -176,21 +178,21 @@ describe('cairn_export', () => {
     h.memoryRepo.create({ content: 'Alpha project uses trunk-based development', kind: 'fact', project: 'proj-a', confidence: 0.9 });
     h.memoryRepo.create({ content: 'Global preference for tabs over spaces everywhere', kind: 'fact', project: null, confidence: 0.9 });
 
-    const text = textOf(await callTool(h.client, 'cairn_export', { project: null }));
+    const text = textOf(await callTool(h.client, TOOL.EXPORT, { project: null }));
     assert.ok(text.includes('# Memories: 1'));
     assert.ok(text.includes('Global preference for tabs over spaces everywhere'));
     assert.ok(!text.includes('Alpha project'), 'project-scoped memory must be excluded from global-only export');
   });
 
   it('returns a friendly message when no memories match', async () => {
-    const result = await callTool(h.client, 'cairn_export');
+    const result = await callTool(h.client, TOOL.EXPORT);
     assert.notEqual(result.isError, true);
     assert.equal(textOf(result), 'No memories match the filter criteria.');
   });
 
   it('rejects a project filter exceeding the string param limit', async () => {
     // The SDK surfaces schema violations as isError tool results on callTool.
-    const result = await callTool(h.client, 'cairn_export', { project: 'p'.repeat(LIMITS.MAX_STRING_PARAM + 1) });
+    const result = await callTool(h.client, TOOL.EXPORT, { project: 'p'.repeat(LIMITS.MAX_STRING_PARAM + 1) });
     assert.equal(result.isError, true);
     assert.ok(textOf(result).includes('Invalid arguments'));
   });
@@ -207,13 +209,13 @@ const INGEST_FIXTURE = [
   'Concurrent readers stay unblocked during writes.',
 ].join('\n');
 
-describe('cairn_ingest', () => {
+describe(TOOL.INGEST, () => {
   let h: Harness;
   beforeEach(async () => { h = await startHarness(); });
   afterEach(async () => { await h.close(); });
 
   it('ingests markdown sections as memories with inferred kinds and tags', async () => {
-    const result = await callTool(h.client, 'cairn_ingest', { content: INGEST_FIXTURE, project: 'proj-ingest' });
+    const result = await callTool(h.client, TOOL.INGEST, { content: INGEST_FIXTURE, project: 'proj-ingest' });
     assert.notEqual(result.isError, true);
     const text = textOf(result);
     assert.ok(text.includes('ingested: 2'), `expected 2 ingested, got:\n${text}`);
@@ -234,7 +236,7 @@ describe('cairn_ingest', () => {
   });
 
   it('previews sections without writing when dry_run is set', async () => {
-    const text = textOf(await callTool(h.client, 'cairn_ingest', { content: INGEST_FIXTURE, dry_run: true }));
+    const text = textOf(await callTool(h.client, TOOL.INGEST, { content: INGEST_FIXTURE, dry_run: true }));
     assert.ok(text.includes('Dry run (learn): 0 v2 records, 0 files, 2 v1 sections, 0 errors'), `unexpected dry-run header:\n${text}`);
     assert.ok(text.includes('[pitfall]'));
     assert.ok(text.includes('[decision]'));
@@ -242,9 +244,9 @@ describe('cairn_ingest', () => {
   });
 
   it('deduplicates when the same markdown is ingested twice', async () => {
-    await callTool(h.client, 'cairn_ingest', { content: INGEST_FIXTURE, project: 'proj-ingest' });
+    await callTool(h.client, TOOL.INGEST, { content: INGEST_FIXTURE, project: 'proj-ingest' });
     const confBefore = h.memoryRepo.exportMemories({ project: 'proj-ingest' }).map(m => m.confidence);
-    const second = textOf(await callTool(h.client, 'cairn_ingest', { content: INGEST_FIXTURE, project: 'proj-ingest' }));
+    const second = textOf(await callTool(h.client, TOOL.INGEST, { content: INGEST_FIXTURE, project: 'proj-ingest' }));
     assert.ok(second.includes('ingested: 0'), `re-ingest must not create new rows, got:\n${second}`);
     assert.ok(second.includes('deduplicated: 2'));
     assert.equal(h.memoryRepo.getStats().active, 2);
@@ -256,7 +258,7 @@ describe('cairn_ingest', () => {
   });
 
   it('reports unstructured markdown as skipped instead of storing it', async () => {
-    const result = await callTool(h.client, 'cairn_ingest', { content: 'just some prose with no headings at all' });
+    const result = await callTool(h.client, TOOL.INGEST, { content: 'just some prose with no headings at all' });
     const text = textOf(result);
     assert.ok(text.includes('ingested: 0'));
     assert.ok(text.includes('skipped: 1'));
@@ -278,11 +280,11 @@ describe('cairn_ingest restore mode', () => {
       kind: 'pitfall', project: 'proj-a', tags: ['webhooks'], confidence: 0.85,
       context: { why: 'burst retries\nsaturate the upstream', how_to_apply: 'jitter every delay' },
     });
-    const exported = textOf(await callTool(h.client, 'cairn_export'));
+    const exported = textOf(await callTool(h.client, TOOL.EXPORT));
 
     const target = await startHarness();
     try {
-      const text = textOf(await callTool(target.client, 'cairn_ingest', { content: exported, mode: 'restore' }));
+      const text = textOf(await callTool(target.client, TOOL.INGEST, { content: exported, mode: 'restore' }));
       assert.ok(text.includes('restored: 1'), `expected 1 restored, got:\n${text}`);
       assert.ok(text.includes('overwritten: 0'));
       // Canonical comparison: stored JSON blobs may serialize object keys
@@ -299,14 +301,14 @@ describe('cairn_ingest restore mode', () => {
 
   it('restore mode rejects v2 records without ids', async () => {
     const noId = '## Fact: no id [confidence: 0.50]\ndata: {"anchor":null,"confidence":0.5,"content":"record without an id","context":null,"created_at":"2026-01-01T00:00:00.000Z","expires_at":null,"fingerprint":null,"kind":"fact","project":null,"source":"learned","tags":[]}';
-    const result = await callTool(h.client, 'cairn_ingest', { content: noId, mode: 'restore' });
+    const result = await callTool(h.client, TOOL.INGEST, { content: noId, mode: 'restore' });
     assert.equal(result.isError, true);
     assert.ok(textOf(result).includes('restore mode requires an id on every record'));
     assert.equal(h.memoryRepo.getStats().total, 0);
   });
 
   it('restore mode rejects v1 sections outright — they carry no ids', async () => {
-    const result = await callTool(h.client, 'cairn_ingest', { content: INGEST_FIXTURE, mode: 'restore' });
+    const result = await callTool(h.client, TOOL.INGEST, { content: INGEST_FIXTURE, mode: 'restore' });
     assert.equal(result.isError, true);
     assert.ok(textOf(result).includes('restore mode requires v2 sections'));
     assert.equal(h.memoryRepo.getStats().total, 0);
@@ -319,7 +321,7 @@ describe('cairn_ingest restore mode', () => {
       '## Fact: broken [confidence: 0.50]',
       'data: {not json at all',
     ].join('\n');
-    const result = await callTool(h.client, 'cairn_ingest', { content: doc, mode: 'restore' });
+    const result = await callTool(h.client, TOOL.INGEST, { content: doc, mode: 'restore' });
     assert.equal(result.isError, true);
     assert.ok(textOf(result).includes('restore aborted, nothing was written'));
     assert.equal(h.memoryRepo.getStats().total, 0, 'the valid record must not partially commit');
@@ -328,13 +330,13 @@ describe('cairn_ingest restore mode', () => {
   it('duplicate record ids and duplicate file paths abort before mutation', async () => {
     const record = 'data: {"anchor":null,"confidence":0.5,"content":"twin id record","context":null,"created_at":"2026-01-01T00:00:00.000Z","expires_at":null,"fingerprint":null,"id":"00000002-0000-4000-8000-000000000000","kind":"fact","project":null,"source":"learned","tags":[]}';
     const dupIds = `## Fact: a [confidence: 0.50]\n${record}\n## Fact: b [confidence: 0.50]\n${record}`;
-    const r1 = await callTool(h.client, 'cairn_ingest', { content: dupIds, mode: 'restore' });
+    const r1 = await callTool(h.client, TOOL.INGEST, { content: dupIds, mode: 'restore' });
     assert.equal(r1.isError, true);
     assert.ok(textOf(r1).includes('duplicate record id'));
 
     const file = 'data: {"content":"x","path":"/memories/notes/twin.md","revision":1}';
     const dupPaths = `## File: /memories/notes/twin.md\n${file}\n## File: /memories/notes/twin.md\n${file}`;
-    const r2 = await callTool(h.client, 'cairn_ingest', { content: dupPaths, mode: 'restore' });
+    const r2 = await callTool(h.client, TOOL.INGEST, { content: dupPaths, mode: 'restore' });
     assert.equal(r2.isError, true);
     assert.ok(textOf(r2).includes('duplicate file path'));
     assert.equal(h.memoryRepo.getStats().total, 0);
@@ -347,7 +349,7 @@ describe('cairn_ingest restore mode', () => {
       '## File: /memories/global/facts.md',
       'data: {"content":"materialized takeover","path":"/memories/global/facts.md","revision":1}',
     ].join('\n');
-    const result = await callTool(h.client, 'cairn_ingest', { content: doc, mode: 'restore' });
+    const result = await callTool(h.client, TOOL.INGEST, { content: doc, mode: 'restore' });
     assert.equal(result.isError, true);
     assert.equal(h.memoryRepo.getStats().total, 0, 'the rider record must not survive');
   });
@@ -356,9 +358,9 @@ describe('cairn_ingest restore mode', () => {
     h.memoryRepo.create({ content: 'record for the filtered export checks', kind: 'fact', project: 'proj-a', confidence: 0.9 });
     h.memoryRepo.restoreFile({ path: '/memories/notes/rideralong.md', content: 'file body', revision: 1 });
 
-    assert.ok(textOf(await callTool(h.client, 'cairn_export')).includes('## File: /memories/notes/rideralong.md'), 'unfiltered export carries files');
+    assert.ok(textOf(await callTool(h.client, TOOL.EXPORT)).includes('## File: /memories/notes/rideralong.md'), 'unfiltered export carries files');
     for (const filter of [{ project: 'proj-a' }, { kind: 'fact' }, { min_confidence: 0.1 }]) {
-      const text = textOf(await callTool(h.client, 'cairn_export', filter));
+      const text = textOf(await callTool(h.client, TOOL.EXPORT, filter));
       assert.ok(!text.includes('## File:'), `filtered export ${JSON.stringify(filter)} must not carry files`);
     }
   });
@@ -366,7 +368,7 @@ describe('cairn_ingest restore mode', () => {
   it('learn mode ingests v2 payloads through gateway semantics (dedup applies)', async () => {
     h.memoryRepo.create({ content: 'the ingestion pipeline batches records every five minutes', kind: 'fact', project: null, confidence: 0.6 });
     const v2 = '## Fact: dup [confidence: 0.90]\ndata: {"anchor":null,"confidence":0.9,"content":"the ingestion pipeline batches records every five minutes","context":null,"created_at":"2026-01-01T00:00:00.000Z","expires_at":null,"fingerprint":null,"id":"00000009-0000-4000-8000-000000000000","kind":"fact","project":null,"source":"learned","tags":[]}';
-    const text = textOf(await callTool(h.client, 'cairn_ingest', { content: v2 }));
+    const text = textOf(await callTool(h.client, TOOL.INGEST, { content: v2 }));
     assert.ok(text.includes('deduplicated: 1'), `learn mode must merge, got:\n${text}`);
     assert.equal(h.memoryRepo.getStats().total, 1, 'no new row in learn mode');
   });
@@ -374,7 +376,7 @@ describe('cairn_ingest restore mode', () => {
 
 // --- cairn_promote --------------------------------------------------------------
 
-describe('cairn_promote', () => {
+describe(TOOL.PROMOTE, () => {
   let h: Harness;
   beforeEach(async () => { h = await startHarness(); });
   afterEach(async () => { await h.close(); });
@@ -387,7 +389,7 @@ describe('cairn_promote', () => {
       confidence: PROMOTION.MIN_CONFIDENCE + 0.2,
     });
 
-    const result = await callTool(h.client, 'cairn_promote', { id });
+    const result = await callTool(h.client, TOOL.PROMOTE, { id });
     assert.notEqual(result.isError, true);
     assert.ok(textOf(result).startsWith('promoted to global:'));
     assert.equal(h.memoryRepo.findById(id)?.project, null, 'memory must now be global');
@@ -395,20 +397,20 @@ describe('cairn_promote', () => {
 
   it('reports already global without erroring', async () => {
     const { id } = h.memoryRepo.create({ content: 'Globally scoped decision about tooling', kind: 'decision', project: null, confidence: 0.9 });
-    const result = await callTool(h.client, 'cairn_promote', { id });
+    const result = await callTool(h.client, TOOL.PROMOTE, { id });
     assert.notEqual(result.isError, true);
     assert.equal(textOf(result), 'already global');
   });
 
   it('reports not found for an unknown id', async () => {
-    const result = await callTool(h.client, 'cairn_promote', { id: 'does-not-exist' });
+    const result = await callTool(h.client, TOOL.PROMOTE, { id: 'does-not-exist' });
     assert.notEqual(result.isError, true);
     assert.equal(textOf(result), 'not found');
   });
 
   it('rejects kinds outside the promotion allowlist', async () => {
     const { id } = h.memoryRepo.create({ content: 'Some project fact that must stay scoped', kind: 'fact', project: 'proj-a', confidence: 0.9 });
-    const result = await callTool(h.client, 'cairn_promote', { id });
+    const result = await callTool(h.client, TOOL.PROMOTE, { id });
     assert.equal(result.isError, true);
     assert.ok(textOf(result).includes(`only ${PROMOTION.ALLOWED_KINDS.join('/')} can be promoted (got fact)`));
     assert.equal(h.memoryRepo.findById(id)?.project, 'proj-a', 'memory must remain project-scoped');
@@ -421,7 +423,7 @@ describe('cairn_promote', () => {
       project: 'proj-a',
       confidence: PROMOTION.MIN_CONFIDENCE - 0.2,
     });
-    const result = await callTool(h.client, 'cairn_promote', { id });
+    const result = await callTool(h.client, TOOL.PROMOTE, { id });
     assert.equal(result.isError, true);
     assert.ok(textOf(result).includes('confidence too low'));
   });
@@ -429,7 +431,7 @@ describe('cairn_promote', () => {
   it('rejects promotion of an invalidated memory', async () => {
     const { id } = h.memoryRepo.create({ content: 'Pitfall that later proved wrong entirely', kind: 'pitfall', project: 'proj-a', confidence: 0.9 });
     h.memoryRepo.invalidate(id);
-    const result = await callTool(h.client, 'cairn_promote', { id });
+    const result = await callTool(h.client, TOOL.PROMOTE, { id });
     assert.equal(result.isError, true);
     assert.ok(textOf(result).includes('memory is invalidated'));
   });
@@ -437,7 +439,7 @@ describe('cairn_promote', () => {
 
 // --- cairn_stats ----------------------------------------------------------------
 
-describe('cairn_stats', () => {
+describe(TOOL.STATS, () => {
   let h: Harness;
   beforeEach(async () => { h = await startHarness(); });
   afterEach(async () => { await h.close(); });
@@ -453,7 +455,7 @@ describe('cairn_stats', () => {
     const { plan } = h.planRepo.create({ project: 'proj-a', name: 'Rollout plan', steps: [{ description: 'ship it' }] });
     h.planRepo.addDecision(plan.id, { chose: 'blue-green deploy', why: 'zero downtime' });
 
-    const text = textOf(await callTool(h.client, 'cairn_stats', { action: 'summary' }));
+    const text = textOf(await callTool(h.client, TOOL.STATS, { action: 'summary' }));
     assert.ok(text.includes('Memories: 3 active, 0 invalidated'), `unexpected summary:\n${text}`);
     assert.ok(text.includes('pitfall: 2'));
     assert.ok(text.includes('fact: 1'));
@@ -463,7 +465,7 @@ describe('cairn_stats', () => {
   });
 
   it('summary renders zero counts on an empty database without throwing', async () => {
-    const result = await callTool(h.client, 'cairn_stats', { action: 'summary' });
+    const result = await callTool(h.client, TOOL.STATS, { action: 'summary' });
     assert.notEqual(result.isError, true);
     const text = textOf(result);
     assert.ok(text.includes('Memories: 0 active, 0 invalidated'));
@@ -473,7 +475,7 @@ describe('cairn_stats', () => {
 
   it('health buckets confidence using the HEALTH thresholds', async () => {
     seedMixedMemories();
-    const text = textOf(await callTool(h.client, 'cairn_stats', { action: 'health' }));
+    const text = textOf(await callTool(h.client, TOOL.STATS, { action: 'health' }));
     assert.ok(
       text.includes(`high(>${HEALTH.CONFIDENCE_HIGH_THRESHOLD}): 1`)
         && text.includes(`medium(${HEALTH.CONFIDENCE_MEDIUM_THRESHOLD}-${HEALTH.CONFIDENCE_HIGH_THRESHOLD}): 1`)
@@ -487,7 +489,7 @@ describe('cairn_stats', () => {
   });
 
   it('health telemetry sections render on an empty database without throwing', async () => {
-    const result = await callTool(h.client, 'cairn_stats', { action: 'health' });
+    const result = await callTool(h.client, TOOL.STATS, { action: 'health' });
     assert.notEqual(result.isError, true);
     const text = textOf(result);
     assert.ok(text.includes('Avg confidence: 0.00'));
@@ -496,26 +498,26 @@ describe('cairn_stats', () => {
 
   it('by_kind aggregates counts, average confidence, and recalls per kind', async () => {
     seedMixedMemories();
-    const text = textOf(await callTool(h.client, 'cairn_stats', { action: 'by_kind' }));
+    const text = textOf(await callTool(h.client, TOOL.STATS, { action: 'by_kind' }));
     assert.ok(text.includes('pitfall: 2 memories, avg conf: 0.70, total recalls: 0'), `unexpected by_kind:\n${text}`);
     assert.ok(text.includes('fact: 1 memories, avg conf: 0.20, total recalls: 0'));
   });
 
   it('by_kind reports no memories on an empty database', async () => {
-    const text = textOf(await callTool(h.client, 'cairn_stats', { action: 'by_kind' }));
+    const text = textOf(await callTool(h.client, TOOL.STATS, { action: 'by_kind' }));
     assert.equal(text, 'No memories found.');
   });
 
   it('by_project labels the null project as (global)', async () => {
     seedMixedMemories();
-    const text = textOf(await callTool(h.client, 'cairn_stats', { action: 'by_project' }));
+    const text = textOf(await callTool(h.client, TOOL.STATS, { action: 'by_project' }));
     assert.ok(text.includes('(global): 1 memories'), `unexpected by_project:\n${text}`);
     assert.ok(text.includes('proj-a: 2 memories'));
   });
 
   it('velocity reports weekly creation, coverage, graph, and project telemetry', async () => {
     seedMixedMemories();
-    const text = textOf(await callTool(h.client, 'cairn_stats', { action: 'velocity' }));
+    const text = textOf(await callTool(h.client, TOOL.STATS, { action: 'velocity' }));
     assert.ok(text.startsWith('Learning Velocity:'));
     assert.ok(text.includes('this week: 3'), `unexpected velocity:\n${text}`);
     assert.ok(text.includes('Embedding coverage (minilm-l6): 0/3 (0%)'), 'active-model-labeled coverage line');
@@ -525,7 +527,7 @@ describe('cairn_stats', () => {
   });
 
   it('velocity renders on an empty database without throwing', async () => {
-    const result = await callTool(h.client, 'cairn_stats', { action: 'velocity' });
+    const result = await callTool(h.client, TOOL.STATS, { action: 'velocity' });
     assert.notEqual(result.isError, true);
     const text = textOf(result);
     // Known cosmetic bug (not asserted): SUM() over zero rows is NULL, so the
@@ -536,7 +538,7 @@ describe('cairn_stats', () => {
   });
 
   it('rejects an action outside the stats enum', async () => {
-    const result = await callTool(h.client, 'cairn_stats', { action: 'nonsense' });
+    const result = await callTool(h.client, TOOL.STATS, { action: 'nonsense' });
     assert.equal(result.isError, true);
     assert.ok(textOf(result).includes('Invalid arguments'));
   });
@@ -552,8 +554,8 @@ describe('MCP resources', () => {
   it('exposes the plan and briefing resource templates', async () => {
     const { resourceTemplates } = await h.client.listResourceTemplates();
     const byName = new Map(resourceTemplates.map(t => [t.name, t.uriTemplate]));
-    assert.equal(byName.get('active-plan'), 'cairn://plan/{project}/active');
-    assert.equal(byName.get('full-briefing'), 'cairn://briefing/{project}');
+    assert.equal(byName.get('active-plan'), `${MCP_URI_SCHEME}://plan/{project}/active`);
+    assert.equal(byName.get('full-briefing'), `${MCP_URI_SCHEME}://briefing/{project}`);
   });
 
   it('active plan resource renders steps, outcomes, notes, and decisions', async () => {
@@ -566,7 +568,7 @@ describe('MCP resources', () => {
     h.planRepo.addNote(plan.id, { step_id: 2, note: 'awaiting review' });
     h.planRepo.addDecision(plan.id, { chose: 'zod v4', why: 'already a dependency', alternatives: ['ajv'], permanent: true });
 
-    const text = await readResourceText(h.client, 'cairn://plan/proj-a/active');
+    const text = await readResourceText(h.client, `${MCP_URI_SCHEME}://plan/proj-a/active`);
     assert.ok(text.includes('Plan: "Schema rollout" (active, 1/2 steps done)'), `unexpected plan resource:\n${text}`);
     assert.ok(text.includes('1. [done] create migration'));
     assert.ok(text.includes('Outcome: migration created'));
@@ -576,7 +578,7 @@ describe('MCP resources', () => {
   });
 
   it('active plan resource reports absence for a project with no plan', async () => {
-    const text = await readResourceText(h.client, 'cairn://plan/proj-none/active');
+    const text = await readResourceText(h.client, `${MCP_URI_SCHEME}://plan/proj-none/active`);
     assert.equal(text, 'No active plan for this project.');
   });
 
@@ -592,7 +594,7 @@ describe('MCP resources', () => {
     h.memoryRepo.create({ content: 'Always call the service checkout, not cart', kind: 'correction', project: null, confidence: 0.9 });
     h.memoryRepo.create({ content: 'Chose event sourcing over CRUD for the audit trail', kind: 'decision', project: 'proj-a', confidence: 0.9 });
 
-    const text = await readResourceText(h.client, 'cairn://briefing/proj-a');
+    const text = await readResourceText(h.client, `${MCP_URI_SCHEME}://briefing/proj-a`);
     assert.ok(text.startsWith('[Waykeep Full Briefing — proj-a]'));
     assert.ok(text.includes('Plan: "Briefing plan"'));
     assert.ok(text.includes('Pitfalls:'));
@@ -604,12 +606,12 @@ describe('MCP resources', () => {
   });
 
   it('briefing resource on an empty database is just the header', async () => {
-    const text = await readResourceText(h.client, 'cairn://briefing/proj-empty');
+    const text = await readResourceText(h.client, `${MCP_URI_SCHEME}://briefing/proj-empty`);
     assert.equal(text, '[Waykeep Full Briefing — proj-empty]');
   });
 
   it('rejects reads of unregistered resource URIs', async () => {
-    await assert.rejects(h.client.readResource({ uri: 'cairn://unknown/thing' }));
+    await assert.rejects(h.client.readResource({ uri: `${MCP_URI_SCHEME}://unknown/thing` }));
   });
 });
 
@@ -625,10 +627,10 @@ describe('context-critical mode gating', () => {
     h.setMode('critical');
 
     for (const [name, args] of [
-      ['cairn_export', {}],
-      ['cairn_ingest', { content: INGEST_FIXTURE }],
-      ['cairn_promote', { id: 'irrelevant' }],
-      ['cairn_stats', { action: 'summary' }],
+      [TOOL.EXPORT, {}],
+      [TOOL.INGEST, { content: INGEST_FIXTURE }],
+      [TOOL.PROMOTE, { id: 'irrelevant' }],
+      [TOOL.STATS, { action: 'summary' }],
     ] as Array<[string, Record<string, unknown>]>) {
       const result = await callTool(h.client, name, args);
       assert.equal(textOf(result), CRITICAL_TEXT, `${name} must go silent in critical mode`);
@@ -638,7 +640,7 @@ describe('context-critical mode gating', () => {
 
   it('resources stay readable regardless of context mode', async () => {
     h.setMode('critical');
-    const text = await readResourceText(h.client, 'cairn://briefing/proj-a');
+    const text = await readResourceText(h.client, `${MCP_URI_SCHEME}://briefing/proj-a`);
     assert.ok(text.startsWith('[Waykeep Full Briefing — proj-a]'), 'resource reads are not gated by context mode');
   });
 });

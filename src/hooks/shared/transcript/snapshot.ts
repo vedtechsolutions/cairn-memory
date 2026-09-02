@@ -46,7 +46,7 @@ export interface TranscriptSnapshot {
   reasoningState: { hypotheses: string[]; openQuestions: string[] };
   /** Error summary: deduplicated errors encountered during session (Phase 5) */
   errorContext: Array<{ errorKey: string; errorText: string; count: number; lastFile: string | null }>;
-  /** Ambient project goal mined from cairn_plan(create) calls in the tail.
+  /** Ambient project goal mined from waykeep_plan(create) calls in the tail.
    *  Distinct from initialGoal (which tracks the current-turn task). Persists
    *  across meta turns via the PreCompact sticky carry-forward logic. */
   projectGoal: string | null;

@@ -41,7 +41,7 @@ No C compiler needed — hooks run through a bundled shell relay, and
 
 ## 2. Wire your agent(s)
 
-Both plugins require **waykeep >= 5.5.0** from step 1 — earlier
+Both plugins require **waykeep >= 6.0.0** from step 1 — earlier
 versions predate the commands the plugins call.
 
 ### Claude Code — plugin (recommended)

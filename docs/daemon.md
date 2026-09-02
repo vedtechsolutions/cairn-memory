@@ -12,7 +12,7 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now waykeep-daemon
 ```
 
-After every `npm run build`, restart it to pick up the new code: `sudo systemctl restart waykeep-daemon`. Check it with `curl -s --unix-socket ~/.cairn/hook-daemon.sock http://localhost/health` — `mode` reports `standalone`. Without the daemon everything still works in embedded mode; sampling-backed hook features (Layer 1c reflection) are only available in embedded mode since the standalone daemon has no MCP client to sample through.
+After every `npm run build`, restart it to pick up the new code: `sudo systemctl restart waykeep-daemon`. Check it with `curl -s --unix-socket ~/.waykeep/hook-daemon.sock http://localhost/health` — `mode` reports `standalone`. Without the daemon everything still works in embedded mode; sampling-backed hook features (Layer 1c reflection) are only available in embedded mode since the standalone daemon has no MCP client to sample through.
 
 ```json
 {
@@ -150,9 +150,9 @@ returns to advisory-only Slice B behavior.
 Or configure Claude Code automatically instead of editing `settings.json` by hand:
 
 ```bash
-cairn init              # merge Waykeep's MCP + StatusLine + hooks into ~/.claude/settings.json
-cairn init --dry-run          # preview the changes without writing
-cairn init --migrate-routes   # modernize deprecated hook routes (one re-trust in Codex)
+waykeep init            # merge Waykeep's MCP + StatusLine + hooks into ~/.claude/settings.json
+waykeep init --dry-run          # preview the changes without writing
+waykeep init --migrate-routes   # modernize deprecated hook routes (one re-trust in Codex)
 ```
 
 `waykeep init` is idempotent and preserves your existing settings (it backs up

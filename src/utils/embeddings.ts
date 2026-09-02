@@ -1,7 +1,7 @@
 /**
  * Embedding service — lazy singleton for local text embeddings, driven by
  * the model registry in constants/embedding-models.ts and selected via
- * CAIRN_EMBEDDING_MODEL (default minilm-l6).
+ * WAYKEEP_EMBEDDING_MODEL (default minilm-l6).
  *
  * IMPORTANT: Only use from the MCP server (long-lived process).
  * Hook processes are short-lived — they should NOT load the model.
@@ -18,7 +18,7 @@ import { ENV } from '../constants/env.js';
  *  it for retrieval quality. */
 export type EmbeddingRole = 'query' | 'document';
 
-/** Resolve the active model config from CAIRN_EMBEDDING_MODEL. Pure —
+/** Resolve the active model config from WAYKEEP_EMBEDDING_MODEL. Pure —
  *  callers pass an explicit value in tests. FAILS CLOSED on unknown keys.
  *  Any registered model may be selected: schema v26 tags every stored
  *  vector with its model, all vector reads filter on the active model, and
@@ -112,7 +112,7 @@ function getLoader(): VerifiedLoader<Extractor> {
       },
       verify: () => verifyModelPackage(config, 'embedding'),
       onPoison: (err) => {
-        console.error(`[cairn] embedding artifact verification FAILED — embeddings disabled for this process: ${err.message}`);
+        console.error(`[waykeep] embedding artifact verification FAILED — embeddings disabled for this process: ${err.message}`);
       },
     });
   }
@@ -178,6 +178,6 @@ export function bufferToEmbedding(buf: Buffer): Float32Array {
 /** Pre-warm the model on startup (fire-and-forget) */
 export function warmupEmbeddings(): void {
   getPipeline().catch(err => {
-    console.error('[cairn] Embedding model warmup failed:', err);
+    console.error('[waykeep] Embedding model warmup failed:', err);
   });
 }

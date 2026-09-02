@@ -1,11 +1,11 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { canReadPrivate } from '../../config/cairn-config.js';
+import { canReadPrivate } from '../../config/waykeep-config.js';
 import { sessionProjectId } from '../../utils/session-project.js';
 import * as z from 'zod/v4';
 import type { ReminderRepository } from '../../db/reminder-repository.js';
 import type { SessionCache } from '../../hooks/shared/session-cache.js';
 import { LIMITS, type ContextMode } from '../../constants/index.js';
-import { isCritical } from './helpers.js';
+import { isCritical , registerToolCompat } from './helpers.js';
 import { TOOL } from '../../constants/mcp.js';
 
 type ContextModeFn = () => ContextMode;
@@ -16,9 +16,9 @@ export function registerReminderTools(
   getMode: ContextModeFn,
   sessionCache?: SessionCache,
 ): void {
-  // --- cairn_remind -----------------------------------------------------------
+  // --- waykeep_remind -----------------------------------------------------------
 
-  server.registerTool(
+  registerToolCompat(server, 
     TOOL.REMIND,
     {
       title: 'Set Reminder',
@@ -71,9 +71,9 @@ export function registerReminderTools(
     },
   );
 
-  // --- cairn_reminder_list -----------------------------------------------------
+  // --- waykeep_reminder_list -----------------------------------------------------
 
-  server.registerTool(
+  registerToolCompat(server, 
     TOOL.REMINDER_LIST,
     {
       title: 'List Reminders',
@@ -104,9 +104,9 @@ export function registerReminderTools(
     },
   );
 
-  // --- cairn_reminder_delete ---------------------------------------------------
+  // --- waykeep_reminder_delete ---------------------------------------------------
 
-  server.registerTool(
+  registerToolCompat(server, 
     TOOL.REMINDER_DELETE,
     {
       title: 'Delete Reminder',

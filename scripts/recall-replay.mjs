@@ -26,7 +26,7 @@
  * candidate arithmetic as production (limit × FINGERPRINT.CANDIDATE_MULTIPLIER)
  * — compare like with like, and do not quote these as end-to-end MCP output.
  *
- * Why it exists: live `cairn_recall` mutates recall telemetry, which feeds
+ * Why it exists: live `waykeep_recall` mutates recall telemetry, which feeds
  * decay stability — measuring the store through MCP changes the store (it
  * did, during the incident investigation). All remediation measurement goes
  * through THIS tool.
@@ -44,8 +44,8 @@
  * ranks are comparable across invocations; --pool exists only for
  * deliberately studying pool-size effects.
  */
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir, homedir } from 'node:os';
+import { mkdtempSync, rmSync, existsSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import DatabaseCtor from 'better-sqlite3';
@@ -54,13 +54,19 @@ const REPO = join(dirname(fileURLToPath(import.meta.url)), '..');
 const { openDatabase } = await import(join(REPO, 'dist', 'src', 'db', 'connection.js'));
 const { MemoryRepository } = await import(join(REPO, 'dist', 'src', 'db', 'memory-repository.js'));
 const { FINGERPRINT } = await import(join(REPO, 'dist', 'src', 'constants', 'index.js'));
-const { DATA_DIR_NAME, DB_FILENAME } = await import(join(REPO, 'packages', 'contract', 'dist', 'identity.js'));
+// THE coherent state root (Phase B): defaulting to the CURRENT dir would
+// measure an empty/absent ~/.waykeep while the user's real store still lives
+// under the un-migrated ~/.cairn — the same fork hazard the resolver exists to
+// prevent (codex B1 review). Resolve the marker-aware root every process uses.
+const { resolveStateRoot } = await import(join(REPO, 'dist', 'src', 'constants', 'paths.js'));
 
 const args = process.argv.slice(2);
 const val = (f) => { const i = args.indexOf(f); return i >= 0 ? args[i + 1] : null; };
 const query = val('--query');
 if (!query) { console.error('usage: recall-replay.mjs --query "text" [--db path] [--project id] [--limit n] [--embed]'); process.exit(2); }
-const srcPath = val('--db') ?? join(homedir(), DATA_DIR_NAME, DB_FILENAME);
+const _root = resolveStateRoot();
+const srcPath = val('--db') ?? join(_root.dir, _root.dbFilename);
+if (!existsSync(srcPath)) { console.error(`recall-replay: no store at ${srcPath} — pass --db at an existing store.`); process.exit(1); }
 const project = val('--project');
 const limit = Number(val('--limit') ?? 10);
 // The candidate POOL is fixed independently of the display limit: pool size

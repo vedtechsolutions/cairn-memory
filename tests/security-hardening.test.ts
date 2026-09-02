@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { isSafeTranscriptPath } from '../src/hooks/shared/transcript/jsonl-io.js';
 import { readState } from '../src/hooks/shared/state-io.js';
+import { ENV } from '../src/constants/env.js';
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -39,16 +40,16 @@ describe('isSafeTranscriptPath symlink containment (M4)', () => {
 });
 
 describe('readState validation (L1)', () => {
-  const prev = process.env.CAIRN_STATE_PATH;
+  const prev = process.env[ENV.STATE_PATH];
   afterEach(() => {
-    if (prev === undefined) delete process.env.CAIRN_STATE_PATH;
-    else process.env.CAIRN_STATE_PATH = prev;
+    if (prev === undefined) delete process.env[ENV.STATE_PATH];
+    else process.env[ENV.STATE_PATH] = prev;
   });
 
   function readWithState(contents: string): ReturnType<typeof readState> {
     const p = join(tempDir(), 'cairn-state.json');
     writeFileSync(p, contents);
-    process.env.CAIRN_STATE_PATH = p;
+    process.env[ENV.STATE_PATH] = p;
     return readState();
   }
 

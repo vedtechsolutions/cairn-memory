@@ -22,5 +22,5 @@ export {
   type ProjectGoalResolution,
 } from './goal-resolver.js';
 export { compileBriefing, type BriefingContext } from './briefing-compiler.js';
-export { readState, writeState, type CairnState } from './state-io.js';
+export { readState, writeState, type WaykeepState } from './state-io.js';
 export { recordTelemetry } from './hook-telemetry.js';

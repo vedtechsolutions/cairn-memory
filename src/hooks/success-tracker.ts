@@ -159,7 +159,7 @@ try {
   recordTelemetry('success-tracker', input.tool_name, _startTime, true);
 } catch (err) {
   recordTelemetry('success-tracker', 'error', _startTime, false, String(err));
-  console.error('[cairn] Success tracker hook error:', err);
+  console.error('[waykeep] Success tracker hook error:', err);
   process.exit(0);
 }
 

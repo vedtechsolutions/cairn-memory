@@ -36,6 +36,6 @@ try {
   });
 } catch (err) {
   recordTelemetry('subagent-context', 'error', _startTime, false, String(err));
-  console.error('[cairn] SubagentStart hook error:', err);
+  console.error('[waykeep] SubagentStart hook error:', err);
   process.exit(0);
 }

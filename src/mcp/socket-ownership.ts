@@ -4,7 +4,7 @@
  * Multiple agent clients (Claude Code, Codex, future MCP consumers) each
  * spawn their own Waykeep MCP server process, and a standalone daemon may own
  * the socket permanently. Exactly one process may serve
- * ~/.cairn/hook-daemon.sock at a time; everyone else must LEAVE THE OWNER
+ * ~/.waykeep/hook-daemon.sock at a time; everyone else must LEAVE THE OWNER
  * ALONE and share its socket. The historical failure mode this module
  * exists to prevent: a starting server SIGTERM-ing the live owner via the
  * PID file and stealing the socket, killing the other client's MCP server
@@ -36,17 +36,17 @@ const BUMP_TIMEOUT_MS = 1000;
 
 // --- Paths ---
 
-/** Socket/PID locations — honor the CAIRN_DIR override (like edit-tracker /
+/** Socket/PID locations — honor the WAYKEEP_DIR override (like edit-tracker /
  *  state-io) and resolve lazily so tests can sandbox them without having to
  *  reorder imports around a module-load-time homedir() capture. */
-export function cairnDir(): string {
+export function waykeepDir(): string {
   return dataDir();
 }
 export function socketPath(): string {
-  return join(cairnDir(), FILES.SOCKET);
+  return join(waykeepDir(), FILES.SOCKET);
 }
 export function pidPath(): string {
-  return join(cairnDir(), FILES.PID);
+  return join(waykeepDir(), FILES.PID);
 }
 
 /**
@@ -56,8 +56,8 @@ export function pidPath(): string {
  * before the socket is bound. Best-effort chmod: never crash startup on a
  * filesystem that rejects it (some network mounts, non-POSIX hosts).
  */
-export function ensureCairnDirSecure(): string {
-  const dir = cairnDir();
+export function ensureWaykeepDirSecure(): string {
+  const dir = waykeepDir();
   mkdirSync(dir, { recursive: true, mode: FS_PERMS.DIR });
   try { chmodSync(dir, FS_PERMS.DIR); } catch { /* best-effort on exotic FS */ }
   return dir;
@@ -72,7 +72,7 @@ export function ensureCairnDirSecure(): string {
  * the socket to other local users.
  *
  * `followSymlink` selects the directory vs. socket policy. The state dir check
- * follows the link (a user may legitimately symlink ~/.cairn to an owner-only
+ * follows the link (a user may legitimately symlink ~/.waykeep to an owner-only
  * target on another disk — that stays valid; a link to a group/other-accessible
  * or foreign-owned target is still refused). The socket-file check does NOT
  * follow: the socket we just bound is a real socket, and a symlink where the
@@ -210,7 +210,7 @@ export function releaseSocketClaim(): void {
 
 /**
  * Relay a memory-version bump to the socket owner. Used by MCP servers that
- * did NOT claim the socket: their write tools (cairn_learn, cairn_correct,
+ * did NOT claim the socket: their write tools (waykeep_learn, waykeep_correct,
  * ...) must invalidate the owner's skip-gate cache or corrections could sit
  * behind cached hook output for up to the 60s TTL. Fire-and-forget by
  * design — the TTL is the backstop when the post is lost.

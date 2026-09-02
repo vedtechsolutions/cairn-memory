@@ -147,7 +147,7 @@ try {
   }
 
   // Layer 1b: Auto-store decisions mined from assistant text.
-  // Safety net — captures decisions even if cairn_learn wasn't called explicitly.
+  // Safety net — captures decisions even if waykeep_learn wasn't called explicitly.
   if (snapshot.minedDecisions.length > 0) {
     let projectContext = null;
     try {
@@ -174,7 +174,7 @@ try {
       if (!result.deduplicated) minedCount++;
     }
     if (minedCount > 0) {
-      console.error(`[cairn] PreCompact: auto-mined ${minedCount} decision(s) from assistant text`);
+      console.error(`[waykeep] PreCompact: auto-mined ${minedCount} decision(s) from assistant text`);
     }
   }
 
@@ -211,7 +211,7 @@ try {
   });
 } catch (err) {
   recordTelemetry('precompact', 'error', _startTime, false, String(err));
-  console.error('[cairn] PreCompact hook error:', err);
+  console.error('[waykeep] PreCompact hook error:', err);
   process.exit(0);
 }
 

@@ -1,7 +1,7 @@
 /**
  * Hook Socket — HTTP server on a Unix domain socket, shared by all agent
  * clients on the machine. Served by exactly one process at a time: the
- * standalone cairn-daemon service when installed, otherwise the first agent
+ * standalone waykeep-daemon service when installed, otherwise the first agent
  * client's MCP server to start (embedded mode). Ownership is arbitrated by
  * the cooperative claim protocol in socket-ownership.ts — a live owner is
  * never displaced, so concurrent clients (Claude Code + Codex) coexist.
@@ -9,7 +9,7 @@
 import { createServer, type IncomingMessage, type ServerResponse, type Server as HttpServer } from 'node:http';
 import { writeFileSync, chmodSync } from 'node:fs';
 import type { Server as McpInnerServer } from '@modelcontextprotocol/sdk/server/index.js';
-import { acquireSocketClaim, releaseSocketClaim, ensureCairnDirSecure, isOwnerOnly, socketPath, pidPath } from './socket-ownership.js';
+import { acquireSocketClaim, releaseSocketClaim, ensureWaykeepDirSecure, isOwnerOnly, socketPath, pidPath } from './socket-ownership.js';
 import { FS_PERMS } from '../constants/index.js';
 import { CLIENT_HEADER } from '../constants/clients.js';
 import { CONTRACT_REVISION } from 'waykeep-contract';
@@ -39,7 +39,7 @@ import { evaluateGovernanceWarnStop } from '../governance/warn-stop.js';
 const REQUEST_TIMEOUT_MS = 5000;
 
 /** Who may serve the socket: an agent client's MCP server (embedded) or the
- *  standalone cairn-daemon service. Reported via /health for diagnostics. */
+ *  standalone waykeep-daemon service. Reported via /health for diagnostics. */
 export type HookSocketMode = 'embedded' | 'standalone';
 
 // --- Helpers ---
@@ -280,7 +280,7 @@ export const SERVED_HOOK_ROUTES: readonly string[] = Object.keys(routes).map((r)
  * serves it. Shares the caller's DB connection — no duplicate repos.
  *
  * Ownership is cooperative (see socket-ownership.ts): when a live owner —
- * the standalone cairn-daemon or another agent client's MCP server —
+ * the standalone waykeep-daemon or another agent client's MCP server —
  * answers the health probe, this resolves null and the caller must share
  * that socket instead. Live owners are NEVER signalled or displaced; only
  * a dead socket is claimed.
@@ -296,14 +296,14 @@ export async function startHookSocket(
   innerServer?: McpInnerServer,
   options?: { mode?: HookSocketMode },
 ): Promise<HttpServer | null> {
-  const dir = ensureCairnDirSecure();
+  const dir = ensureWaykeepDirSecure();
   // Fail-closed: the 0700 dir is the socket's primary access control. If it
   // cannot be proven owner-only (chmod ignored on an exotic FS, or a
   // pre-existing wrong-owned dir), refuse to serve — hooks fall back to
   // direct-node execution, which is safe, rather than exposing the socket.
   if (!isOwnerOnly(dir, { followSymlink: true })) {
     console.error(
-      `[cairn] Refusing to serve hook socket: ${dir} is not owner-only — hooks will use the direct-node fallback`,
+      `[waykeep] Refusing to serve hook socket: ${dir} is not owner-only — hooks will use the direct-node fallback`,
     );
     return null;
   }
@@ -312,7 +312,7 @@ export async function startHookSocket(
   const claim = await acquireSocketClaim();
   if (!claim.claimed) {
     console.error(
-      `[cairn] Hook socket already served by PID ${claim.ownerPid ?? 'unknown'} — sharing it, not claiming`,
+      `[waykeep] Hook socket already served by PID ${claim.ownerPid ?? 'unknown'} — sharing it, not claiming`,
     );
     return null;
   }
@@ -425,7 +425,7 @@ export async function startHookSocket(
       res.writeHead(200, { 'Content-Type': 'text/plain' });
       res.end(result.output ?? '');
     } catch (err) {
-      console.error(`[cairn] Hook handler error on ${req.url}:`, err);
+      console.error(`[waykeep] Hook handler error on ${req.url}:`, err);
       recordTelemetry('daemon', req.url ?? 'unknown', startTime, false, String(err), undefined, client.db);
       res.writeHead(500);
       res.end(`Handler error: ${err}`);
@@ -434,7 +434,7 @@ export async function startHookSocket(
 
   const server = createServer((req, res) => {
     handleRequest(req, res).catch(err => {
-      console.error('[cairn] Unhandled hook request error:', err);
+      console.error('[waykeep] Unhandled hook request error:', err);
       if (!res.headersSent) {
         res.writeHead(500);
         res.end('Internal error');
@@ -457,7 +457,7 @@ export async function startHookSocket(
       server.listen(socketPath(), onListening);
     });
   } catch (err) {
-    console.error(`[cairn] Hook socket bind failed on ${socketPath()}: ${err}`);
+    console.error(`[waykeep] Hook socket bind failed on ${socketPath()}: ${err}`);
     releaseSocketClaim();
     return null;
   }
@@ -470,7 +470,7 @@ export async function startHookSocket(
   try { chmodSync(socketPath(), FS_PERMS.FILE); } catch { /* best-effort */ }
   if (!isOwnerOnly(socketPath())) {
     console.error(
-      `[cairn] Refusing to serve hook socket: ${socketPath()} is not owner-only after bind — using direct-node fallback`,
+      `[waykeep] Refusing to serve hook socket: ${socketPath()} is not owner-only after bind — using direct-node fallback`,
     );
     // Drop any connection opened in the pre-verify window so close() can't
     // stall on a held-open keep-alive socket (Node >= 18.2; engines require 20).
@@ -483,7 +483,7 @@ export async function startHookSocket(
   // Refresh the claim written by acquireSocketClaim — diagnostic identity for
   // probes and for the claim protocol's mid-startup back-off.
   writeFileSync(pidPath(), String(process.pid), { mode: FS_PERMS.FILE });
-  console.error(`[cairn] Hook socket listening on ${socketPath()} (${mode}, PID ${process.pid})`);
+  console.error(`[waykeep] Hook socket listening on ${socketPath()} (${mode}, PID ${process.pid})`);
 
   // Now that we are actually serving, start the tracker flush timer. Deferred
   // to here so the bind-failure / not-owner-only bail-outs above never leave a
@@ -496,7 +496,7 @@ export async function startHookSocket(
   // without a listener the EventEmitter would throw and crash the process. Log
   // and keep running — the direct-node hook fallback covers a degraded socket.
   server.on('error', (err) => {
-    console.error(`[cairn] Hook socket runtime error on ${socketPath()}:`, err);
+    console.error(`[waykeep] Hook socket runtime error on ${socketPath()}:`, err);
   });
 
   // Cleanup on process exit — one shared listener; repeated startHookSocket

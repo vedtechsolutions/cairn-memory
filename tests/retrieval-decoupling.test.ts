@@ -56,7 +56,7 @@ afterEach(async () => {
 });
 
 const recall = async (query: string) => {
-  const res = await client.callTool({ name: 'cairn_recall', arguments: { query } }) as {
+  const res = await client.callTool({ name: TOOL.RECALL, arguments: { query } }) as {
     content: Array<{ type: string; text?: string }>; isError?: boolean;
   };
   return { text: res.content[0]?.text ?? '', isError: res.isError === true };
@@ -170,6 +170,7 @@ import type { CachedHookContext } from '../src/hooks/shared/db-client.js';
 import type { UserPromptSubmitInput } from '../src/hooks/shared/hook-io.js';
 import { handlePromptCheck } from '../src/hooks/handlers/prompt-handler.js';
 import { projectId } from '../src/utils/project-id.js';
+import { TOOL } from '../src/constants/mcp.js';
 
 describe('exposure gate on the real hook path (step 7, fold round)', () => {
   let hdb: Database.Database;

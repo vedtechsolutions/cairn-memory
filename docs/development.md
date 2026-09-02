@@ -14,16 +14,16 @@
 │    StopFailure, SessionEnd                               │
 │                                                          │
 │  17 MCP Tools (explicit, on-demand):                     │
-│    cairn_learn / cairn_recall / cairn_correct             │
-│    cairn_forget / cairn_strengthen / cairn_weaken         │
-│    cairn_plan / cairn_remind / cairn_expand               │
-│    cairn_reminder_list / cairn_reminder_delete            │
-│    cairn_ingest / cairn_export / cairn_promote            │
-│    cairn_stats / cairn_cleanup                            │
+│    waykeep_learn / waykeep_recall / waykeep_correct             │
+│    waykeep_forget / waykeep_strengthen / waykeep_weaken         │
+│    waykeep_plan / waykeep_remind / waykeep_expand               │
+│    waykeep_reminder_list / waykeep_reminder_delete            │
+│    waykeep_ingest / waykeep_export / waykeep_promote            │
+│    waykeep_stats / waykeep_cleanup                            │
 │                                                          │
 │  2 MCP Resources (read-only views):                      │
-│    cairn://plan/{project}/active  → full plan state      │
-│    cairn://briefing/{project}     → full briefing        │
+│    waykeep://plan/{project}/active  → full plan state      │
+│    waykeep://briefing/{project}     → full briefing        │
 └──────────┬───────────────────────────────┬───────────────┘
            │                               │
      hook events                    stdio (MCP protocol)
@@ -41,7 +41,7 @@
 │  ┌────────────────────┐  ┌─────────────────────────────┐ │
 │  │ Embedded Hook      │  │ MCP Protocol Server         │ │
 │  │ Socket (v5)        │  │ (stdio transport)           │ │
-│  │ ~/.cairn/hook-     │  │ 17 tools, 2 resources       │ │
+│  │ ~/.waykeep/hook-     │  │ 17 tools, 2 resources       │ │
 │  │   daemon.sock      │  │                             │ │
 │  │ 12 hook routes     │  │                             │ │
 │  │ + /statusline      │  │                             │ │
@@ -60,7 +60,7 @@
 └──────────────────────────────────────────────────────────┘
               │                        │
               ▼                        ▼
-       ~/.cairn/cairn.db    ~/.claude/cairn-state.json
+       ~/.waykeep/waykeep.db    ~/.claude/waykeep-state.json
        (SQLite+FTS5+vec)      (StatusLine context pressure)
 ```
 
@@ -74,11 +74,11 @@ Add to your Claude Code settings (`~/.claude/settings.json`):
 ```json
 {
   "mcpServers": {
-    "cairn": {
+    "waykeep": {
       "command": "node",
-      "args": ["/path/to/cairn/dist/src/mcp/server.js"],
+      "args": ["/path/to/waykeep/dist/src/mcp/server.js"],
       "env": {
-        "CAIRN_LOG_LEVEL": "info"
+        "WAYKEEP_LOG_LEVEL": "info"
       }
     }
   }
@@ -87,7 +87,7 @@ Add to your Claude Code settings (`~/.claude/settings.json`):
 
 ### 3. Configure Hooks And StatusLine
 
-Add all hook events to your `settings.json`. Every hook is important: missing hooks create blind spots in Waykeep's learning. Most hooks should call the compiled relay so they run against the shared hook socket at `~/.cairn/hook-daemon.sock`; the relay falls back to direct Node when the socket is unavailable. `PreCompact` and `SessionEnd` are standalone Node hooks because they are not socket routes. `StatusLine` is not a hook event, but it is required for context-pressure tracking and dynamic briefing budgets.
+Add all hook events to your `settings.json`. Every hook is important: missing hooks create blind spots in Waykeep's learning. Most hooks should call the compiled relay so they run against the shared hook socket at `~/.waykeep/hook-daemon.sock`; the relay falls back to direct Node when the socket is unavailable. `PreCompact` and `SessionEnd` are standalone Node hooks because they are not socket routes. `StatusLine` is not a hook event, but it is required for context-pressure tracking and dynamic briefing budgets.
 
 The socket has exactly one owner at a time, arbitrated cooperatively (a live owner is never displaced): the standalone daemon below when installed, otherwise the first agent client's MCP server to start (embedded mode). Client servers that find a live owner share its socket and relay their write-tool cache invalidations to it over `/bump-memory-version`.
 
@@ -104,16 +104,16 @@ it generates `~/.codex/hooks.json` (every event through the relay with
 **One manual step**: Codex hash-pins hooks and silently skips them until you
 approve them once. After `waykeep init`, start `codex` — the startup review
 lists the 10 "Waykeep memory hooks"; accept them (or use `/hooks`). Trust
-survives reinstalls as long as the hook commands don't change; `cairn
+survives reinstalls as long as the hook commands don't change; `waykeep
 doctor`'s `codex parity` check reports wired / awaiting-trust state.
 
 Notes: non-interactive `codex exec` rejects MCP tool calls under its default
 approval policy — use `codex exec --approve-for-me` when a script needs
-`cairn_*` tools (hooks are unaffected). Failed code-mode `apply_patch`
+`waykeep_*` tools (hooks are unaffected). Failed code-mode `apply_patch`
 calls emit no hook or rollout record in Codex 0.150.x and are not capturable
 (documented gap); shell failures — the dominant error class — are fully
 captured, with a daemon-side rollout tailer as the zero-config fallback when
-hooks are untrusted (`CAIRN_TAILER=0` disables).
+hooks are untrusted (`WAYKEEP_TAILER=0` disables).
 
 ### 4. Verify Installation
 
@@ -122,22 +122,22 @@ hooks are untrusted (`CAIRN_TAILER=0` disables).
 # embedding model pin, database schema, and hook socket. Exits non-zero on a
 # critical failure, so it can gate CI and setup scripts. Diagnostic only —
 # it never creates the database, binds the socket, or downloads a model.
-cairn doctor            # or: node dist/src/cli/index.js doctor
+waykeep doctor          # or: node dist/src/cli/index.js doctor
 
 # Run tests
 npm test
 
 # Check hook telemetry after a session
-sqlite3 ~/.cairn/cairn.db "SELECT hook_name, COUNT(*), SUM(success) FROM hook_telemetry GROUP BY hook_name;"
+sqlite3 ~/.waykeep/waykeep.db "SELECT hook_name, COUNT(*), SUM(success) FROM hook_telemetry GROUP BY hook_name;"
 
 # Check context-pressure state written by StatusLine
-cat ~/.claude/cairn-state.json
+cat ~/.claude/waykeep-state.json
 
 # Check whether hooks fell back from the socket to direct Node
-test -f ~/.cairn/hook-relay-fallback.log && tail -20 ~/.cairn/hook-relay-fallback.log
+test -f ~/.waykeep/hook-relay-fallback.log && tail -20 ~/.waykeep/hook-relay-fallback.log
 
 # Check memory count
-sqlite3 ~/.cairn/cairn.db "SELECT kind, COUNT(*) FROM memories WHERE invalidated=0 GROUP BY kind;"
+sqlite3 ~/.waykeep/waykeep.db "SELECT kind, COUNT(*) FROM memories WHERE invalidated=0 GROUP BY kind;"
 ```
 
 
@@ -146,9 +146,9 @@ sqlite3 ~/.cairn/cairn.db "SELECT kind, COUNT(*) FROM memories WHERE invalidated
 To use Waykeep as Claude's primary memory instead of the built-in file-based auto memory:
 
 1. Add `"autoMemoryEnabled": false` to your `~/.claude/settings.json` (suppresses built-in MEMORY.md writes)
-2. Copy `.claude/rules/cairn.md` to your project (or symlink for global use)
+2. Copy `.claude/rules/waykeep.md` to your project (or symlink for global use)
 3. Trim your `MEMORY.md` to a bootstrap stub (build commands, DB path only)
-4. All knowledge flows through `cairn_learn` / `cairn_recall` instead of file writes
+4. All knowledge flows through `waykeep_learn` / `waykeep_recall` instead of file writes
 
 
 ### 6. Optional: Claude Memory-Tool Backend
@@ -190,11 +190,11 @@ node scripts/longmemeval/compare.mjs <baseline.json> <challenger.json>  # paired
 
 # Recorded LongMemEval-S baselines (docs/benchmarks/) — regenerate with:
 node scripts/longmemeval/run.mjs \
-  --data ~/.cairn/benchmarks/longmemeval/longmemeval_s_cleaned.json \
+  --data ~/.waykeep/benchmarks/longmemeval/longmemeval_s_cleaned.json \
   --variant fts \
   --out docs/benchmarks/longmemeval-s-fts.json --md docs/benchmarks/longmemeval-s-fts.md
 node scripts/longmemeval/run.mjs \
-  --data ~/.cairn/benchmarks/longmemeval/longmemeval_s_cleaned.json \
+  --data ~/.waykeep/benchmarks/longmemeval/longmemeval_s_cleaned.json \
   --variant hybrid --embed \
   --out docs/benchmarks/longmemeval-s-hybrid.json --md docs/benchmarks/longmemeval-s-hybrid.md
 node scripts/repair-confidence.mjs                  # dry-run confidence repair (see --execute)
@@ -204,13 +204,13 @@ Test-environment overrides (all set automatically by `tests/hermetic-env.cjs`):
 
 | Env var | Effect |
 |---------|--------|
-| `CAIRN_DB_PATH` | Database location (also honored in production) |
-| `CAIRN_DIR` | Tracker/lock/dedup state directory (default `~/.cairn`) |
-| `CAIRN_STATE_PATH` | `cairn-state.json` location (default `~/.claude/cairn-state.json`) |
-| `CAIRN_QUERY_CWD` | Pins the briefing query-fingerprint cwd signal (A1 checkout-name neutrality) |
-| `CAIRN_ALLOW_TMP_TRANSCRIPTS` | Admits the OS tmpdir into the transcript-path allowlist (tests only) |
-| `CAIRN_TAILER` | `0` disables the daemon's Codex rollout tailer (capture fallback) |
-| `CAIRN_CODEX_SESSIONS_DIR` | Overrides `~/.codex/sessions` for the rollout tailer (tests) |
+| `WAYKEEP_DB_PATH` | Database location (also honored in production) |
+| `WAYKEEP_DIR` | State directory (default `~/.waykeep`; un-migrated installs use `~/.cairn`) |
+| `WAYKEEP_STATE_PATH` | `waykeep-state.json` location (default `~/.claude/waykeep-state.json`) |
+| `WAYKEEP_QUERY_CWD` | Pins the briefing query-fingerprint cwd signal (A1 checkout-name neutrality) |
+| `WAYKEEP_ALLOW_TMP_TRANSCRIPTS` | Admits the OS tmpdir into the transcript-path allowlist (tests only) |
+| `WAYKEEP_TAILER` | `0` disables the daemon's Codex rollout tailer (capture fallback) |
+| `WAYKEEP_CODEX_SESSIONS_DIR` | Overrides `~/.codex/sessions` for the rollout tailer (tests) |
 
 
 
@@ -238,18 +238,18 @@ Waykeep keeps stored facts and decisions trustworthy without deleting anything:
 
 ## Database
 
-- Location: `~/.cairn/cairn.db`
+- Location: `~/.waykeep/waykeep.db`
 - Engine: SQLite 3 with WAL mode + FTS5 + sqlite-vec (vector similarity)
 - Schema version: 31
-- Configurable via `CAIRN_DB_PATH` env var
-- Embeddings: 384-dim via `@huggingface/transformers` (all-MiniLM-L6-v2, q8) — selected from the model registry (`src/constants/embedding-models.ts`) via `CAIRN_EMBEDDING_MODEL` (default `minilm-l6`; challengers `nomic-v1.5` / `nomic-v1.5-256` / `embeddinggemma-300m`). Schema v26 tags every stored vector with its model: vector reads filter on the active model, and after a model switch the backfill worker re-embeds mismatched rows while FTS+RRF carry retrieval
-- Reranking (opt-in): `CAIRN_RERANK=1` enables a cross-encoder stage on `cairn_recall` (RRF top-20 → rerank → top-k; MCP server only); model via `CAIRN_RERANK_MODEL` (default `jina-turbo-v1`, registry in `src/constants/reranker-models.ts`)
+- Configurable via `WAYKEEP_DB_PATH` env var
+- Embeddings: 384-dim via `@huggingface/transformers` (all-MiniLM-L6-v2, q8) — selected from the model registry (`src/constants/embedding-models.ts`) via `WAYKEEP_EMBEDDING_MODEL` (default `minilm-l6`; challengers `nomic-v1.5` / `nomic-v1.5-256` / `embeddinggemma-300m`). Schema v26 tags every stored vector with its model: vector reads filter on the active model, and after a model switch the backfill worker re-embeds mismatched rows while FTS+RRF carry retrieval
+- Reranking (opt-in): `WAYKEEP_RERANK=1` enables a cross-encoder stage on `waykeep_recall` (RRF top-20 → rerank → top-k; MCP server only); model via `WAYKEEP_RERANK_MODEL` (default `jina-turbo-v1`, registry in `src/constants/reranker-models.ts`)
 
 
 ## Report rollup controls
 
-Recording is on by default; disable with `{"report":{"rollup":false}}` in `~/.cairn/config.json` or `CAIRN_ROLLUP=0` — both are true zero-writes.
+Recording is on by default; disable with `{"report":{"rollup":false}}` in `~/.waykeep/config.json` or `WAYKEEP_ROLLUP=0` — both are true zero-writes.
 
 ## Private-project session identity
 
-Session identity derives from the server's working directory (git remote when available, path hash otherwise). For non-git projects, launch your agent from the project root — a subdirectory or symlinked path derives a different identity and the private project's content will (safely) not be returned. `cairn_recall` with no `project` argument targets the session's own project (the same default `cairn_learn` uses) plus globals; `scope: "project"` narrows to only the target project's rows, `scope: "global"` to only globals. `scope: "project"` errors only when there is no target at all (no argument and no derivable session project).
+Session identity derives from the server's working directory (git remote when available, path hash otherwise). For non-git projects, launch your agent from the project root — a subdirectory or symlinked path derives a different identity and the private project's content will (safely) not be returned. `waykeep_recall` with no `project` argument targets the session's own project (the same default `waykeep_learn` uses) plus globals; `scope: "project"` narrows to only the target project's rows, `scope: "global"` to only globals. `scope: "project"` errors only when there is no target at all (no argument and no derivable session project).

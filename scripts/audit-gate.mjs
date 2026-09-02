@@ -58,7 +58,7 @@ function main() {
     console.error('Audit gate FAILED: unlisted high/critical advisories:');
     for (const offender of offenders) console.error(`  - ${offender.name} (${offender.severity})`);
     console.error('Fix in-range (npm audit fix), or add a dated exception to');
-    console.error('.github/audit-allowlist.json if the advisory is unreachable in Cairn.');
+    console.error('.github/audit-allowlist.json if the advisory is unreachable in Waykeep.');
     process.exit(1);
   }
 

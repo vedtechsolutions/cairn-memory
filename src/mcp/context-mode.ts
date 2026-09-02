@@ -6,7 +6,7 @@ import { FILES } from '../constants/paths.js';
 
 const STATE_PATH = join(homedir(), '.claude', FILES.CLIENT_STATE);
 
-interface CairnState {
+interface WaykeepState {
   mode: ContextMode;
   freeUntilCompact: number;
 }
@@ -19,7 +19,7 @@ export function getContextMode(): ContextMode {
   try {
     if (!existsSync(STATE_PATH)) return 'normal';
     const raw = readFileSync(STATE_PATH, 'utf-8');
-    const state: CairnState = JSON.parse(raw);
+    const state: WaykeepState = JSON.parse(raw);
     return state.mode ?? 'normal';
   } catch {
     return 'normal';

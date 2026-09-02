@@ -1,5 +1,5 @@
 /**
- * Read/write the cairn-state.json shared state file.
+ * Read/write the waykeep-state.json shared state file.
  * Written by StatusLine, read by MCP server and hooks.
  */
 import { readFileSync, writeFileSync, existsSync, mkdirSync, statSync, renameSync } from 'node:fs';
@@ -9,7 +9,7 @@ import { STATE_STALENESS_MS, CONTEXT_MODES, type ContextMode } from '../../const
 import { ENV } from '../../constants/env.js';
 import { FILES } from '../../constants/paths.js';
 
-export interface CairnState {
+export interface WaykeepState {
   mode: ContextMode;
   freeUntilCompact: number;
 }
@@ -22,7 +22,7 @@ const FREE_MAX = 100;
  *  writable by anything with local FS access; a forged `mode: "critical"`
  *  would silently suppress memory tooling. Reject anything off-shape and let
  *  the caller fall back to the safe `normal` default. */
-function isValidState(value: unknown): value is CairnState {
+function isValidState(value: unknown): value is WaykeepState {
   if (!value || typeof value !== 'object') return false;
   const s = value as Record<string, unknown>;
   return typeof s.mode === 'string'
@@ -33,15 +33,15 @@ function isValidState(value: unknown): value is CairnState {
     && s.freeUntilCompact <= FREE_MAX;
 }
 
-/** State file location — CAIRN_STATE_PATH env override (mirrors CAIRN_DIR /
- *  CAIRN_DB_PATH) keeps tests and sandboxed environments off the real
+/** State file location — WAYKEEP_STATE_PATH env override (mirrors WAYKEEP_DIR /
+ *  WAYKEEP_DB_PATH) keeps tests and sandboxed environments off the real
  *  ~/.claude. Resolved lazily so the override works regardless of import order. */
 function statePath(): string {
   return process.env[ENV.STATE_PATH] ?? join(homedir(), '.claude', FILES.CLIENT_STATE);
 }
 
-export function readState(): CairnState {
-  const defaults: CairnState = { mode: 'normal', freeUntilCompact: 100 };
+export function readState(): WaykeepState {
+  const defaults: WaykeepState = { mode: 'normal', freeUntilCompact: 100 };
   const path = statePath();
   try {
     if (!existsSync(path)) return defaults;
@@ -59,7 +59,7 @@ export function readState(): CairnState {
   }
 }
 
-export function writeState(state: CairnState): void {
+export function writeState(state: WaykeepState): void {
   const path = statePath();
   const dir = dirname(path);
   if (!existsSync(dir)) {

@@ -35,7 +35,7 @@ export function listSourceFiles(dir: string, extension = '.ts'): string[] {
  * Strip comments WITHOUT touching string literals — a real lexer pass, not
  * regexes. The earlier regex version created false NULLS: an owned name
  * inside a string that happened to contain `//` or `/*` (e.g. an error
- * message `"see // CAIRN_DB_PATH"`) was stripped along with the "comment",
+ * message `"see // WAYKEEP_DB_PATH"`) was stripped along with the "comment",
  * so the scan could not find a planted positive (codex step-8 review).
  * Tracks ' " ` string states (with backslash escapes; template literals
  * conservatively treated as strings including their interpolations), strips

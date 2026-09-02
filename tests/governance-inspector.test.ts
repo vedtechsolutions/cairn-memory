@@ -12,6 +12,8 @@ import assert from 'node:assert/strict';
 import { openDatabase } from '../src/db/connection.js';
 import { inspectGates } from '../src/governance/inspector.js';
 import { projectId } from '../src/utils/project-id.js';
+import { ENV } from '../src/constants/env.js';
+import { DATA_DIR_NAME } from 'waykeep-contract';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const INSPECTOR = join(REPO_ROOT, 'scripts', 'inspect-gates.mjs');
@@ -29,8 +31,8 @@ function tempDirectory(label: string): string {
 }
 
 function writeConfig(root: string, input: unknown): void {
-  mkdirSync(join(root, '.cairn'), { recursive: true });
-  writeFileSync(join(root, '.cairn', 'gates.json'), `${JSON.stringify(input, null, 2)}\n`);
+  mkdirSync(join(root, DATA_DIR_NAME), { recursive: true });
+  writeFileSync(join(root, DATA_DIR_NAME, 'gates.json'), `${JSON.stringify(input, null, 2)}\n`);
 }
 
 function validConfig(argv: string[] = ['npm', 'test']): unknown {
@@ -181,13 +183,13 @@ globalThis.fetch = () => trip('fetch');
     const childEnvironment = {
       ...process.env,
       HOME: home,
-      CAIRN_DIR: join(home, '.cairn'),
+      [ENV.DIR]: join(home, DATA_DIR_NAME),
       CLAUDE_CONFIG_DIR: join(home, '.claude'),
       API_TOKEN: 'environment-secret-value',
       HTTP_PROXY: trapUrl,
       HTTPS_PROXY: trapUrl,
       NODE_OPTIONS: `--require=${preload}`,
-      CAIRN_INSPECTOR_TEST: '1',
+      [ENV.INSPECTOR_TEST]: '1',
     };
     const result = await runInspectorAsync([
       '--project', project, '--paths', 'source.ts', '--db', dbPath, '--json',
@@ -262,11 +264,11 @@ globalThis.fetch = () => trip('fetch');
     assert.doesNotMatch(selfError.stderr, /\n\s+at /);
 
     const safety = runInspector(['--project', valid], {
-      ...process.env, HOME: home, CAIRN_INSPECTOR_TEST: '1',
+      ...process.env, HOME: home, [ENV.INSPECTOR_TEST]: '1',
     });
     assert.equal(safety.status, 1);
     assert.match(safety.stderr, /live default store refused/);
-    assert.equal(existsSync(join(home, '.cairn', 'cairn.db')), false);
+    assert.equal(existsSync(join(home, DATA_DIR_NAME, 'cairn.db')), false);
   });
 
   it('keeps the inspector implementation free of execution, network, and write APIs', () => {

@@ -8,12 +8,13 @@
  * `waykeep doctor` can gate CI and setup scripts. Diagnostic only — it never
  * creates or migrates the database.
  */
+import { NAMESPACE } from 'waykeep-contract';
 import { existsSync, readFileSync , realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 import { SCHEMA_VERSION } from '../db/schema.js';
 import { resolveDbPath } from '../db/db-path.js';
-import { CAIRN_HOOK_DIR_MARKER } from '../constants/index.js';
+import { WAYKEEP_HOOK_DIR_MARKER } from '../constants/index.js';
 import { SYNC_ROUTES, ASYNC_ROUTES, CONTRACT_REVISION } from 'waykeep-contract';
 import { getEmbeddingModelConfig } from '../utils/embeddings.js';
 import { verifyModelPackage, ArtifactVerificationError } from '../utils/artifact-verification.js';
@@ -22,7 +23,7 @@ import { binaryUsable, relayShellPath } from './relay.js';
 import { ENV } from '../constants/env.js';
 import {
   codexDir, codexHooksPath, codexConfigPath, codexHookCount,
-  countTrustedHooksIn, hasCairnMcpServer, cairnCommandSet,
+  countTrustedHooksIn, hasWaykeepMcpServer, waykeepCommandSet,
   LEGACY_POST_TOOL_ROUTE, type CodexHooksFile,
 } from './codex-init.js';
 
@@ -115,8 +116,8 @@ async function checkConfigHealth(): Promise<CheckResult> {
   // wording must be section-accurate (Codex H6 — a report-only typo was
   // told its scope settings were inactive, which is false). The
   // sync-disabled clause is unconditional for every unhealthy config.
-  const { cairnConfigHealth } = await import('../config/cairn-config.js');
-  const h = cairnConfigHealth();
+  const { waykeepConfigHealth } = await import('../config/waykeep-config.js');
+  const h = waykeepConfigHealth();
   if (h.healthy) return { status: 'ok', detail: `config at ${h.path} is healthy (absent = defaults)` };
   const wholeDocument = h.badSections.includes('(document)') || h.badSections.includes('(io)');
   const localImpact = wholeDocument
@@ -166,7 +167,7 @@ async function checkSocket(): Promise<CheckResult> {
     // either means the owner PREDATES both fields — exactly the daemon
     // this check exists to catch. Null must warn, never pass as healthy.
     if (live.routes === null || live.contractRevision === null) {
-      return { status: 'warn', detail: `hook socket owner (PID ${live.pid}) predates contract metadata (/health lacks routes/contract_revision) — restart it: \`systemctl restart cairn-daemon\` (or restart the agent that owns the socket)` };
+      return { status: 'warn', detail: `hook socket owner (PID ${live.pid}) predates contract metadata (/health lacks routes/contract_revision) — restart it: \`systemctl restart waykeep-daemon\` (or restart the agent that owns the socket)` };
     }
     const missingRoutes = [...SYNC_ROUTES, ...ASYNC_ROUTES].filter((r) => !live.routes!.includes(`/${r}`));
     const revisionDrift = live.contractRevision !== CONTRACT_REVISION;
@@ -174,7 +175,7 @@ async function checkSocket(): Promise<CheckResult> {
       const what = missingRoutes.length > 0
         ? `missing routes: ${missingRoutes.join(', ')}`
         : `contract revision ${live.contractRevision} vs this build's ${CONTRACT_REVISION}`;
-      return { status: 'warn', detail: `hook socket owner (PID ${live.pid}) predates this install (${what}) — restart it: \`systemctl restart cairn-daemon\` (or restart the agent that owns the socket)` };
+      return { status: 'warn', detail: `hook socket owner (PID ${live.pid}) predates this install (${what}) — restart it: \`systemctl restart waykeep-daemon\` (or restart the agent that owns the socket)` };
     }
     return { status: 'ok', detail: `hook socket served by PID ${live.pid} at ${socketPath()}` };
   }
@@ -209,7 +210,7 @@ async function checkSocket(): Promise<CheckResult> {
 }
 
 /** Per-agent parity: is Codex wired, and has the one-time trust happened?
- *  Exported for direct unit testing (CAIRN_CODEX_DIR makes it hermetic). */
+ *  Exported for direct unit testing (WAYKEEP_CODEX_DIR makes it hermetic). */
 export function checkCodexParity(): CheckResult {
   if (!existsSync(codexDir())) {
     return { status: 'ok', detail: 'Codex CLI not detected (nothing to wire)' };
@@ -236,7 +237,7 @@ export function checkCodexParity(): CheckResult {
   } catch {
     return { status: 'warn', detail: `${hooksPath} is not a valid hooks file (bad JSON or shape) — re-run \`waykeep init\`` };
   }
-  const wired = JSON.stringify(file).includes(CAIRN_HOOK_DIR_MARKER);
+  const wired = JSON.stringify(file).includes(WAYKEEP_HOOK_DIR_MARKER);
   if (!wired || total === 0) {
     return { status: 'warn', detail: 'Codex hooks.json exists but carries no Waykeep hooks — run `waykeep init`' };
   }
@@ -247,7 +248,7 @@ export function checkCodexParity(): CheckResult {
   // old nvm tree left behind — hooks silently run outdated code while
   // everything looks healthy). Anchored on hook-relay so a foreign
   // command that merely contains dist/src/hooks/ cannot false-positive.
-  const wiredDir = cairnCommandSet(file)
+  const wiredDir = waykeepCommandSet(file)
     .map((c) => /(\/[^ ]+\/dist\/src\/hooks)\/hook-relay/.exec(c)?.[1])
     .find((d): d is string => d !== undefined);
   if (wiredDir !== undefined && !existsSync(wiredDir)) {
@@ -260,11 +261,11 @@ export function checkCodexParity(): CheckResult {
     return { status: 'warn', detail: `Codex hooks run a DIFFERENT install (${wiredDir}) than this one (${HOOK_DIR}) — re-run \`waykeep init\` from the install you want (one re-trust)` };
   }
   const config = existsSync(codexConfigPath()) ? readFileSync(codexConfigPath(), 'utf-8') : '';
-  const mcp = hasCairnMcpServer(config) ? 'MCP registered' : 'MCP NOT registered (run `waykeep init`)';
+  const mcp = hasWaykeepMcpServer(config) ? 'MCP registered' : 'MCP NOT registered (run `waykeep init`)';
   const trust = countTrustedHooksIn(config, hooksPath, file);
   // Deprecated-route note (D3 window): status stays as-is while the alias
   // is served; this line escalates to a warn when a removal window opens.
-  const legacyRoute = cairnCommandSet(file).some((c) => c.endsWith(` ${LEGACY_POST_TOOL_ROUTE}`))
+  const legacyRoute = waykeepCommandSet(file).some((c) => c.endsWith(` ${LEGACY_POST_TOOL_ROUTE}`))
     ? `; deprecated '${LEGACY_POST_TOOL_ROUTE}' route wiring — modernize with \`waykeep init --migrate-routes\` (one re-trust)`
     : '';
   if (trust.disabled > 0 && trust.trusted < total) {
@@ -292,7 +293,7 @@ const GLYPH: Record<CheckStatus, string> = { ok: '✓', warn: '!', fail: '✗' }
 /** Run every check, print a line each, and return the process exit code
  *  (0 when no critical check failed; warnings do not fail). */
 export async function runDoctor(): Promise<number> {
-  console.log('cairn doctor — install health check\n');
+  console.log(`${NAMESPACE} doctor — install health check\n`);
   const results: Array<{ name: string; result: CheckResult }> = [];
   for (const check of CHECKS) {
     let result: CheckResult;

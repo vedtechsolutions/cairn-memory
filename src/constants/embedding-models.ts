@@ -1,7 +1,7 @@
 /**
  * Embedding model registry (roadmap W2). Every model the embedding service
  * can run, keyed by the stable identifier stored per-row in schema v26's
- * embedding_model column. Selected via CAIRN_EMBEDDING_MODEL (default
+ * embedding_model column. Selected via WAYKEEP_EMBEDDING_MODEL (default
  * minilm-l6); resolution and the schema-v26 activation gate live in
  * utils/embeddings.ts.
  *

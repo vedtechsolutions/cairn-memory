@@ -9,11 +9,13 @@ import { SessionCache } from '../src/hooks/shared/session-cache.js';
 import { GovernanceRuleRepository } from '../src/governance/rule-repository.js';
 import { projectId } from '../src/utils/project-id.js';
 import { prepareRelayDir, runRelay, TEST_GENEROUS_TIMEOUT_MS } from './relay-harness.js';
+import { ENV } from '../src/constants/env.js';
+import { DATA_DIR_NAME } from 'waykeep-contract';
 
 /** Generous watchdog so the round trip isn't cut off by the 400 ms production
  *  deadline under full-suite load — the assertions test emit/suppress logic,
  *  not the SLA (which its own benchmark covers). */
-const GENEROUS_GATE_ENV = { CAIRN_GOVERNANCE_TIMEOUT_MS: TEST_GENEROUS_TIMEOUT_MS };
+const GENEROUS_GATE_ENV = { [ENV.GOVERNANCE_TIMEOUT_MS]: TEST_GENEROUS_TIMEOUT_MS };
 
 /** Daemon-side governance evaluation budget. The schema caps this at 1000 ms;
  *  use the max (4x the 250 ms default) so the worktree-digest + DB evaluation
@@ -21,9 +23,9 @@ const GENEROUS_GATE_ENV = { CAIRN_GOVERNANCE_TIMEOUT_MS: TEST_GENEROUS_TIMEOUT_M
 const EVAL_TIMEOUT_MS = 1000;
 
 const stateRoot = mkdtempSync(join(tmpdir(), 'cairn-gate-roundtrip-'));
-const cairnDir = join(stateRoot, '.cairn');
-const socketPath = join(cairnDir, 'hook-daemon.sock');
-process.env.CAIRN_DIR = cairnDir;
+const waykeepDir = join(stateRoot, DATA_DIR_NAME);
+const socketPath = join(waykeepDir, 'hook-daemon.sock');
+process.env[ENV.DIR] = waykeepDir;
 
 function config(root: string, level: 'advise' | 'warn'): void {
   mkdirSync(join(root, '.cairn'), { recursive: true });
@@ -64,8 +66,8 @@ describe('governance-gate subprocess to warm-daemon round trip', () => {
   let governedRoot: string;
 
   before(async () => {
-    mkdirSync(cairnDir, { recursive: true });
-    const probePath = join(cairnDir, 'probe.sock');
+    mkdirSync(waykeepDir, { recursive: true });
+    const probePath = join(waykeepDir, 'probe.sock');
     try {
       const probe = createServer(() => {});
       await new Promise<void>((resolve, reject) => {

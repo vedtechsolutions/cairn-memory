@@ -25,7 +25,7 @@ import { PlanRepository } from '../src/db/plan-repository.js';
 import { ReminderRepository } from '../src/db/reminder-repository.js';
 import { ContextRepository } from '../src/db/context-repository.js';
 import { InvestigationRepository } from '../src/db/investigation-repository.js';
-import { resetConfigCacheForTests } from '../src/config/cairn-config.js';
+import { resetConfigCacheForTests } from '../src/config/waykeep-config.js';
 import { estimateTokensFast } from '../src/utils/tokens.js';
 import { ROLLUP, ROLLUP_METRICS } from '../src/constants/index.js';
 import { handlePitfallCheck } from '../src/hooks/handlers/pitfall-handler.js';
@@ -37,9 +37,10 @@ import { handleSuccessTracker } from '../src/hooks/handlers/success-tracker-hand
 import { loadTracker } from '../src/hooks/shared/edit-tracker.js';
 import { SessionCache } from '../src/hooks/shared/session-cache.js';
 import { projectId } from '../src/utils/project-id.js';
-import { isPrivateProject } from '../src/config/cairn-config.js';
+import { isPrivateProject } from '../src/config/waykeep-config.js';
 import type { CachedHookContext } from '../src/hooks/shared/db-client.js';
 import type { PostCompactInput, UserPromptSubmitInput, PreToolUseInput, SubagentStartInput } from '../src/hooks/shared/hook-io.js';
+import { ENV } from '../src/constants/env.js';
 
 let db: Database.Database;
 let configDir: string;
@@ -65,19 +66,19 @@ function hookClient(): CachedHookContext {
 beforeEach(() => {
   db = openDatabase({ dbPath: ':memory:' });
   configDir = mkdtempSync(join(tmpdir(), 'cairn-report-test-'));
-  savedConfigPath = process.env.CAIRN_CONFIG_PATH;
-  savedRollupEnv = process.env.CAIRN_ROLLUP;
-  process.env.CAIRN_CONFIG_PATH = join(configDir, 'config.json');
-  delete process.env.CAIRN_ROLLUP;
+  savedConfigPath = process.env[ENV.CONFIG_PATH];
+  savedRollupEnv = process.env[ENV.ROLLUP];
+  process.env[ENV.CONFIG_PATH] = join(configDir, 'config.json');
+  delete process.env[ENV.ROLLUP];
   resetConfigCacheForTests();
 });
 
 afterEach(() => {
   db.close();
-  if (savedConfigPath === undefined) delete process.env.CAIRN_CONFIG_PATH;
-  else process.env.CAIRN_CONFIG_PATH = savedConfigPath;
-  if (savedRollupEnv === undefined) delete process.env.CAIRN_ROLLUP;
-  else process.env.CAIRN_ROLLUP = savedRollupEnv;
+  if (savedConfigPath === undefined) delete process.env[ENV.CONFIG_PATH];
+  else process.env[ENV.CONFIG_PATH] = savedConfigPath;
+  if (savedRollupEnv === undefined) delete process.env[ENV.ROLLUP];
+  else process.env[ENV.ROLLUP] = savedRollupEnv;
   resetConfigCacheForTests();
   rmSync(configDir, { recursive: true, force: true });
 });
@@ -129,7 +130,7 @@ describe('recordRollup + the disable switch', () => {
   });
 
   it('CAIRN_ROLLUP=0 is a true zero-write', () => {
-    process.env.CAIRN_ROLLUP = '0';
+    process.env[ENV.ROLLUP] = '0';
     assert.equal(rollupEnabled(), false);
     recordRollup(db, 's1', ROLLUP_METRICS.INJECTED, 'prompt-check', 42);
     assert.equal(rollupRows().length, 0);

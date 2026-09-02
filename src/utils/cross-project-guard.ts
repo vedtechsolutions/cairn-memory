@@ -12,7 +12,7 @@
  */
 import type { Memory } from '../db/memory-repository.js';
 import { fingerprintOverlap, type ContextFingerprint } from './fingerprint.js';
-import { isPrivateProject } from '../config/cairn-config.js';
+import { isPrivateProject } from '../config/waykeep-config.js';
 import { PROACTIVE } from '../constants/index.js';
 import { basename } from 'node:path';
 
@@ -147,7 +147,7 @@ export function passesCrossProjectGuard(
 }
 
 /**
- * Scoping filter for EXPLICIT-project `cairn_recall` calls (bare recall
+ * Scoping filter for EXPLICIT-project `waykeep_recall` calls (bare recall
  * defaults to the session's project but deliberately skips this guard so
  * every global stays reachable, as before scope symmetry) — deliberately MORE
  * permissive than `passesCrossProjectGuard` (which is tuned for conservative
@@ -165,7 +165,7 @@ export function passesCrossProjectGuard(
  * NOTE: a code anchor is NOT a project-specificity signal — it is auto-extracted
  * from almost any content — so it is deliberately not consulted here. The real
  * defense against a fingerprint-less mis-scoped global is at write time: see
- * cairn_learn's default scoping (omitted project → the current project, not
+ * waykeep_learn's default scoping (omitted project → the current project, not
  * global).
  *
  * Applied ONLY to project-scoped recalls (the caller skips it when no project is

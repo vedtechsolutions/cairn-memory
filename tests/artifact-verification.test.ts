@@ -20,6 +20,7 @@ import {
 import { createVerifiedLoader } from '../src/utils/verified-loader.js';
 import { EMBEDDING_MODELS } from '../src/constants/embedding-models.js';
 import { RERANKER_MODELS } from '../src/constants/reranker-models.js';
+import { ENV } from '../src/constants/env.js';
 
 const sha = (text: string): string => createHash('sha256').update(text).digest('hex');
 
@@ -115,7 +116,7 @@ describe('unpinned models refuse before any download', () => {
         "import('./dist/src/utils/embeddings.js').then(m => m.embed('probe')).then(() => process.exit(0), err => { console.error(err.message); process.exit(3); });",
       ], {
         cwd: process.cwd(),
-        env: { ...process.env, CAIRN_EMBEDDING_MODEL: 'embeddinggemma-300m' },
+        env: { ...process.env, [ENV.EMBEDDING_MODEL]: 'embeddinggemma-300m' },
         encoding: 'utf8',
         timeout: 30_000,
       });

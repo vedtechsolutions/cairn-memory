@@ -19,7 +19,7 @@ const READ_NOFOLLOW = constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0);
  *  Real Claude Code transcripts live under ~/.claude/ — that is the only
  *  production allowlist entry. The OS tmpdir (tmpdir() rather than a
  *  hardcoded '/tmp/', for macOS /var/folders and systemd PrivateTmp) is
- *  world-writable, so it is admitted only when CAIRN_ALLOW_TMP_TRANSCRIPTS
+ *  world-writable, so it is admitted only when WAYKEEP_ALLOW_TMP_TRANSCRIPTS
  *  is set — tests/hermetic-env.cjs sets it for mkdtemp fixtures (M3).
  *
  *  The path is checked both lexically and after symlink resolution (M4): a

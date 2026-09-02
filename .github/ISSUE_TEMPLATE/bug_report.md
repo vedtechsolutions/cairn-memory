@@ -1,6 +1,6 @@
 ---
 name: Bug report
-about: Report a problem with Cairn
+about: Report a problem with Waykeep
 title: "[bug] "
 labels: bug
 ---
@@ -15,10 +15,10 @@ What you expected instead.
 Steps or a minimal case that triggers it.
 
 **Environment**
-- Cairn version:
+- Waykeep version:
 - Node version (`node -v`):
 - OS:
-- `cairn doctor` output (redact anything sensitive):
+- `waykeep doctor` output (redact anything sensitive):
 
 **Logs / context**
 Any relevant output. Do not paste secrets or tokens.

@@ -18,8 +18,8 @@
  *   - Cooldown checks (last_recalled timestamp)
  *
  * Skip-gate correctness:
- *   - memoryVersion is bumped by MCP write tools (cairn_learn, cairn_correct,
- *     cairn_forget, cairn_weaken, cairn_strengthen, cairn_promote, cairn_cleanup)
+ *   - memoryVersion is bumped by MCP write tools (waykeep_learn, waykeep_correct,
+ *     waykeep_forget, waykeep_weaken, waykeep_strengthen, waykeep_promote, waykeep_cleanup)
  *     and by error-learning-handler when it creates new pitfalls.
  *   - NOT bumped by metric-only updates (incrementSurface, incrementImpact) to
  *     avoid self-invalidating the cache on every hot-path call.
@@ -158,8 +158,8 @@ export class SessionCache {
   }
 
   /**
-   * Bump the memory version. Call from MCP write tools (cairn_learn, cairn_correct,
-   * cairn_forget, cairn_weaken, cairn_strengthen, cairn_promote, cairn_cleanup) and
+   * Bump the memory version. Call from MCP write tools (waykeep_learn, waykeep_correct,
+   * waykeep_forget, waykeep_weaken, waykeep_strengthen, waykeep_promote, waykeep_cleanup) and
    * from error-learning-handler after a new pitfall is auto-created. Do NOT call
    * from incrementSurface / incrementImpact / last_recalled updates — those are
    * metric-only and would self-invalidate the hot-path cache.

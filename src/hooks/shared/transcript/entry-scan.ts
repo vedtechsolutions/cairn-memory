@@ -105,7 +105,7 @@ export function scanAssistantEntry(content: ContentBlock[], snapshot: Transcript
         }
       }
 
-      // cairn_plan(create) → capture plan name as the ambient project goal.
+      // waykeep_plan(create) → capture plan name as the ambient project goal.
       // Last-write-wins across the transcript: the most recent create
       // overrides any earlier one so plan pivots are respected.
       if (toolName === QUALIFIED_PLAN || toolName === TOOL.PLAN) {
@@ -118,7 +118,7 @@ export function scanAssistantEntry(content: ContentBlock[], snapshot: Transcript
         }
       }
 
-      // cairn_plan(decide) → extract decision snapshots
+      // waykeep_plan(decide) → extract decision snapshots
       if (toolName === QUALIFIED_PLAN || toolName === TOOL.PLAN) {
         const action = input.action as string | undefined;
         if (action === 'decide') {
@@ -133,7 +133,7 @@ export function scanAssistantEntry(content: ContentBlock[], snapshot: Transcript
         }
       }
 
-      // cairn_learn(kind: "decision") → also capture decisions
+      // waykeep_learn(kind: "decision") → also capture decisions
       if (toolName === QUALIFIED_LEARN || toolName === TOOL.LEARN) {
         const kind = input.kind as string | undefined;
         if (kind === 'decision') {
@@ -166,7 +166,7 @@ export function scanAssistantEntry(content: ContentBlock[], snapshot: Transcript
       state.assistantTexts.push(block.text);
     }
 
-    // Layer 1b: Mine decisions from assistant text (safety net for cairn_learn)
+    // Layer 1b: Mine decisions from assistant text (safety net for waykeep_learn)
     if (block.type === 'text' && block.text && block.text.length > 40) {
       const mined = extractAssistantDecision(block.text);
       if (mined) {

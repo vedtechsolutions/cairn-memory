@@ -46,6 +46,22 @@ export function prepareRelayDir(prefix: string): string {
   const dir = mkdtempSync(join(tmpdir(), `${prefix}-`));
   cpSync(relayBin, join(dir, 'hook-relay'));
   chmodSync(join(dir, 'hook-relay'), 0o755);
+  // The shell relay + its identity.sh, so tests can exercise the shell
+  // artifact too (it sources identity.sh from its own dir).
+  const shellSrc = join(process.cwd(), 'dist', 'src', 'hooks', 'hook-relay.sh');
+  const identSrc = join(process.cwd(), 'dist', 'src', 'hooks', 'identity.sh');
+  if (existsSync(shellSrc) && existsSync(identSrc)) {
+    cpSync(shellSrc, join(dir, 'hook-relay.sh'));
+    chmodSync(join(dir, 'hook-relay.sh'), 0o755);
+    cpSync(identSrc, join(dir, 'identity.sh'));
+    // The statusline relay too — it resolves the socket the same marker-aware
+    // way and must be exercised against the same daemon placements.
+    const statusSrc = join(process.cwd(), 'dist', 'src', 'hooks', 'statusline-relay.sh');
+    if (existsSync(statusSrc)) {
+      cpSync(statusSrc, join(dir, 'statusline-relay.sh'));
+      chmodSync(join(dir, 'statusline-relay.sh'), 0o755);
+    }
+  }
   return dir;
 }
 
@@ -67,7 +83,15 @@ export function runRelay(
   env?: NodeJS.ProcessEnv,
 ): Promise<RelayResult> {
   return new Promise((resolvePromise, rejectPromise) => {
-    const child = spawn(bin, [hookType], { env: { ...process.env, HOME: home, ...env } });
+    // The relay resolves its socket dir marker-aware from HOME (or an
+    // explicit DIR override). The hermetic preload sets WAYKEEP_DIR to its
+    // own temp dir on THIS process — leaking that into the spawned relay
+    // would point it away from the socket the test placed under HOME. Strip
+    // the state-dir overrides (current + legacy) unless a test sets one.
+    const childEnv: NodeJS.ProcessEnv = { ...process.env, HOME: home, ...env };
+    if (!env || !('WAYKEEP_DIR' in env)) delete childEnv.WAYKEEP_DIR;
+    if (!env || !('CAIRN_DIR' in env)) delete childEnv.CAIRN_DIR;
+    const child = spawn(bin, [hookType], { env: childEnv });
     const killTimer = setTimeout(() => {
       child.kill('SIGKILL');
       rejectPromise(new Error(`relay did not exit within ${SPAWN_TIMEOUT_MS}ms`));

@@ -3,7 +3,7 @@
  * Download a LongMemEval dataset file at the manifest-pinned revision and
  * verify its sha256 against the manifest. Never used by CI (CI runs on the
  * checked-in fixture only). Cache lives OUTSIDE the repo and outside the live
- * store's directory semantics: ~/.cairn/benchmarks/longmemeval/.
+ * store's directory semantics: ~/.waykeep/benchmarks/longmemeval/.
  *
  * Usage:
  *   node scripts/longmemeval/fetch.mjs                                # longmemeval_s_cleaned.json
@@ -17,6 +17,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
+import { DATA_DIR_NAME } from '../../packages/contract/dist/identity.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const manifest = JSON.parse(await readFile(join(here, 'manifest.json'), 'utf8'));
@@ -34,7 +35,7 @@ if (!entry) {
   process.exit(1);
 }
 
-const cacheDir = join(homedir(), '.cairn', 'benchmarks', 'longmemeval');
+const cacheDir = join(homedir(), DATA_DIR_NAME, 'benchmarks', 'longmemeval');
 await mkdir(cacheDir, { recursive: true });
 const destPath = join(cacheDir, fileName);
 

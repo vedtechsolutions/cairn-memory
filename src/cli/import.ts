@@ -10,12 +10,13 @@
  *   claude-mem      the community claude-mem archive (format-versioned)
  */
 import { homedir } from 'node:os';
+import { NAMESPACE } from 'waykeep-contract';
 import { join } from 'node:path';
 import { openDatabase } from '../db/connection.js';
 import { resolveDbPath } from '../db/db-path.js';
 import { MemoryRepository } from '../db/memory-repository.js';
 import { learnSections, safeExcerpt, type LearnSection } from '../importers/learn-pipeline.js';
-import { isPrivateProject } from '../config/cairn-config.js';
+import { isPrivateProject } from '../config/waykeep-config.js';
 import { transformCodexMemories } from '../importers/codex-memories.js';
 import { transformMemoryMd } from '../importers/memory-md.js';
 import { transformClaudeMem } from '../importers/claude-mem.js';
@@ -44,7 +45,7 @@ export function runImport(options: ImportOptions): number {
       }
       case 'memory-md': {
         if (!options.path) {
-          console.error('cairn import --from memory-md requires --path <MEMORY.md>');
+          console.error(`${NAMESPACE} import --from memory-md requires --path <MEMORY.md>`);
           return 1;
         }
         const result = transformMemoryMd(options.path, { includeSiblings: options.includeNotes });

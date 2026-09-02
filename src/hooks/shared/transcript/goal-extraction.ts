@@ -93,7 +93,7 @@ export function isMetaGoal(goal: string): boolean {
   // queryFp.module until this filter was added.
   //
   // "Resume point:" / "next: …" prose: observed in a live kind=goal memory
-  // (id 4ab27ef4…) written via cairn_learn in a past session — content was
+  // (id 4ab27ef4…) written via waykeep_learn in a past session — content was
   // "Resume point: uncommitted 4 SNR fixes … Next: re-run snr-probe … then
   // commit". This shape is distinctive enough to reject at the filter (it
   // only appears in session-continuity blurbs, never in real task goals)

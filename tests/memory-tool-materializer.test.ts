@@ -80,7 +80,7 @@ describe('exact-scope active-record loading', () => {
     // End to end: the VIEW renders with the warning instead of crashing
     const cache = new RenderCache(() => 0);
     const view = materializeView(db, '/memories/x/facts.md', 'mat-proj', 'facts', cache, false, silentLog);
-    assert.match(view.lines[0], /\[cairn: 1 records unrenderable — see logs\]/);
+    assert.match(view.lines[0], /\[waykeep: 1 records unrenderable — see logs\]/);
     assert.equal(view.lines.length, 2, 'warning + the one good record');
   });
 
@@ -225,7 +225,7 @@ describe('token collision extension 8 → 12 → full', () => {
     const dup = mem({ id: uid('dupdupdu') });
     const { lines, unrenderable } = renderRecords([dup, { ...dup }], 0, silentLog);
     assert.equal(unrenderable, 2);
-    assert.match(lines[0], /\[cairn: 2 records unrenderable — see logs\]/);
+    assert.match(lines[0], /\[waykeep: 2 records unrenderable — see logs\]/);
   });
 });
 

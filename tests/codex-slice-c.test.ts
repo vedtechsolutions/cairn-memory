@@ -16,6 +16,7 @@ import { handleSuccessTracker } from '../src/hooks/handlers/success-tracker-hand
 import { createHookDbClient } from '../src/hooks/shared/db-client.js';
 import { loadTracker, saveTracker } from '../src/hooks/shared/edit-tracker.js';
 import { CROSS_AGENT_CONTEXT_FRAMING } from '../src/constants/index.js';
+import { ENV } from '../src/constants/env.js';
 
 const PATCH = `*** Begin Patch
 *** Update File: src/widgets/frobnicator.ts
@@ -88,10 +89,10 @@ describe('anchor extraction — sentence-final filenames', () => {
   });
 
   it('does NOT anchor member-access dots or version strings (the bare-dot false positives)', () => {
-    // `process.env.CAIRN_DIR` backtracks to `process` + `.env` when the
+    // `process.env.WAYKEEP_DIR` backtracks to `process` + `.env` when the
     // env-var name overflows \w{1,6}; a bare '.' terminator accepted it and
     // anchored `process.env` as a file. The lookahead fix rejects it.
-    const envAnchor = extractAnchor('Read process.env.CAIRN_DIR before opening the database');
+    const envAnchor = extractAnchor(`Read process.env.${ENV.DIR} before opening the database`);
     assert.ok(!envAnchor?.files.includes('process.env'), `files=${JSON.stringify(envAnchor?.files)}`);
 
     const versionAnchor = extractAnchor('Upgraded to v1.2.3 with no schema change');

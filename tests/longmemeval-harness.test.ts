@@ -23,6 +23,7 @@ import {
 } from '../src/benchmark/longmemeval/official-metrics.js';
 import { runBenchmark } from '../src/benchmark/longmemeval/runner.js';
 import { toJsonReport, toMarkdownReport } from '../src/benchmark/longmemeval/report.js';
+import { DATA_DIR_NAME, DB_FILENAME } from 'waykeep-contract';
 
 const FIXTURE_PATH = join(process.cwd(), 'scripts', 'longmemeval', 'fixture', 'harness-fixture.json');
 
@@ -166,6 +167,8 @@ describe('dataset loading — fail closed', () => {
 
 describe('ingestion — corpus modes, isolation, preservation', () => {
   it('refuses to touch the live store directory', () => {
+    assert.throws(() => assertNotLiveStore(join(homedir(), DATA_DIR_NAME, DB_FILENAME)), /live store/);
+    // The LEGACY store path stays protected until the migration completes.
     assert.throws(() => assertNotLiveStore(join(homedir(), '.cairn', 'cairn.db')), /live store/);
     assert.doesNotThrow(() => assertNotLiveStore(':memory:'));
   });

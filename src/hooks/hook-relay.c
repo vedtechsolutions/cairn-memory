@@ -1,5 +1,5 @@
 /*
- * hook-relay — fast compiled relay for Cairn hook daemon.
+ * hook-relay — fast compiled relay for Waykeep hook daemon.
  *
  * Reads JSON from stdin, POSTs to the daemon unix socket at
  * the daemon unix socket under the state dir, prints the body to stdout.
@@ -30,6 +30,7 @@
 #include <limits.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <pwd.h>
 #include <time.h>
 #include <signal.h>
 #include <sys/time.h>
@@ -67,8 +68,12 @@ static void governance_watchdog(int signal_number) {
  * response handling, not the production SLA, so they must not race a
  * wall-clock deadline against a CPU-starved mock socket under full-suite load.
  * Falls back to the compiled default on a missing or malformed value. */
-static long env_timeout_ms(const char *name, long fallback) {
+static long env_timeout_ms(const char *name, const char *legacy, long fallback) {
     const char *value = getenv(name);
+    // Phase-B compat: an upgraded user who still exports CAIRN_*_TIMEOUT_MS
+    // must be honored — the relay is a separate process and never runs the TS
+    // env bootstrap that inherits legacy names (codex B1 review).
+    if (value == NULL || value[0] == '\0') value = getenv(legacy);
     if (value == NULL || value[0] == '\0') return fallback;
     char *end = NULL;
     long parsed = strtol(value, &end, 10);
@@ -114,18 +119,69 @@ static int send_all(int fd, const char *buf, size_t len) {
 }
 
 /*
+ * Resolve the authoritative STATE DIR the SAME marker-aware way as
+ * resolveStateRoot() (Phase B): explicit DIR override (current name, else the
+ * legacy CAIRN_DIR); else the CURRENT dir when the migration marker exists;
+ * else an EXISTING legacy store (un-migrated window); else current. The socket
+ * AND the fallback log both live in this dir — a single resolver keeps them
+ * from splitting across namespaces (codex B1 review: the log used to hardcode
+ * the current dir and land under ~/.waykeep on an un-migrated ~/.cairn install).
+ * Writes the dir into `out`; returns 0 on success, -1 when there is neither an
+ * override nor a HOME to build from (or on truncation).
+ */
+static int resolve_data_dir(char *out, size_t outsz) {
+    const char *dir_override = getenv(WK_ENV_DIR);
+    if (dir_override == NULL || dir_override[0] == '\0') dir_override = getenv(WK_LEGACY_ENV_DIR);
+    if (dir_override != NULL && dir_override[0] != '\0') {
+        int n = snprintf(out, outsz, "%s", dir_override);
+        return (n > 0 && (size_t)n < outsz) ? 0 : -1;
+    }
+    const char *home = getenv("HOME");
+    if (home == NULL || home[0] != '/') {
+        /* Resolve the passwd home whenever HOME is not an ABSOLUTE path — unset,
+         * empty, OR relative — mirroring the TS robustHomedir(): a non-absolute
+         * HOME would make the server mint a CWD-relative shadow store, so both
+         * sides resolve the real absolute home from the passwd entry instead
+         * (codex B1 review). If no absolute home is found, fail (no socket)
+         * rather than build a relative/wrong path. */
+        struct passwd *pw = getpwuid(getuid());
+        home = (pw != NULL && pw->pw_dir != NULL && pw->pw_dir[0] == '/') ? pw->pw_dir : NULL;
+    }
+    if (home == NULL) return -1;
+    /* Regular-FILE check (S_ISREG) mirrors resolveStateRoot's isFile — a
+     * directory shaped like the marker/db must not flip the decision. */
+    char probe[256];
+    struct stat pst;
+    int use_legacy = 0;
+    int pn = snprintf(probe, sizeof(probe), "%s/" WK_DATA_DIR "/" WK_MIGRATION_MARKER, home);
+    if (pn > 0 && (size_t)pn < sizeof(probe) && stat(probe, &pst) == 0 && S_ISREG(pst.st_mode)) {
+        use_legacy = 0; /* migrated: current is authoritative */
+    } else {
+        pn = snprintf(probe, sizeof(probe), "%s/" WK_LEGACY_DATA_DIR "/" WK_LEGACY_DB_FILE, home);
+        if (pn > 0 && (size_t)pn < sizeof(probe) && stat(probe, &pst) == 0 && S_ISREG(pst.st_mode)) use_legacy = 1;
+    }
+    int n = snprintf(out, outsz, use_legacy ? "%s/" WK_LEGACY_DATA_DIR : "%s/" WK_DATA_DIR, home);
+    return (n > 0 && (size_t)n < outsz) ? 0 : -1;
+}
+
+/*
  * Diagnostic: append one line to the relay fallback log each
  * time we take the fallback path, tagged with the reason. Non-fatal —
  * any failure to open/write is silently ignored. Preserves errno across
- * the call so subsequent logic can still use it.
+ * the call so subsequent logic can still use it. The `home` argument is
+ * retained for call-site compatibility but no longer used directly — the log
+ * dir is resolved marker-aware so it always shares the socket's root.
  */
 static void log_fallback(const char *home, const char *hook_type, const char *reason) {
-    if (!home || !hook_type || !reason) return;
+    (void)home;
+    if (!hook_type || !reason) return;
 
     int saved_errno = errno;
 
+    char data_dir[256];
+    if (resolve_data_dir(data_dir, sizeof(data_dir)) != 0) { errno = saved_errno; return; }
     char log_path[PATH_MAX];
-    int n = snprintf(log_path, sizeof(log_path), WK_FALLBACK_LOG_TEMPLATE, home);
+    int n = snprintf(log_path, sizeof(log_path), "%s/" WK_FALLBACK_LOG_FILE, data_dir);
     if (n <= 0 || (size_t)n >= sizeof(log_path)) { errno = saved_errno; return; }
 
     int fd = open(log_path, O_WRONLY | O_APPEND | O_CREAT, 0644);
@@ -258,13 +314,17 @@ static int exec_fallback(const char *argv0, const char *hook_type,
         if (dup2(out_pipe[1], STDOUT_FILENO) < 0) _exit(FALLBACK_EXIT_SETUP_FAIL);
         close(in_pipe[0]);
         close(out_pipe[1]);
-        /* M3: prefer an explicit absolute node path (CAIRN_NODE, set by the
+        /* M3: prefer an explicit absolute node path (WAYKEEP_NODE, set by the
          * hook config) and execv it directly, so a writable directory
          * prepended to an inherited $PATH cannot substitute a hostile `node`.
-         * Falls back to a PATH search only when CAIRN_NODE is unset, matching
-         * prior behavior for installs that have not configured it yet. */
+         * A legacy hook config that still exports CAIRN_NODE is honored too
+         * (Phase-B compat) — otherwise an un-migrated GUI install with no node
+         * on $PATH would silently drop every capture during a daemon outage.
+         * Falls back to a PATH search only when NEITHER is set, matching prior
+         * behavior for installs that have not configured it yet. */
         char *args[] = { (char *)"node", script_path, NULL };
         const char *node_override = getenv(WK_ENV_NODE);
+        if (node_override == NULL || node_override[0] == '\0') node_override = getenv(WK_LEGACY_ENV_NODE);
         if (node_override != NULL && node_override[0] == '/') {
             args[0] = (char *)node_override;
             execv(node_override, args);
@@ -415,23 +475,29 @@ int main(int argc, char *argv[]) {
     /* Optional declared client identity: `--client <name> <hook-type>`.
      * Forwarded as the client header on the socket path; exported as
      * the client env var so every exec_fallback child inherits it. The name comes
-     * from hook wiring Cairn itself authors, never from the payload. */
+     * from hook wiring Waykeep itself authors, never from the payload. */
     int argi = 1;
     const char *client_name = NULL;
     if (argc >= 4 && strcmp(argv[1], "--client") == 0) {
         client_name = argv[2];
         setenv(WK_ENV_CLIENT, client_name, 1);
+        /* Also clear the LEGACY client var so the child's env bootstrap cannot
+         * re-inherit a stale legacy CAIRN_CLIENT over the explicit current one. */
+        unsetenv(WK_LEGACY_ENV_CLIENT);
         argi = 3;
     } else {
-        /* Mirror hook-relay.sh: without --client, a stale inherited
-         * The client env var must not leak into fallback children — a Claude
-         * session would otherwise emit the codex JSON envelope. */
+        /* Without --client, the client env must not leak into fallback children
+         * — a Claude session would otherwise emit the codex JSON envelope. Clear
+         * BOTH the current AND legacy names: an inherited CAIRN_CLIENT=codex
+         * would otherwise be restored to WAYKEEP_CLIENT by the child's env
+         * bootstrap, mislabeling a Claude event (codex B1 review). */
         unsetenv(WK_ENV_CLIENT);
+        unsetenv(WK_LEGACY_ENV_CLIENT);
     }
 
     const char *hook_type = argv[argi];
-    /* Self-identification probe: lets `cairn init`/`doctor` confirm this binary
-     * actually runs on THIS platform and is the Cairn relay. A shipped
+    /* Self-identification probe: lets `waykeep init`/`doctor` confirm this binary
+     * actually runs on THIS platform and is the Waykeep relay. A shipped
      * wrong-arch/OS ELF execvp-falls-back to /bin/sh and would otherwise look
      * "runnable" (exit 127) — only the real relay prints this sentinel. */
     if (strcmp(hook_type, WK_PROBE_FLAG) == 0) {
@@ -441,8 +507,8 @@ int main(int argc, char *argv[]) {
         return 0;
     }
     int is_governance = strcmp(hook_type, "governance-gate") == 0;
-    long governance_timeout_ms = env_timeout_ms(WK_ENV_GOVERNANCE_TIMEOUT_MS, GOVERNANCE_TIMEOUT_MS);
-    long daemon_timeout_ms = env_timeout_ms(WK_ENV_DAEMON_TIMEOUT_MS, TIMEOUT_MS);
+    long governance_timeout_ms = env_timeout_ms(WK_ENV_GOVERNANCE_TIMEOUT_MS, WK_LEGACY_ENV_GOVERNANCE_TIMEOUT_MS, GOVERNANCE_TIMEOUT_MS);
+    long daemon_timeout_ms = env_timeout_ms(WK_ENV_DAEMON_TIMEOUT_MS, WK_LEGACY_ENV_DAEMON_TIMEOUT_MS, TIMEOUT_MS);
     if (is_governance) {
         struct sigaction action;
         memset(&action, 0, sizeof(action));
@@ -453,13 +519,21 @@ int main(int argc, char *argv[]) {
         timer.it_value.tv_usec = (governance_timeout_ms % 1000) * 1000;
         setitimer(ITIMER_REAL, &timer, NULL);
     }
-    const char *home = getenv("HOME");
-    if (!home) return 1;
-
-    /* Build socket path. Sized to match sun_path so strncpy can't truncate. */
+    /* Resolve the authoritative socket the SAME marker-aware way as
+     * resolveStateRoot() (Phase B): the daemon writes its socket inside the
+     * store dir, so the relay must pick the same dir or it silently talks to
+     * the wrong store — or, for governance (which has no direct-node
+     * fallback), silently disarms. resolve_data_dir() is the single source of
+     * that decision (shared with the fallback log). It also handles the DIR
+     * override HOME-less. Socket path sized to sun_path (108). */
+    char data_dir[256];
+    if (resolve_data_dir(data_dir, sizeof(data_dir)) != 0) return 1;
     char sock_path[108];
-    int sock_n = snprintf(sock_path, sizeof(sock_path), SOCK_PATH_TEMPLATE, home);
+    int sock_n = snprintf(sock_path, sizeof(sock_path), "%s/" WK_SOCKET_FILE, data_dir);
     if (sock_n <= 0 || (size_t)sock_n >= sizeof(sock_path)) return 1;
+    /* Retained for the fallback-log call sites below; log_fallback ignores it
+     * (it resolves its own dir), so a NULL HOME under a DIR override is fine. */
+    const char *home = getenv("HOME");
 
     /* Read stdin up front so both paths (socket and fallback) see the
      * same bytes. We need it for the fallback exec pipe anyway. */
@@ -492,7 +566,10 @@ int main(int argc, char *argv[]) {
         return 0;
     }
 
-    /* Check socket exists. If missing, exec the JS fallback directly. */
+    /* Socket already resolved marker-aware above (current/legacy/override).
+     * If the authoritative socket is absent, degrade — governance keeps no
+     * direct-node fallback so it stays advisory-off rather than routing to
+     * the wrong store. */
     struct stat st;
     if (stat(sock_path, &st) != 0 || !S_ISSOCK(st.st_mode)) {
         log_fallback(home, hook_type, "socket-missing");

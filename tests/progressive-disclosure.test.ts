@@ -6,6 +6,7 @@ import { MemoryRepository } from '../src/db/memory-repository.js';
 import { PlanRepository } from '../src/db/plan-repository.js';
 import { compileBriefing, compileIndexBriefing, type BriefingContext } from '../src/hooks/shared/briefing-compiler.js';
 import { BRIEFING_MODE } from '../src/constants/index.js';
+import { TOOL } from '../src/constants/mcp.js';
 
 let db: Database.Database;
 let memoryRepo: MemoryRepository;
@@ -59,7 +60,7 @@ describe('compileIndexBriefing', () => {
     assert.ok(result.text.includes(`dec:${ids.decisionId.slice(0, 8)}`), 'must include decision prefix');
     assert.ok(result.text.includes(`pit:${ids.pitfallId.slice(0, 8)}`), 'must include pitfall prefix');
     assert.ok(result.text.includes(`cor:${ids.correctionId.slice(0, 8)}`), 'must include correction prefix');
-    assert.ok(result.text.includes('cairn_expand'), 'footer must mention cairn_expand');
+    assert.ok(result.text.includes(TOOL.EXPAND), 'footer must mention cairn_expand');
   });
 
   it('uses one-line entries per memory (structural progressive-disclosure property)', () => {
@@ -92,7 +93,7 @@ describe('compileIndexBriefing', () => {
     assert.ok(corLine!.length <= BRIEFING_MODE.INDEX_LINE_MAX_CHARS + 30, 'correction line must fit one line');
 
     // The footer must point at cairn_expand so the model knows how to pull detail.
-    assert.ok(result.text.includes('cairn_expand'), 'footer must mention cairn_expand');
+    assert.ok(result.text.includes(TOOL.EXPAND), 'footer must mention cairn_expand');
   });
 
   it('compileBriefing routes to index mode when briefingMode=index', () => {

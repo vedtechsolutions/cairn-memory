@@ -2,6 +2,8 @@
 // Agent client wiring — rollout lookup, hook paths and cross-agent framing
 // ============================================================================
 
+import { SYNC_ROUTES, ASYNC_ROUTES, STANDALONE_HOOKS } from 'waykeep-contract';
+
 // --- Codex rollout lookup (parity Slice B) ----------------------------------
 
 export const ROLLOUT_LOOKUP = {
@@ -20,10 +22,49 @@ export const ROLLOUT_LOOKUP = {
   OUTPUT_MAX_CHARS: 2000,
 } as const;
 
-/** Substring identifying a hook command as Waykeep's own: every Waykeep hook —
- *  relay or node-form script — lives under this directory. Shared by init
- *  (Claude + Codex merge logic) and doctor. */
-export const CAIRN_HOOK_DIR_MARKER = 'dist/src/hooks/';
+/** Substring every Waykeep hook command carries — relay or node-form script all
+ *  live under this directory. NOT sufficient on its own to claim ownership (a
+ *  foreign tool could ship a `dist/src/hooks/` layout too — codex B1 review);
+ *  use `isWaykeepHookCommand` for the ownership decision that gates removal. */
+export const WAYKEEP_HOOK_DIR_MARKER = 'dist/src/hooks/';
+
+/** Node-form hook script stems: one per hook route / standalone hook, plus the
+ *  statusline. Derived from the contract so a new route is covered automatically.
+ *  `bump-memory-version` is excluded — it is an internal daemon route, never a
+ *  wired hook SCRIPT, so no `bump-memory-version.js` exists to match (codex B1). */
+const WAYKEEP_HOOK_STEMS: readonly string[] = [
+  ...SYNC_ROUTES, ...ASYNC_ROUTES, ...STANDALONE_HOOKS, 'statusline',
+].filter(stem => stem !== 'bump-memory-version');
+
+/** Regex-escape a controlled literal (defense-in-depth; our slugs have none). */
+function reEscape(s: string): string { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+
+/**
+ * Matches a Waykeep hook artifact as a COMPLETE path component under the hooks
+ * dir: the relay (`hook-relay` / `hook-relay.sh`) or a node-form `<stem>.js`,
+ * each followed by a command boundary (whitespace, quote, or end of string).
+ * The boundary is what makes ownership ARTIFACT-based rather than substring —
+ * `…/dist/src/hooks/hook-relay-helper.js` and `…/session-start.js.backup` are a
+ * DIFFERENT artifact and must not match (codex B1 review).
+ */
+const WAYKEEP_HOOK_RE = new RegExp(
+  // `(?<![^/])` requires the hooks dir to begin at a PATH-SEGMENT boundary — the
+  // char before `dist` must be `/` or start-of-string, so a foreign
+  // `…/mydist/src/hooks/…` OR `…/my.dist/src/hooks/…` is not claimed (codex B1
+  // review); the `(?=[\s"']|$)` right-anchors the artifact as a complete
+  // component. Our own commands are always absolute (`…/dist/src/hooks/…`).
+  `(?<![^/])${reEscape(WAYKEEP_HOOK_DIR_MARKER)}(?:hook-relay(?:\\.sh)?|(?:${WAYKEEP_HOOK_STEMS.map(reEscape).join('|')})\\.js)(?=[\\s"']|$)`,
+);
+
+/**
+ * Whether a hook COMMAND is one of Waykeep's own — the ownership test that gates
+ * init's removal/merge of hook entries. Matched by ARTIFACT at a path boundary,
+ * so it still sweeps a RELOCATED prior install (any install path) yet never
+ * claims a foreign `…/dist/src/hooks/custom.js` or a partial-word look-alike.
+ */
+export function isWaykeepHookCommand(command: string): boolean {
+  return typeof command === 'string' && WAYKEEP_HOOK_RE.test(command);
+}
 
 /** Edit-type tools across agents: Claude's Write/Edit/MultiEdit and
  *  Codex's apply_patch (whose file paths come from patch-envelope headers).

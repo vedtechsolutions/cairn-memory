@@ -9,7 +9,7 @@ export function now(): string {
  * Format a stored UTC timestamp for HUMAN display. Storage stays UTC (stable
  * across timezones for sync); this only localizes what a person reads, so a
  * user in, say, UTC-5 doesn't see tomorrow's date in the evening. Opt-in via
- * the CAIRN_TZ env var (an IANA zone like "America/Jamaica"); when it is unset
+ * the WAYKEEP_TZ env var (an IANA zone like "America/Jamaica"); when it is unset
  * the raw ISO string is returned unchanged.
  */
 export function formatTimestamp(iso: string | null | undefined): string {
@@ -25,7 +25,7 @@ export function formatTimestamp(iso: string | null | undefined): string {
       hour: '2-digit', minute: '2-digit', timeZoneName: 'short',
     }).format(date);
   } catch {
-    return iso; // invalid CAIRN_TZ — fall back to the stored UTC form
+    return iso; // invalid WAYKEEP_TZ — fall back to the stored UTC form
   }
 }
 

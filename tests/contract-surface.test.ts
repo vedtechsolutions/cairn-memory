@@ -14,7 +14,7 @@ import {
   CLIENT_HEADER, CLIENT_ENV_VAR,
 } from 'waykeep-contract';
 import { SERVED_HOOK_ROUTES } from '../src/mcp/hook-socket.js';
-import { cairnHooks } from '../src/cli/init.js';
+import { waykeepHooks } from '../src/cli/init.js';
 import { codexHooks, LEGACY_POST_TOOL_ROUTE } from '../src/cli/codex-init.js';
 
 // Compiled tests run from dist/tests — the repo root is two levels up
@@ -87,7 +87,7 @@ describe('generated hook wiring targets real routes', () => {
     Object.values(hooks).flatMap((groups) => groups.flatMap((g) => g.hooks.map((h) => h.command)));
 
   it('every Claude generator subcommand is a contract route or standalone hook', () => {
-    for (const command of allCommands(cairnHooks(RELAY))) {
+    for (const command of allCommands(waykeepHooks(RELAY))) {
       assert.ok(KNOWN.has(subcommandOf(command)), `unknown hook target in: ${command}`);
     }
   });
@@ -120,7 +120,7 @@ describe('generated hook wiring targets real routes', () => {
         }
       }
     };
-    check(cairnHooks(RELAY));
+    check(waykeepHooks(RELAY));
     check(codexHooks(RELAY).hooks);
     check(codexHooks(RELAY, LEGACY_POST_TOOL_ROUTE).hooks);
   });

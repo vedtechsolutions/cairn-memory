@@ -54,6 +54,27 @@ for (const key of ['NAMESPACE', 'DATA_DIR', 'CLIENT_STATE_FILE']) {
     throw new Error(`hermetic preload: ${IDENTITY_PATH} is missing ${key} — run \`npm run build\`.`);
   }
 }
+// The legacy-env scrub below depends on this list; a stale artifact that
+// lacks it would silently disable the scrub and let a developer's real
+// CAIRN_* leak into hermetic runs. Fail loud instead.
+if (!Array.isArray(ID.LEGACY_ENV_PREFIXES)) {
+  throw new Error(
+    `hermetic preload: ${IDENTITY_PATH} is missing LEGACY_ENV_PREFIXES — stale generator output. ` +
+    'Run `npm run build`; without it the legacy-env scrub is disabled and the suite could inherit a real CAIRN_* env.',
+  );
+}
+
+// Scrub a developer's real LEGACY-prefixed env (CAIRN_*) BEFORE any module
+// runs the transitional legacy-env bootstrap (constants/env.js copies
+// CAIRN_X → WAYKEEP_X for unset current names). Without this, a developer
+// with CAIRN_DB_PATH exported would have it inherited into the hermetic
+// run and the suite could touch a real store. Derived from the generated
+// legacy prefixes so it needs no maintenance across future renames.
+for (const prefix of ID.LEGACY_ENV_PREFIXES || []) {
+  for (const name of Object.keys(process.env)) {
+    if (name.startsWith(`${prefix}_`)) delete process.env[name];
+  }
+}
 
 const dir = mkdtempSync(join(tmpdir(), `${ID.NAMESPACE}-hermetic-`));
 

@@ -8,12 +8,12 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { ClientAdapterLifecycle } from 'waykeep-contract';
 import { CLIENT_CLAUDE } from '../constants/clients.js';
-import { cairnHooks } from '../cli/init.js';
+import { waykeepHooks } from '../cli/init.js';
 
 export const claudeLifecycle: ClientAdapterLifecycle = {
   name: CLIENT_CLAUDE,
   detectInstall: () => existsSync(join(homedir(), '.claude')),
-  hooksConfig: (relayCommand) => cairnHooks(relayCommand),
+  hooksConfig: (relayCommand) => waykeepHooks(relayCommand),
   // No daemon workers: Claude's hooks engine delivers every capture event
   // directly, so no state tailer is needed.
   daemonWorkers: [],

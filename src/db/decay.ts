@@ -150,7 +150,7 @@ export function applyConfidenceDecay(db: Database.Database, nowMs: number = Date
 
   let pruned = 0;
   if (deadRows.length > 0) {
-    // Capped, id-scoped delete (mirrors cairn_cleanup's deleteByFilter): bounds
+    // Capped, id-scoped delete (mirrors waykeep_cleanup's deleteByFilter): bounds
     // the blast radius if the criteria were ever subtly wrong, and spreads a
     // first-run purge of an accumulated DB across maintenance cycles so
     // borderline rows get more chances to be recalled — which exempts them —
@@ -162,7 +162,7 @@ export function applyConfidenceDecay(db: Database.Database, nowMs: number = Date
          AND id NOT IN (SELECT local_memory_id FROM sync_entity_map WHERE state = 'bound')`
     ).run(...ids).changes;
     // Forensic trail — decay runs unattended and this delete is irreversible.
-    console.error(`[cairn] decay: pruned ${pruned} dead memory row(s) (floored, never recalled, ${DECAY.PRUNE_DEAD_AGE_DAYS}d+ old)`);
+    console.error(`[waykeep] decay: pruned ${pruned} dead memory row(s) (floored, never recalled, ${DECAY.PRUNE_DEAD_AGE_DAYS}d+ old)`);
   }
 
   // Also clean up invalidated memories older than 30 days

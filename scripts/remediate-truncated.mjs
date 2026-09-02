@@ -7,7 +7,7 @@
  * lessons; 70 of the 83 decisions carry no capture trigger at all (there is
  * nothing to recover — an update would fabricate), so the action of record
  * is INVALIDATE (tombstone-journaled soft delete via the repository API).
- * `cairn_correct update` is FORBIDDEN by the plan: it would preserve the
+ * `waykeep_correct update` is FORBIDDEN by the plan: it would preserve the
  * contaminated recall telemetry under fresh content (a strengthened husk).
  *
  * Modes (dry by default — NOTHING writes to the live store without --live):
@@ -27,9 +27,9 @@
  *   decision + extractor still fires   → hand_review (a human judgment call,
  *                                        recorded per row in the manifest)
  */
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, existsSync } from 'node:fs';
 import { readFileSync, writeFileSync } from 'node:fs';
-import { tmpdir, homedir } from 'node:os';
+import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
@@ -41,13 +41,18 @@ const { MemoryRepository } = await import(join(REPO, 'dist', 'src', 'db', 'memor
 const { isPastedShape } = await import(join(REPO, 'dist', 'src', 'hooks', 'shared', 'capture-shapes.js'));
 const { extractDecision } = await import(join(REPO, 'dist', 'src', 'hooks', 'handlers', 'prompt', 'extractors.js'));
 const { extractAssistantDecision } = await import(join(REPO, 'dist', 'src', 'hooks', 'shared', 'transcript', 'decision-extraction.js'));
-const { DATA_DIR_NAME, DB_FILENAME } = await import(join(REPO, 'packages', 'contract', 'dist', 'identity.js'));
+// THE coherent state root (Phase B): hardcoding the CURRENT dir would make
+// `--live` write (and openDatabase CREATE) an empty ~/.waykeep store while the
+// user's real memory still lives under the un-migrated ~/.cairn — corrupting or
+// splitting state and lying about targeting "THE live store" (codex B1 review).
+const { resolveStateRoot } = await import(join(REPO, 'dist', 'src', 'constants', 'paths.js'));
 
 const args = process.argv.slice(2);
 const val = (f) => { const i = args.indexOf(f); return i >= 0 ? args[i + 1] : null; };
 const has = (f) => args.includes(f);
 
-const LIVE_PATH = join(homedir(), DATA_DIR_NAME, DB_FILENAME);
+const _root = resolveStateRoot();
+const LIVE_PATH = join(_root.dir, _root.dbFilename);
 /** The one length-matching row that is NOT truncated (verified complete in
  *  the M4 analysis) — a hard guard, never remediated. */
 const COMPLETE_ROW_PREFIX = 'e7b4cb84';
@@ -152,6 +157,12 @@ if (val('--apply')) {
   // without it, --live writes THE live store — the one sanctioned write of
   // this remediation.
   const TARGET = val('--target') ?? LIVE_PATH;
+  // Never mint a shadow store: a --live write must land on an EXISTING db, not
+  // let openDatabase create a fresh empty one that then shadows the real store.
+  if (live && !existsSync(TARGET)) {
+    console.error(`REFUSED: --live target ${TARGET} does not exist — refusing to create a new store. Pass --target at the real store.`);
+    process.exit(2);
+  }
   const targets = manifest.rows.filter((r) => r.action === 'invalidate');
   const pending = manifest.rows.filter((r) => r.action === 'hand_review');
   if (pending.length > 0) {

@@ -5,7 +5,7 @@
  * this table answers "what is Waykeep worth in tokens" and keeps a year.
  * One row per (session, surface) event, written best-effort from the
  * hook handlers — a rollup failure must never affect a hook, and when
- * disabled (config `report.rollup: false`, or CAIRN_ROLLUP=0) the write
+ * disabled (config `report.rollup: false`, or WAYKEEP_ROLLUP=0) the write
  * path is a true no-op: zero statements executed.
  *
  * The METRIC vocabulary is internal (constants), and the report is
@@ -14,18 +14,18 @@
  * `injected` is a cost, and net = gross − cost.
  */
 import type Database from 'better-sqlite3';
-import { loadCairnConfig } from '../config/cairn-config.js';
+import { loadWaykeepConfig } from '../config/waykeep-config.js';
 import { ROLLUP, ROLLUP_METRICS } from '../constants/index.js';
 import { ENV } from '../constants/env.js';
 
 export type RollupMetric = (typeof ROLLUP_METRICS)[keyof typeof ROLLUP_METRICS];
 
 export function rollupEnabled(): boolean {
-  // '0' matches the CAIRN_TAILER convention; 'false' is accepted because
+  // '0' matches the WAYKEEP_TAILER convention; 'false' is accepted because
   // it is the obvious guess and silently ignoring it breaks the opt-out.
   const env = process.env[ENV.ROLLUP];
   if (env === '0' || env === 'false') return false;
-  return loadCairnConfig().report.rollup !== false;
+  return loadWaykeepConfig().report.rollup !== false;
 }
 
 /** Contention budget for a rollup write, ms. The connection's global

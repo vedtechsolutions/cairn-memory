@@ -30,6 +30,7 @@ import {
   ESCALATION_ALTERNATIVES,
 } from '../src/constants/index.js';
 import type { PostToolUseFailureInput, PostToolUseInput } from '../src/hooks/shared/hook-io.js';
+import { ENV } from '../src/constants/env.js';
 
 const SESSION = 'sess-error-success';
 const TS_ERROR = "error TS2345: Argument of type 'string' is not assignable to type 'number'";
@@ -37,15 +38,15 @@ const TS_ERROR = "error TS2345: Argument of type 'string' is not assignable to t
 let db: Database.Database;
 let cache: SessionCache;
 let client: CachedHookContext;
-let cairnDir: string;
+let waykeepDir: string;
 let workDir: string;
 let savedCairnDir: string | undefined;
 
 beforeEach(() => {
-  savedCairnDir = process.env.CAIRN_DIR;
-  cairnDir = mkdtempSync(join(tmpdir(), 'cairn-esh-state-'));
+  savedCairnDir = process.env[ENV.DIR];
+  waykeepDir = mkdtempSync(join(tmpdir(), 'cairn-esh-state-'));
   workDir = mkdtempSync(join(tmpdir(), 'cairn-esh-work-'));
-  process.env.CAIRN_DIR = cairnDir;
+  process.env[ENV.DIR] = waykeepDir;
   resetErrorTracker();
 
   db = openDatabase({ dbPath: ':memory:' });
@@ -65,11 +66,11 @@ beforeEach(() => {
 afterEach(() => {
   try { db.close(); } catch { /* already closed */ }
   if (savedCairnDir === undefined) {
-    delete process.env.CAIRN_DIR;
+    delete process.env[ENV.DIR];
   } else {
-    process.env.CAIRN_DIR = savedCairnDir;
+    process.env[ENV.DIR] = savedCairnDir;
   }
-  rmSync(cairnDir, { recursive: true, force: true });
+  rmSync(waykeepDir, { recursive: true, force: true });
   rmSync(workDir, { recursive: true, force: true });
 });
 

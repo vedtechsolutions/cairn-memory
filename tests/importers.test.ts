@@ -32,6 +32,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { ENV } from '../src/constants/env.js';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -162,7 +163,7 @@ describe('cairn import CLI (dry run, subprocess)', () => {
     const dbPath = join(dir, 'cli-scratch.db');
     const out = execFileSync('node', ['dist/src/cli/index.js', 'import', '--from=codex-memories', `--path=${root}`, '--dry-run'], {
       cwd: REPO_ROOT, encoding: 'utf-8',
-      env: { ...process.env, CAIRN_DB_PATH: dbPath },
+      env: { ...process.env, [ENV.DB_PATH]: dbPath },
     });
     assert.match(out, /DRY RUN — 5 memories/);
     assert.match(out, /excluded: memory_summary\.md/);
@@ -303,14 +304,14 @@ describe('review regressions (round 1)', () => {
     writeCodexFixture(root);
     // The exact README invocation shape (space-separated values).
     const out = execFileSync('node', ['dist/src/cli/index.js', 'import', '--from', 'codex-memories', '--path', root, '--dry-run'], {
-      cwd: REPO_ROOT, encoding: 'utf-8', env: { ...process.env, CAIRN_DB_PATH: join(dir, 'x.db') },
+      cwd: REPO_ROOT, encoding: 'utf-8', env: { ...process.env, [ENV.DB_PATH]: join(dir, 'x.db') },
     });
     assert.match(out, /DRY RUN — 5 memories/);
     // Unknown flag: loud error, not silent fallback to a default source dir.
     let failed = false;
     try {
       execFileSync('node', ['dist/src/cli/index.js', 'import', '--from', 'codex-memories', '--paht', root], {
-        cwd: REPO_ROOT, encoding: 'utf-8', stdio: 'pipe', env: { ...process.env, CAIRN_DB_PATH: join(dir, 'x.db') },
+        cwd: REPO_ROOT, encoding: 'utf-8', stdio: 'pipe', env: { ...process.env, [ENV.DB_PATH]: join(dir, 'x.db') },
       });
     } catch (err) {
       failed = true;
@@ -496,7 +497,7 @@ describe('review regressions (round 1)', () => {
       '## Reusable knowledge', `- ${secret} is the deploy token for the staging cluster environment`,
     ].join('\n'));
     const out = execFileSync('node', ['dist/src/cli/index.js', 'import', '--from', 'codex-memories', '--path', root, '--dry-run'], {
-      cwd: REPO_ROOT, encoding: 'utf-8', env: { ...process.env, CAIRN_DB_PATH: join(dir, 's.db') },
+      cwd: REPO_ROOT, encoding: 'utf-8', env: { ...process.env, [ENV.DB_PATH]: join(dir, 's.db') },
     });
     assert.ok(!out.includes(secret), 'dry-run preview is scrubbed');
     // Diagnostics path EXECUTED, not assumed: a closed connection makes
@@ -525,7 +526,7 @@ describe('closing review fixes', () => {
       let failed = false;
       try {
         execFileSync('node', ['dist/src/cli/index.js', ...argv], {
-          cwd: REPO_ROOT, encoding: 'utf-8', stdio: 'pipe', env: { ...process.env, CAIRN_DB_PATH: join(dir, 'r1.db') },
+          cwd: REPO_ROOT, encoding: 'utf-8', stdio: 'pipe', env: { ...process.env, [ENV.DB_PATH]: join(dir, 'r1.db') },
         });
       } catch (err) {
         failed = true;
@@ -542,7 +543,7 @@ describe('closing review fixes', () => {
       '## Reusable knowledge', '- an empty project flag leaves the batch scoped to global rather than empty string',
     ].join('\n'));
     const out = execFileSync('node', ['dist/src/cli/index.js', 'import', '--from', 'codex-memories', '--path', root, '--project=', '--dry-run'], {
-      cwd: REPO_ROOT, encoding: 'utf-8', env: { ...process.env, CAIRN_DB_PATH: join(dir, 'r1.db') },
+      cwd: REPO_ROOT, encoding: 'utf-8', env: { ...process.env, [ENV.DB_PATH]: join(dir, 'r1.db') },
     });
     assert.match(out, /\(global\)/);
   });
@@ -777,7 +778,7 @@ describe('codex re-verification round', () => {
       let failed = false;
       try {
         execFileSync('node', ['dist/src/cli/index.js', ...argv], {
-          cwd: REPO_ROOT, encoding: 'utf-8', stdio: 'pipe', env: { ...process.env, CAIRN_DB_PATH: join(dir, 'r1.db') },
+          cwd: REPO_ROOT, encoding: 'utf-8', stdio: 'pipe', env: { ...process.env, [ENV.DB_PATH]: join(dir, 'r1.db') },
         });
       } catch (err) {
         failed = true;

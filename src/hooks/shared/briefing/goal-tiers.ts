@@ -111,7 +111,7 @@ function isGoalShippedByCommits(
 //
 // Each tier applies a different staleness policy before the goal is rendered.
 // The tiers can coexist — e.g. a branch may carry both a durable Project
-// goal (from cairn_plan(create)) and a transient Now goal (per-turn task
+// goal (from waykeep_plan(create)) and a transient Now goal (per-turn task
 // from the transcript) at the same time. Cross-tier dedup prunes identical
 // text so the briefing never shows the same goal twice under two labels.
 

@@ -20,6 +20,7 @@ import { registerMemoryTools } from '../src/mcp/tools/memory-tools.js';
 import { setSessionProjectForTests } from '../src/utils/session-project.js';
 import { setEmbeddingTestHooks, embeddingToBuffer } from '../src/utils/embeddings.js';
 import { RETRIEVAL_PATHS } from '../src/constants/index.js';
+import { TOOL } from '../src/constants/mcp.js';
 
 const SESSION_PROJECT = 'proj-embedding-lifecycle';
 const DIM = 384;
@@ -56,7 +57,7 @@ afterEach(async () => {
 });
 
 const recall = async (query: string) => {
-  const res = await client.callTool({ name: 'cairn_recall', arguments: { query } }) as {
+  const res = await client.callTool({ name: TOOL.RECALL, arguments: { query } }) as {
     content: Array<{ type: string; text?: string }>; isError?: boolean;
   };
   return { text: res.content[0]?.text ?? '', isError: res.isError === true };
@@ -146,7 +147,7 @@ describe('embedding lifecycle — typed degraded status (step 5)', () => {
     const [ct, st] = InMemoryTransport.createLinkedPair();
     await Promise.all([mclient.connect(ct), mserver.connect(st)]);
     try {
-      const res = await mclient.callTool({ name: 'cairn_recall', arguments: { query: 'zzz nothing at all zzz' } }) as {
+      const res = await mclient.callTool({ name: TOOL.RECALL, arguments: { query: 'zzz nothing at all zzz' } }) as {
         content: Array<{ type: string; text?: string }>;
       };
       const text = res.content[0]?.text ?? '';
@@ -160,7 +161,7 @@ describe('embedding lifecycle — typed degraded status (step 5)', () => {
 
   it('learn under a total warm seam embeds with the provided hook — never the real pipeline', async () => {
     setEmbeddingTestHooks({ isReady: () => true, embedQuery: async () => unitVec(3), embed: async () => unitVec(3) });
-    const res = await client.callTool({ name: 'cairn_learn', arguments: {
+    const res = await client.callTool({ name: TOOL.LEARN, arguments: {
       kind: 'fact', content: 'warm learn probe row with hooked embedding',
     } }) as { content: Array<{ type: string; text?: string }>; isError?: boolean };
     assert.notEqual(res.isError, true);
@@ -173,7 +174,7 @@ describe('embedding lifecycle — typed degraded status (step 5)', () => {
     // learn handler catches, the row lands without an embedding — and no
     // real pipeline load can ever start inside a hooked test.
     setEmbeddingTestHooks({ isReady: () => true, embedQuery: async () => unitVec(3) });
-    const res = await client.callTool({ name: 'cairn_learn', arguments: {
+    const res = await client.callTool({ name: TOOL.LEARN, arguments: {
       kind: 'fact', content: 'partial seam probe row without embed hook',
     } }) as { content: Array<{ type: string; text?: string }>; isError?: boolean };
     assert.notEqual(res.isError, true);
@@ -182,7 +183,7 @@ describe('embedding lifecycle — typed degraded status (step 5)', () => {
   });
 
   it('learn while cold stores the row without an embedding (backfill owns catch-up)', async () => {
-    const res = await client.callTool({ name: 'cairn_learn', arguments: {
+    const res = await client.callTool({ name: TOOL.LEARN, arguments: {
       kind: 'fact', content: 'cold learn probe row about deferred embeddings',
     } }) as { content: Array<{ type: string; text?: string }>; isError?: boolean };
     assert.notEqual(res.isError, true);

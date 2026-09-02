@@ -338,7 +338,7 @@ try {
   recordTelemetry('session-end', input.reason, _startTime, true);
 } catch (err) {
   recordTelemetry('session-end', 'error', _startTime, false, String(err));
-  console.error('[cairn] SessionEnd hook error:', err);
+  console.error('[waykeep] SessionEnd hook error:', err);
   process.exit(0);
 }
 

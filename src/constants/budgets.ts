@@ -7,7 +7,7 @@
 export const TOKEN_BUDGET = {
   BRIEFING_MAX: 2000,
   PER_TURN_MAX: 100,
-  /** Max chars for a cairn_plan progress note. 300 gives enough room for a
+  /** Max chars for a waykeep_plan progress note. 300 gives enough room for a
    *  useful handoff snapshot (status + counts + file list + next action)
    *  while still forcing distillation — full descriptions belong in step
    *  outcomes, not notes. */
@@ -41,7 +41,7 @@ export const BRIEFING_BUDGET = {
  * 'full'  — Tier-based full briefing (historical default; ~700 tokens typical).
  * 'index' — Progressive-disclosure index: compact one-line entries with stable
  *           ID prefixes (dec:/pit:/inv:/cor:) that Claude can pass to
- *           cairn_expand for full content on demand. Target ~400 tokens.
+ *           waykeep_expand for full content on demand. Target ~400 tokens.
  * 'auto'  — Pick based on session type: full on fresh startup/clear, index on
  *           compact/resume (post-compaction has less context to spare).
  */
@@ -58,7 +58,7 @@ export const BRIEFING_MODE = {
   INDEX_MAX_CHAINS: 2,
   /** Max chars per index entry line (keeps the whole thing tight) */
   INDEX_LINE_MAX_CHARS: 100,
-  /** Max IDs accepted by cairn_expand in a single call */
+  /** Max IDs accepted by waykeep_expand in a single call */
   EXPAND_MAX_IDS: 10,
 } as const;
 

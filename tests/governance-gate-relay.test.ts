@@ -7,11 +7,13 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { prepareRelayDir, runRelay, TEST_GENEROUS_TIMEOUT_MS } from './relay-harness.js';
+import { ENV } from '../src/constants/env.js';
+import { DATA_DIR_NAME } from 'waykeep-contract';
 
 /** Env override giving round-trip tests a generous watchdog so they don't race
  *  the 400 ms production deadline under load. The watchdog-timing test below
  *  deliberately omits this to keep the tight default. */
-const GENEROUS_GATE_ENV = { CAIRN_GOVERNANCE_TIMEOUT_MS: TEST_GENEROUS_TIMEOUT_MS };
+const GENEROUS_GATE_ENV = { [ENV.GOVERNANCE_TIMEOUT_MS]: TEST_GENEROUS_TIMEOUT_MS };
 
 const roots: string[] = [];
 const servers: Server[] = [];
@@ -27,7 +29,7 @@ afterEach(async () => {
 function home(): string {
   const value = mkdtempSync(join(tmpdir(), 'cairn-governance-relay-home-'));
   roots.push(value);
-  mkdirSync(join(value, '.cairn'));
+  mkdirSync(join(value, DATA_DIR_NAME));
   return value;
 }
 
@@ -39,7 +41,7 @@ async function listen(
   servers.push(server);
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject);
-    server.listen(join(homePath, '.cairn', 'hook-daemon.sock'), resolve);
+    server.listen(join(homePath, DATA_DIR_NAME, 'hook-daemon.sock'), resolve);
   });
   return server;
 }

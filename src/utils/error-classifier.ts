@@ -19,8 +19,8 @@ export interface ErrorClassification {
   errorKey: string | null;
 }
 
-/** Dedup-state file — honors the CAIRN_DIR override (like edit-tracker /
- *  state-io), resolved lazily so tests and sandboxes stay off ~/.cairn. */
+/** Dedup-state file — honors the WAYKEEP_DIR override (like edit-tracker /
+ *  state-io), resolved lazily so tests and sandboxes stay off ~/.waykeep. */
 function errorDedupPath(): string {
   return sharedErrorDedupPath();
 }

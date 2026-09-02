@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { Worker } from 'node:worker_threads';
 import { openDatabase } from '../src/db/connection.js';
 import { recordGovernanceEvent } from '../src/governance/recorder.js';
+import { DATA_DIR_NAME } from 'waykeep-contract';
 
 const tempDirs: string[] = [];
 
@@ -17,10 +18,10 @@ afterEach(() => {
 function project(): { root: string; dbPath: string } {
   const root = mkdtempSync(join(tmpdir(), 'cairn-recorder-concurrency-'));
   tempDirs.push(root);
-  mkdirSync(join(root, '.cairn'));
+  mkdirSync(join(root, DATA_DIR_NAME));
   mkdirSync(join(root, 'src'));
   writeFileSync(join(root, 'src', 'a.ts'), 'initial\n');
-  writeFileSync(join(root, '.cairn', 'gates.json'), JSON.stringify({
+  writeFileSync(join(root, DATA_DIR_NAME, 'gates.json'), JSON.stringify({
     version: 1,
     gates: {
       test: {

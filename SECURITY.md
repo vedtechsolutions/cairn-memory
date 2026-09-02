@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-Cairn follows semantic versioning. Security fixes land on the latest published minor release.
+Waykeep follows semantic versioning. Security fixes land on the latest published minor release.
 
 | Version | Supported |
 | ------- | --------- |
@@ -23,7 +23,7 @@ You can expect an acknowledgement within **3 business days** and a remediation p
 
 ## Scope
 
-Cairn runs locally and stores memory in a per-user SQLite database. Areas of particular interest:
+Waykeep runs locally and stores memory in a per-user SQLite database. Areas of particular interest:
 
 - the hook socket and its same-uid access controls,
 - memory-injection / prompt-injection neutralization,

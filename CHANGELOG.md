@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Changed (v6.0.0 — the rename)
+
+- **BREAKING: the technical namespace flipped from `cairn` to `waykeep`** (one line in the identity contract, exactly as Phase A designed). Everything derived follows: env vars are `WAYKEEP_*`, the state directory is `~/.waykeep` with database `waykeep.db`, the MCP server registers as `waykeep` with `waykeep_*` tools and `waykeep://` resources, the relay handshake is `--waykeep-probe`/`waykeep-relay`, and log tags read `[waykeep]`. `cairn` is recorded in `LEGACY_NAMESPACES`, which keeps every structural guard hunting the retired name for stragglers.
+- Added Phase-B compatibility fallbacks so an un-migrated install keeps working: the database/state-dir resolvers fall back to an EXISTING `~/.cairn` store (never creating one), legacy `CAIRN_*` environment variables are inherited by unset `WAYKEEP_*` names at process start, project governance honors an existing legacy `.cairn/gates.json`, the benchmark live-store guard protects the legacy directory too, and the plugin launcher still resolves a legacy `cairn` binary.
+- Made state-root resolution COHERENT and shadow-proof (dual independent review): one `resolveStateRoot()` picks db/config/state/socket from a single root per process — the migration marker, else an existing legacy DB file, else current — so an empty `~/.waykeep` can never shadow a populated `~/.cairn`; the compiled C relay, both shell relays, and TS all resolve the same root (DIR override first, then a passwd-backed absolute home, else fail-closed — never a CWD-relative shadow store); `cairn_*` tool aliases and `cairn://` resource URIs are served on an un-migrated root (and for a legacy store/config env override) and retire at the marker; the C relay honors legacy `CAIRN_NODE`/`CAIRN_*_TIMEOUT_MS` and clears a stale `CAIRN_CLIENT`; and `waykeep init` sweeps only its own MCP/hook entries by artifact (never a foreign `dist/src/hooks/…` command) and refuses to write a Codex `config.toml` it cannot parse or would alter.
+- **Security:** the plugin launchers now derive their cache dir only from an ABSOLUTE home (passwd-resolved, else dropped), so a planted `<cwd>/.waykeep/…` in an untrusted project can no longer redirect hook execution.
+- Renamed internal modules and identifiers accordingly (`waykeep-config`, `waykeep-daemon`, `hasWaykeepMcpServer`, …), updated the shipped plugin manifests to the new server/tool/env names, and added `smol-toml` (exact, zero-dependency) to parse Codex's `config.toml` when registering the MCP server.
+
 ### Added
 
 - Added validated structural-scan primitives with a three-gate harness (known-positive, cross-file, mutation): the namespace-centralization audits run on scanners proven able to find planted violations — including across files and inside comment-marker-bearing strings — and a deliberately defective scanner demonstrably fails the committed gates.

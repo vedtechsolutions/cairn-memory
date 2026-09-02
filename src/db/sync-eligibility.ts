@@ -1,7 +1,7 @@
 import type Database from 'better-sqlite3';
 import { SHAREABLE_KINDS, isShareState } from 'waykeep-contract';
 
-import type { CairnConfigSnapshot } from '../config/cairn-config.js';
+import type { WaykeepConfigSnapshot } from '../config/waykeep-config.js';
 
 /**
  * Shared fail-closed sync-eligibility predicate (brief D8 item 6, D10's
@@ -37,13 +37,13 @@ export interface EligibilityContext {
   enrolled: boolean;
   /** Caller-supplied: enrollment consent is sealed (J9 fence exists). */
   consentSealed: boolean;
-  /** ONE config snapshot from cairnConfigSnapshot() — health and the
+  /** ONE config snapshot from waykeepConfigSnapshot() — health and the
    *  privacy policy provably derive from the SAME bytes. The previous
    *  two-field shape (a health boolean beside a privateProjects set)
    *  made the H5 race EXPRESSIBLE through this very interface, and the
    *  doc steered callers into it (review N1). Take a fresh snapshot at
    *  transmit. */
-  config: Pick<CairnConfigSnapshot, 'config' | 'health'>;
+  config: Pick<WaykeepConfigSnapshot, 'config' | 'health'>;
   /** Owner policy mirror (A1): a SUBSET of the frozen allowlist, or
    *  undefined for the full v1 allowlist. Never a superset — extra
    *  kinds are ignored by intersection, not honored. */

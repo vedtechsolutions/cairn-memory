@@ -29,7 +29,7 @@ export const FRESH_RENDERING_NOTICE =
 export const RECORD_SANITY_LIMIT = 10_000;
 
 export type Log = (message: string) => void;
-const defaultLog: Log = (message) => console.error(`[cairn:materializer] ${message}`);
+const defaultLog: Log = (message) => console.error(`[waykeep:materializer] ${message}`);
 
 /** Identity contract: canonical LOWERCASE UUID ids only — the §5 grammar
  *  is lowercase-hex, so an uppercase id would render a token the parser
@@ -255,10 +255,10 @@ export function renderRecords(
     }
   }
   if (records.length > RECORD_SANITY_LIMIT) {
-    lines.unshift(`[cairn: ${records.length} records in this file — consider cleanup]`);
+    lines.unshift(`[waykeep: ${records.length} records in this file — consider cleanup]`);
   }
   if (unrenderable > 0) {
-    lines.unshift(`[cairn: ${unrenderable} records unrenderable — see logs]`);
+    lines.unshift(`[waykeep: ${unrenderable} records unrenderable — see logs]`);
   }
   return { lines, unrenderable };
 }

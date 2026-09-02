@@ -11,6 +11,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { ENV } from '../src/constants/env.js';
 
 const SERVER_PATH = join(process.cwd(), 'dist', 'src', 'mcp', 'server.js');
 const SPAWN_TIMEOUT_MS = 15_000;
@@ -23,8 +24,8 @@ function spawnServerWith(model: string): { status: number | null; stderr: string
   try {
     const env: NodeJS.ProcessEnv = {
       ...process.env,
-      CAIRN_EMBEDDING_MODEL: model,
-      CAIRN_DB_PATH: dbPath,
+      [ENV.EMBEDDING_MODEL]: model,
+      [ENV.DB_PATH]: dbPath,
     };
     // The child must run as a NORMAL process: inheriting NODE_TEST_CONTEXT
     // makes Node treat it as a test-runner child and suppress its stderr,
@@ -43,10 +44,10 @@ function spawnServerWith(model: string): { status: number | null; stderr: string
 }
 
 describe('MCP server — embedding config fail-closed at startup', () => {
-  it('exits 1 on an unknown CAIRN_EMBEDDING_MODEL instead of running FTS-only', () => {
+  it('exits 1 on an unknown EMBEDDING_MODEL env value instead of running FTS-only', () => {
     const { status, stderr } = spawnServerWith('definitely-not-a-model');
     assert.equal(status, 1, 'server must terminate with exit code 1');
-    assert.match(stderr, /unknown CAIRN_EMBEDDING_MODEL "definitely-not-a-model"/);
+    assert.match(stderr, new RegExp(`unknown ${ENV.EMBEDDING_MODEL} "definitely-not-a-model"`));
     assert.match(stderr, /minilm-l6/, 'error lists valid keys');
   });
 

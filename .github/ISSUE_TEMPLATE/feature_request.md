@@ -1,12 +1,12 @@
 ---
 name: Feature request
-about: Suggest an idea for Cairn
+about: Suggest an idea for Waykeep
 title: "[feature] "
 labels: enhancement
 ---
 
 **Problem**
-What are you trying to do that Cairn doesn't support today?
+What are you trying to do that Waykeep doesn't support today?
 
 **Proposed solution**
 What you'd like to see.

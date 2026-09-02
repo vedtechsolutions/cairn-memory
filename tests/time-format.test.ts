@@ -1,16 +1,17 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { formatTimestamp } from '../src/utils/time.js';
+import { ENV } from '../src/constants/env.js';
 
 describe('formatTimestamp', () => {
   // 2026-08-28 01:00 UTC is 2026-08-27 20:00 in America/Jamaica (UTC-5, no DST).
   const iso = '2026-08-28T01:00:00.000Z';
 
   function withTz<T>(tz: string | undefined, fn: () => T): T {
-    const prev = process.env.CAIRN_TZ;
-    if (tz === undefined) delete process.env.CAIRN_TZ; else process.env.CAIRN_TZ = tz;
+    const prev = process.env[ENV.TZ];
+    if (tz === undefined) delete process.env[ENV.TZ]; else process.env[ENV.TZ] = tz;
     try { return fn(); }
-    finally { if (prev === undefined) delete process.env.CAIRN_TZ; else process.env.CAIRN_TZ = prev; }
+    finally { if (prev === undefined) delete process.env[ENV.TZ]; else process.env[ENV.TZ] = prev; }
   }
 
   it('returns the raw UTC ISO unchanged when CAIRN_TZ is unset', () => {

@@ -22,12 +22,14 @@ import { SessionCache } from '../src/hooks/shared/session-cache.js';
 import { registerPlanTool } from '../src/mcp/tools/plan-tool.js';
 import { registerReminderTools } from '../src/mcp/tools/reminder-tools.js';
 import { REMINDERS, TOKEN_BUDGET, type ContextMode } from '../src/constants/index.js';
+import { TOOL } from '../src/constants/mcp.js';
+import { MCP_SERVER_NAME } from '../src/constants/mcp.js';
 
 // --- Harness ------------------------------------------------------------------
 
 const PROJECT = 'proj-mcp-tools';
 const OTHER_PROJECT = 'proj-other';
-const CRITICAL_SILENCE = '[cairn silent — context critical]';
+const CRITICAL_SILENCE = `[${MCP_SERVER_NAME} silent — context critical]`;
 
 interface Harness {
   db: Database.Database;
@@ -91,7 +93,7 @@ async function call(h: Harness, name: string, args: Record<string, unknown>): Pr
 }
 
 function plan(h: Harness, args: Record<string, unknown>): Promise<ToolReply> {
-  return call(h, 'cairn_plan', args);
+  return call(h, TOOL.PLAN, args);
 }
 
 /** Create a standard three-step plan (step 2 depends on step 1). */
@@ -542,13 +544,13 @@ describe('cairn_plan list', () => {
 
 // --- cairn_remind ---------------------------------------------------------------
 
-describe('cairn_remind', () => {
+describe(TOOL.REMIND, () => {
   let h: Harness;
   beforeEach(async () => { h = await createHarness(); });
   afterEach(async () => { await h.close(); });
 
   it('creates a global prompt reminder with default settings', async () => {
-    const reply = await call(h, 'cairn_remind', {
+    const reply = await call(h, TOOL.REMIND, {
       trigger: 'sqlite migration', action: 'check FTS triggers before altering tables',
     });
     assert.equal(reply.isError, false);
@@ -565,7 +567,7 @@ describe('cairn_remind', () => {
   });
 
   it('stores file trigger type with its config', async () => {
-    await call(h, 'cairn_remind', {
+    await call(h, TOOL.REMIND, {
       trigger: 'schema file edit',
       action: 'bump SCHEMA_VERSION',
       project: PROJECT,
@@ -580,7 +582,7 @@ describe('cairn_remind', () => {
   });
 
   it('errors when the trigger is blank after sanitization', async () => {
-    const reply = await call(h, 'cairn_remind', { trigger: '   ', action: 'never fires' });
+    const reply = await call(h, TOOL.REMIND, { trigger: '   ', action: 'never fires' });
     assert.equal(reply.isError, true);
     assert.equal(reply.text, 'error: trigger is empty');
     assert.equal(h.reminderRepo.listActive().length, 0);
@@ -591,7 +593,7 @@ describe('cairn_remind', () => {
       const created = h.reminderRepo.create({ trigger: `topic ${i}`, action: `act ${i}` });
       assert.ok('id' in created, 'seed reminders must be created');
     }
-    const reply = await call(h, 'cairn_remind', { trigger: 'one too many', action: 'overflow' });
+    const reply = await call(h, TOOL.REMIND, { trigger: 'one too many', action: 'overflow' });
     assert.equal(reply.isError, true);
     assert.equal(reply.text, `error: limit reached: ${REMINDERS.MAX_ACTIVE} active reminders`);
   });
@@ -599,7 +601,7 @@ describe('cairn_remind', () => {
   it('stays silent and writes nothing under critical context pressure', async () => {
     h.setMode('critical');
     const versionBefore = h.sessionCache.getMemoryVersion();
-    const reply = await call(h, 'cairn_remind', { trigger: 'anything', action: 'anything' });
+    const reply = await call(h, TOOL.REMIND, { trigger: 'anything', action: 'anything' });
     assert.equal(reply.isError, false);
     assert.equal(reply.text, CRITICAL_SILENCE);
     assert.equal(h.reminderRepo.listActive().length, 0);
@@ -608,80 +610,80 @@ describe('cairn_remind', () => {
 
   it('bumps the session cache memory version on create', async () => {
     const before = h.sessionCache.getMemoryVersion();
-    await call(h, 'cairn_remind', { trigger: 'deploy', action: 'run smoke tests' });
+    await call(h, TOOL.REMIND, { trigger: 'deploy', action: 'run smoke tests' });
     assert.ok(h.sessionCache.getMemoryVersion() > before);
   });
 });
 
 // --- cairn_reminder_list --------------------------------------------------------
 
-describe('cairn_reminder_list', () => {
+describe(TOOL.REMINDER_LIST, () => {
   let h: Harness;
   beforeEach(async () => { h = await createHarness(); });
   afterEach(async () => { await h.close(); });
 
   it('lists active reminders with scope and fire counters', async () => {
-    await call(h, 'cairn_remind', {
+    await call(h, TOOL.REMIND, {
       trigger: 'webhook handler', action: 'verify HMAC first', max_fires: 3,
     });
-    await call(h, 'cairn_remind', {
+    await call(h, TOOL.REMIND, {
       trigger: 'cron xml', action: 'drop numbercall field', project: PROJECT,
     });
 
-    const reply = await call(h, 'cairn_reminder_list', {});
+    const reply = await call(h, TOOL.REMINDER_LIST, {});
     assert.equal(reply.isError, false);
     assert.ok(reply.text.includes('when "webhook handler" → "verify HMAC first" [global] (0/3 fires)'));
     assert.ok(reply.text.includes(`when "cron xml" → "drop numbercall field" [${PROJECT}] (0 fires)`));
   });
 
   it('filters by project while keeping global reminders visible', async () => {
-    await call(h, 'cairn_remind', { trigger: 'mine', action: 'a', project: PROJECT });
-    await call(h, 'cairn_remind', { trigger: 'theirs', action: 'b', project: OTHER_PROJECT });
-    await call(h, 'cairn_remind', { trigger: 'everywhere', action: 'c' });
+    await call(h, TOOL.REMIND, { trigger: 'mine', action: 'a', project: PROJECT });
+    await call(h, TOOL.REMIND, { trigger: 'theirs', action: 'b', project: OTHER_PROJECT });
+    await call(h, TOOL.REMIND, { trigger: 'everywhere', action: 'c' });
 
-    const reply = await call(h, 'cairn_reminder_list', { project: PROJECT });
+    const reply = await call(h, TOOL.REMINDER_LIST, { project: PROJECT });
     assert.ok(reply.text.includes('"mine"'));
     assert.ok(reply.text.includes('"everywhere"'));
     assert.ok(!reply.text.includes('"theirs"'), 'other project reminders must be excluded');
   });
 
   it('reports when no active reminders exist', async () => {
-    const reply = await call(h, 'cairn_reminder_list', {});
+    const reply = await call(h, TOOL.REMINDER_LIST, {});
     assert.equal(reply.text, 'No active reminders.');
   });
 
   it('omits deactivated reminders', async () => {
-    await call(h, 'cairn_remind', { trigger: 'stale topic', action: 'old advice' });
+    await call(h, TOOL.REMIND, { trigger: 'stale topic', action: 'old advice' });
     const id = h.reminderRepo.listActive()[0].id;
-    await call(h, 'cairn_reminder_delete', { id });
+    await call(h, TOOL.REMINDER_DELETE, { id });
 
-    const reply = await call(h, 'cairn_reminder_list', {});
+    const reply = await call(h, TOOL.REMINDER_LIST, {});
     assert.equal(reply.text, 'No active reminders.');
   });
 
   it('stays silent under critical context pressure', async () => {
-    await call(h, 'cairn_remind', { trigger: 'topic', action: 'act' });
+    await call(h, TOOL.REMIND, { trigger: 'topic', action: 'act' });
     h.setMode('critical');
-    const reply = await call(h, 'cairn_reminder_list', {});
+    const reply = await call(h, TOOL.REMINDER_LIST, {});
     assert.equal(reply.text, CRITICAL_SILENCE);
   });
 });
 
 // --- cairn_reminder_delete ------------------------------------------------------
 
-describe('cairn_reminder_delete', () => {
+describe(TOOL.REMINDER_DELETE, () => {
   let h: Harness;
   beforeEach(async () => { h = await createHarness(); });
   afterEach(async () => { await h.close(); });
 
   async function seedReminder(): Promise<string> {
-    await call(h, 'cairn_remind', { trigger: 'seeded topic', action: 'seeded action' });
+    await call(h, TOOL.REMIND, { trigger: 'seeded topic', action: 'seeded action' });
     return h.reminderRepo.listActive()[0].id;
   }
 
   it('deactivates by default, keeping the row with active = 0', async () => {
     const id = await seedReminder();
-    const reply = await call(h, 'cairn_reminder_delete', { id });
+    const reply = await call(h, TOOL.REMINDER_DELETE, { id });
     assert.equal(reply.isError, false);
     assert.equal(reply.text, 'deactivated');
 
@@ -692,22 +694,22 @@ describe('cairn_reminder_delete', () => {
 
   it('removes the row entirely when permanent is set', async () => {
     const id = await seedReminder();
-    const reply = await call(h, 'cairn_reminder_delete', { id, permanent: true });
+    const reply = await call(h, TOOL.REMINDER_DELETE, { id, permanent: true });
     assert.equal(reply.text, 'deleted');
     assert.equal(reminderRow(h.db, id), undefined);
   });
 
   it('returns not found for an unknown id without bumping the cache version', async () => {
     const before = h.sessionCache.getMemoryVersion();
-    const reply = await call(h, 'cairn_reminder_delete', { id: 'no-such-reminder' });
+    const reply = await call(h, TOOL.REMINDER_DELETE, { id: 'no-such-reminder' });
     assert.equal(reply.text, 'not found');
     assert.equal(h.sessionCache.getMemoryVersion(), before);
   });
 
   it('returns not found when deactivating an already-inactive reminder', async () => {
     const id = await seedReminder();
-    await call(h, 'cairn_reminder_delete', { id });
-    const reply = await call(h, 'cairn_reminder_delete', { id });
+    await call(h, TOOL.REMINDER_DELETE, { id });
+    const reply = await call(h, TOOL.REMINDER_DELETE, { id });
     assert.equal(reply.text, 'not found');
   });
 });

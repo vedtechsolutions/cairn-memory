@@ -10,7 +10,7 @@ export interface BriefingContext {
   /** SNR v3 Commit 4: three-tier goal rendering — Now / Feature / Project.
    *
    *  Project (this field): durable branch-spanning goal. Sourced from
-   *  cairn_plan(create), cairn_learn corrections, or transcript mining —
+   *  waykeep_plan(create), waykeep_learn corrections, or transcript mining —
    *  anything EXCEPT branch-name synthesis. Staleness = explicit pivot only;
    *  never auto-drops on branch change or shipped detection.
    *
@@ -87,7 +87,7 @@ export interface BriefingContext {
   /**
    * Briefing rendering mode. 'full' emits the tier-based detail briefing,
    * 'index' emits a compact progressive-disclosure index with stable ID
-   * prefixes that Claude passes to cairn_expand on demand. 'auto' picks
+   * prefixes that Claude passes to waykeep_expand on demand. 'auto' picks
    * full on startup/clear and index on compact/resume. Defaults to the
    * BRIEFING_MODE.DEFAULT constant.
    */

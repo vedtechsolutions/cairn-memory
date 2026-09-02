@@ -1,11 +1,11 @@
 /**
- * Hook event payloads — the "Cairn hook event", i.e. the NORMALIZED shape
+ * Hook event payloads — the "Waykeep hook event", i.e. the NORMALIZED shape
  * handlers may rely on, not any one agent's wire dialect.
  *
  * Two layers, deliberately separate:
  * - `RawHookPayload` is what a relay delivers (daemon socket body or
  *   direct-node stdin) BEFORE normalization.
- * - The per-event interfaces (and the `CairnHookEvent` union) describe the
+ * - The per-event interfaces (and the `WaykeepHookEvent` union) describe the
  *   payload AFTER normalization: declared client identity stamped, agent
  *   field dialects reconciled (e.g. Codex's SessionStart `source` mapped
  *   onto `type`).
@@ -133,14 +133,14 @@ export interface FileChangedEvent extends HookEventBase {
 /**
  * The normalized hook event as a discriminated union: `hook_event_name`
  * is REQUIRED here — a payload without it is a RawHookPayload, not a
- * CairnHookEvent. (Core interfaces keep the field optional for legacy
+ * WaykeepHookEvent. (Core interfaces keep the field optional for legacy
  * tolerance; the union is the forward contract integrators code against.)
  *
- * Scope: the union covers the events Cairn WIRES, not every event an
+ * Scope: the union covers the events Waykeep WIRES, not every event an
  * engine can emit (Codex 0.150.x also has PermissionRequest, Interrupt,
  * …). An unlisted event arrives as a RawHookPayload; tolerate it.
  */
-export type CairnHookEvent =
+export type WaykeepHookEvent =
   | (SessionStartEvent & { hook_event_name: 'SessionStart' })
   | (UserPromptSubmitEvent & { hook_event_name: 'UserPromptSubmit' })
   | (PreToolUseEvent & { hook_event_name: 'PreToolUse' })
@@ -153,3 +153,10 @@ export type CairnHookEvent =
   | (PostCompactEvent & { hook_event_name: 'PostCompact' })
   | (SessionEndEvent & { hook_event_name: 'SessionEnd' })
   | (FileChangedEvent & { hook_event_name: 'FileChanged' });
+
+/**
+ * @deprecated Phase-B compat alias for the renamed {@link WaykeepHookEvent}.
+ * Kept so consumers pinned to the pre-rename name keep compiling; removed with
+ * the legacy namespace at Phase D.
+ */
+export type CairnHookEvent = WaykeepHookEvent;

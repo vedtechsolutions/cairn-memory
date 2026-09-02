@@ -19,17 +19,22 @@ import { fileURLToPath } from 'node:url';
 // parity walk failing mid-suite, green in isolation). A private mkdtemp
 // removes both hazards. Env is read at call time, so setting it here
 // beats the hoisted imports below.
-process.env.CAIRN_CODEX_DIR = mkdtempSync(join(tmpdir(), 'cairn-codex-test-'));
+process.env[ENV.CODEX_DIR] = mkdtempSync(join(tmpdir(), 'cairn-codex-test-'));
 
 import {
   codexDir, codexHooksPath, codexConfigPath,
   codexHooks, codexHookCount, mergeCodexHooks,
-  codexMcpBlock, hasCairnMcpServer, countTrustedHooksIn,
+  codexMcpBlock, hasWaykeepMcpServer, detectLegacyMcpServers, configTomlParses, pruneRemovedOnly, countTrustedHooksIn,
   runCodexInit, postToolRouteFor, POST_TOOL_ROUTE, LEGACY_POST_TOOL_ROUTE,
   parseTrustState, commandAt, trustedCommandsIn, pruneTrustKeys,
   type CodexHooksFile,
 } from '../src/cli/codex-init.js';
 import { checkCodexParity } from '../src/cli/doctor.js';
+import { ENV } from '../src/constants/env.js';
+import { MCP_SERVER_NAME } from '../src/constants/mcp.js';
+import { LEGACY_NAMESPACES } from 'waykeep-contract';
+import { BACKUP_SUFFIX } from '../src/constants/paths.js';
+import { isWaykeepHookCommand } from '../src/constants/agents.js';
 
 // THE RUNNING INSTALL's paths: doctor now short-circuits when the wired
 // install dir is missing (moved/removed) OR is a different install than
@@ -231,6 +236,26 @@ describe('trust-state parsing and scoped pruning', () => {
     assert.ok(pruned.includes(`${hooksPath}:stop:0:0`), 'unnamed section kept');
     assert.equal(pruneTrustKeys(toml, new Set()), toml, 'no keys, no change');
   });
+
+  it('pruneRemovedOnly rejects a prune that mangles a user multiline string (codex B1)', () => {
+    // A user note whose multiline string CONTAINS a [hooks.state.…]-shaped line.
+    // pruneTrustKeys (line-based) deletes it; the result still PARSES but the
+    // note is altered — pruneRemovedOnly must catch that and refuse.
+    const toml = [
+      'note = """', '[hooks.state."k1"]', 'not really a trust entry"""',
+      '[keep]', 'x = 1',
+    ].join('\n');
+    const pruned = pruneTrustKeys(toml, new Set(['k1']));
+    assert.equal(pruneRemovedOnly(toml, pruned, new Set(['k1'])), false,
+      'a prune that alters the user string must be rejected');
+    // A CLEAN prune of a real trust table is accepted.
+    const real = [
+      'model = "x"', '[hooks.state."k1"]', 'trusted_hash = "sha256:aa"', '[keep]', 'y = 2',
+    ].join('\n');
+    const cleanPruned = pruneTrustKeys(real, new Set(['k1']));
+    assert.equal(pruneRemovedOnly(real, cleanPruned, new Set(['k1'])), true,
+      'removing only the intended trust table is accepted');
+  });
 });
 
 describe('mergeCodexHooks', () => {
@@ -258,6 +283,39 @@ describe('mergeCodexHooks', () => {
     const once = mergeCodexHooks({}, generated);
     const twice = mergeCodexHooks(once, generated);
     assert.deepEqual(twice, once);
+  });
+
+  it('isWaykeepHookCommand: claims our artifacts (any install path), rejects foreign look-alikes', () => {
+    // CLAIMED — relay (compiled + shell), node-form route, at any install path:
+    for (const cmd of [
+      '/opt/cairn/dist/src/hooks/hook-relay session-start',
+      'bash /old/install/dist/src/hooks/hook-relay.sh --client codex stop',
+      'node /relocated/dist/src/hooks/session-start.js',
+      'node /x/dist/src/hooks/precompact.js',
+    ]) assert.equal(isWaykeepHookCommand(cmd), true, `should claim: ${cmd}`);
+    // REJECTED — a foreign command that merely lives under dist/src/hooks/, or
+    // partial-word-matches "hook-relay", or is not a hook command at all:
+    for (const cmd of [
+      'node /srv/other/dist/src/hooks/custom.js',
+      'node /x/dist/src/hooks/my-hook-relay-wrapper.js',
+      'node /x/dist/src/hooks/session-start.js.backup',
+      'node /x/mydist/src/hooks/session-start.js',
+      'notify-send hi',
+      '/usr/local/bin/hook-relay-clone run',
+    ]) assert.equal(isWaykeepHookCommand(cmd), false, `should reject: ${cmd}`);
+  });
+
+  it('PRESERVES a FOREIGN hook merely living under a dist/src/hooks/ layout (codex B1)', () => {
+    // A foreign tool whose command sits at `…/dist/src/hooks/custom.js` is NOT
+    // Waykeep's (its basename is not a Waykeep hook) and must be kept, not swept.
+    const existing = {
+      hooks: {
+        Notification: [{ hooks: [{ type: 'command' as const, command: 'node /srv/other/dist/src/hooks/custom.js' }] }],
+      },
+    };
+    const merged = mergeCodexHooks(existing, codexHooks(RELAY));
+    assert.equal(merged.hooks.Notification[0].hooks[0].command, 'node /srv/other/dist/src/hooks/custom.js',
+      'a foreign dist/src/hooks/ command must survive init');
   });
 
   it('is POSITION-STABLE: a Cairn-first layout keeps its indices (trust is pinned to them)', () => {
@@ -295,13 +353,63 @@ describe('mergeCodexHooks', () => {
 });
 
 describe('config.toml scoped edits', () => {
-  it('detects every valid declaration form of mcp_servers.cairn', () => {
-    assert.equal(hasCairnMcpServer(''), false);
-    assert.equal(hasCairnMcpServer('[mcp_servers.cairn]\ncommand = "node"\n'), true);
-    assert.equal(hasCairnMcpServer('[mcp_servers."cairn"]\ncommand = "node"\n'), true);
-    assert.equal(hasCairnMcpServer('mcp_servers.cairn.command = "node"\n'), true);
-    assert.equal(hasCairnMcpServer('[mcp_servers]\ncairn = { command = "node" }\n'), true);
-    assert.equal(hasCairnMcpServer('[mcp_servers]\nother = { command = "x" }\n[tui]\ncairn = 1\n'), false, 'cairn key outside [mcp_servers] does not count');
+  it('detects every valid declaration form of the mcp_servers entry', () => {
+    assert.equal(hasWaykeepMcpServer(''), false);
+    assert.equal(hasWaykeepMcpServer(`[mcp_servers.${MCP_SERVER_NAME}]\ncommand = "node"\n`), true);
+    assert.equal(hasWaykeepMcpServer(`[mcp_servers."${MCP_SERVER_NAME}"]\ncommand = "node"\n`), true);
+    assert.equal(hasWaykeepMcpServer(`mcp_servers.${MCP_SERVER_NAME}.command = "node"\n`), true);
+    assert.equal(hasWaykeepMcpServer(`[mcp_servers]\n${MCP_SERVER_NAME} = { command = "node" }\n`), true);
+    assert.equal(hasWaykeepMcpServer(`[mcp_servers]\nother = { command = "x" }\n[tui]\n${MCP_SERVER_NAME} = 1\n`), false, 'server key outside [mcp_servers] does not count');
+    // TOML permits 'single'-quoted keys and whitespace around the dotted-key
+    // separators — all must be detected or init appends a DUPLICATE definition
+    // that can make Codex reject config.toml (codex B1 review).
+    assert.equal(hasWaykeepMcpServer(`[mcp_servers.'${MCP_SERVER_NAME}']\ncommand = "node"\n`), true, "single-quoted key");
+    assert.equal(hasWaykeepMcpServer(`[mcp_servers . '${MCP_SERVER_NAME}']\ncommand = "node"\n`), true, "whitespace around dot");
+    assert.equal(hasWaykeepMcpServer(`mcp_servers . ${MCP_SERVER_NAME} . command = "node"\n`), true, "whitespace in dotted key");
+    assert.equal(hasWaykeepMcpServer(`[ mcp_servers ]\n${MCP_SERVER_NAME} = { command = "node" }\n`), true, "whitespace in table header");
+    // Round-8 forms the regex approach kept missing, now handled by the parser:
+    assert.equal(hasWaykeepMcpServer(`["mcp_servers" . "${MCP_SERVER_NAME}"]\ncommand = "node"\n`), true, "quoted table root");
+    assert.equal(hasWaykeepMcpServer(`mcp_servers.${MCP_SERVER_NAME} = { command = "node" }\n`), true, "dotted key w/ inline-table value (no trailing dot)");
+    assert.equal(hasWaykeepMcpServer(`[mcp_servers] # comment\n${MCP_SERVER_NAME} = { command = "node" }\n`), true, "table header with trailing comment");
+    assert.equal(hasWaykeepMcpServer(`[[mcp_servers.${MCP_SERVER_NAME}]]\ncommand = "node"\n`), true, "array-of-tables header");
+    assert.equal(hasWaykeepMcpServer(`mcp_servers = { ${MCP_SERVER_NAME} = { command = "node" } }\n`), true, "top-level inline table");
+    // A DOTTED key under a bare [mcp_servers] table also declares the server.
+    assert.equal(hasWaykeepMcpServer(`[mcp_servers]\n${MCP_SERVER_NAME}.command = "node"\n`), true, "dotted key under table");
+    assert.equal(hasWaykeepMcpServer(`[mcp_servers]\n${MCP_SERVER_NAME} . args = ["x"]\n`), true, "spaced dotted key under table");
+    // Dotted keys INSIDE a top-level inline table (finding 2).
+    assert.equal(hasWaykeepMcpServer(`mcp_servers = { ${MCP_SERVER_NAME}.command = "node", ${MCP_SERVER_NAME}.args = ["x"] }\n`), true, "dotted keys in top-level inline table");
+    // A dotted key under a FOREIGN table is <foreign>.mcp_servers.name — NOT ours
+    // (finding 3): the key path is relative to the active table.
+    assert.equal(hasWaykeepMcpServer(`[foreign]\nmcp_servers.${MCP_SERVER_NAME}.command = "node"\n`), false, "dotted key under a foreign table is not the top-level server");
+    assert.equal(hasWaykeepMcpServer(`[foreign]\nmcp_servers = { ${MCP_SERVER_NAME} = {} }\n`), false, "inline table under a foreign table is not ours");
+    // A commented-out declaration must NOT count as declared.
+    assert.equal(hasWaykeepMcpServer(`# [mcp_servers.${MCP_SERVER_NAME}]\n`), false, "commented-out header ignored");
+    // Foreign keys under [mcp_servers] must not false-positive — exact segment.
+    assert.equal(hasWaykeepMcpServer(`[mcp_servers]\nother = { command = "x" }\n`), false, "foreign key under table");
+    assert.equal(hasWaykeepMcpServer(`[mcp_servers]\n${MCP_SERVER_NAME}foo.command = "x"\n`), false, "name is an exact first segment, not a prefix");
+    assert.equal(hasWaykeepMcpServer(`[mcp_servers]\nfoo.${MCP_SERVER_NAME} = "x"\n`), false, "name in a non-first segment is a different server");
+  });
+
+  it('an append to a foreign inline-table mcp_servers is caught as unsafe, not corrupting (codex B1)', () => {
+    // `mcp_servers` defined as an INLINE table cannot be extended by a
+    // [mcp_servers.waykeep] section — appending would make Codex reject the file.
+    const cfg = 'mcp_servers = { other = { command = "node" } }\n';
+    assert.equal(configTomlParses(cfg), true, 'the original config is valid');
+    assert.equal(hasWaykeepMcpServer(cfg), false, 'our server is genuinely absent');
+    const block = codexMcpBlock('/srv/server.js');
+    assert.ok(block !== null, 'a normal server path yields a block');
+    assert.equal(configTomlParses(cfg + block!), false,
+      'appending a section to an inline table breaks TOML — init must refuse to append');
+  });
+
+  it('detectLegacyMcpServers finds a retired cairn server in every quoted/spaced form', () => {
+    const legacy = LEGACY_NAMESPACES[0];
+    assert.deepEqual(detectLegacyMcpServers(`[mcp_servers.${legacy}]\ncommand = "node"\n`), [legacy]);
+    assert.deepEqual(detectLegacyMcpServers(`[mcp_servers . '${legacy}']\ncommand = "node"\n`), [legacy], "whitespace + single quotes");
+    assert.deepEqual(detectLegacyMcpServers(`["mcp_servers"."${legacy}"]\ncommand = "node"\n`), [legacy], "quoted table root");
+    assert.deepEqual(detectLegacyMcpServers(`mcp_servers = { ${legacy} = { command = "node" } }\n`), [legacy], "top-level inline table");
+    assert.deepEqual(detectLegacyMcpServers(`[mcp_servers]\n${legacy}.command = "node"\n`), [legacy], "dotted key under table");
+    assert.deepEqual(detectLegacyMcpServers(`[mcp_servers.${MCP_SERVER_NAME}]\ncommand = "node"\n`), [], "current server is not legacy");
   });
 
   it('emits TOML literal strings and refuses paths a literal cannot express', () => {
@@ -342,14 +450,14 @@ describe('runCodexInit (hermetic end to end)', () => {
     assert.equal(codexHookCount(JSON.parse(written1) as CodexHooksFile), 10);
     const config = readFileSync(codexConfigPath(), 'utf-8');
     assert.match(config, /^model = "gpt-x"/m, 'existing config preserved');
-    assert.equal(hasCairnMcpServer(config), true, 'MCP appended');
+    assert.equal(hasWaykeepMcpServer(config), true, 'MCP appended');
 
     // Byte-identical re-run: THE property that preserves hook trust.
     runCodexInit(RELAY, `${INSTALL}/dist/src/mcp/server.js`, false);
     assert.equal(readFileSync(codexHooksPath(), 'utf-8'), written1);
     const config2 = readFileSync(codexConfigPath(), 'utf-8');
-    assert.equal(config2.match(/\[mcp_servers\.cairn\]/g)?.length, 1, 'no duplicate declaration');
-    assert.ok(existsSync(`${codexConfigPath()}.cairn-backup`));
+    assert.equal(config2.match(new RegExp(`\\[mcp_servers\\.${MCP_SERVER_NAME}\\]`, 'g'))?.length, 1, 'no duplicate declaration');
+    assert.ok(existsSync(`${codexConfigPath()}${BACKUP_SUFFIX}`));
   });
 
   it('prunes orphaned trust state when the Cairn command set changes', () => {
@@ -372,7 +480,7 @@ describe('runCodexInit (hermetic end to end)', () => {
     // Seed a wired-and-trusted legacy install, written exactly as init writes.
     const legacy = codexHooks(RELAY, LEGACY_POST_TOOL_ROUTE);
     writeFileSync(codexHooksPath(), `${JSON.stringify(legacy, null, 2)}\n`);
-    writeFileSync(codexConfigPath(), '[mcp_servers.cairn]\ncommand = \'node\'\nargs = [\'/srv/server.js\']\n' + trustAll(codexHooksPath(), legacy));
+    writeFileSync(codexConfigPath(), `[mcp_servers.${MCP_SERVER_NAME}]\ncommand = 'node'\nargs = ['/srv/server.js']\n` + trustAll(codexHooksPath(), legacy));
     const seeded = readFileSync(codexHooksPath(), 'utf-8');
 
     // Default re-init: byte-identical file, trust untouched — THE property

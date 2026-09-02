@@ -38,7 +38,7 @@ npm run build && npm test           # build + test in one step
 
 ## Contributor License Agreement (CLA)
 
-Before your first pull request can merge, you must sign the [Cairn Individual CLA](CLA.md). A bot comments on your first PR — reply with the sentence it asks for and the check turns green; the signature covers all your future contributions too.
+Before your first pull request can merge, you must sign the [Waykeep Individual CLA](CLA.md). A bot comments on your first PR — reply with the sentence it asks for and the check turns green; the signature covers all your future contributions too.
 
 In short: **you keep the copyright** in your contribution, and you grant VEDTECH Solutions a broad, irrevocable license — including the right to relicense the project under any terms. This is what keeps the project freely relicensable and commercially viable without tracking down every past contributor. Contributing on behalf of a company? Contact **info@vedtechsolutions.com** for a corporate CLA first.
 

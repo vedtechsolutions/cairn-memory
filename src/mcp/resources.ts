@@ -4,13 +4,43 @@
  */
 import { ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { formatMemoryContent , formatAuxText } from '../utils/memory-injection.js';
-import { canReadPrivate } from '../config/cairn-config.js';
+import { canReadPrivate } from '../config/waykeep-config.js';
 import { sessionProjectId } from '../utils/session-project.js';
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { legacyCompatActive } from '../constants/paths.js';
+import { LEGACY_NAMESPACES } from 'waykeep-contract';
+import type { McpServer, ReadResourceTemplateCallback } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { PlanRepository, Plan } from '../db/plan-repository.js';
 import type { MemoryRepository } from '../db/memory-repository.js';
 import type { ContextMode } from '../constants/index.js';
-import { RESOURCE_URI } from '../constants/mcp.js';
+import { RESOURCE_URI, MCP_URI_SCHEME } from '../constants/mcp.js';
+
+/**
+ * Register a resource under its current URI, plus a legacy-scheme alias
+ * (e.g. `cairn://…`) that reuses the SAME handler while legacy compat is
+ * active. Existing legacy consumers of `cairn://plan/…` / `cairn://briefing/…` must
+ * not get "resource not found" on an un-migrated store — tool-name compat is
+ * not enough (codex B1 review). Aliases retire automatically once migrated.
+ */
+function registerResourceCompat(
+  server: McpServer,
+  name: string,
+  uriTemplate: string,
+  description: string,
+  handler: ReadResourceTemplateCallback,
+): void {
+  server.resource(name, new ResourceTemplate(uriTemplate, { list: undefined }), { description }, handler);
+  const schemePrefix = `${MCP_URI_SCHEME}://`;
+  if (!legacyCompatActive() || !uriTemplate.startsWith(schemePrefix)) return;
+  const rest = uriTemplate.slice(schemePrefix.length);
+  for (const ns of LEGACY_NAMESPACES) {
+    server.resource(
+      `${ns}-${name}`,
+      new ResourceTemplate(`${ns}://${rest}`, { list: undefined }),
+      { description: `[deprecated alias — migration pending] ${description}` },
+      handler,
+    );
+  }
+}
 
 type ContextModeFn = () => ContextMode;
 
@@ -24,10 +54,11 @@ export function registerResources(
   // Full active plan with all steps, decisions, and notes.
   // No token budget constraint — intended for post-compaction recovery reads.
 
-  server.resource(
+  registerResourceCompat(
+    server,
     'active-plan',
-    new ResourceTemplate(RESOURCE_URI.ACTIVE_PLAN, { list: undefined }),
-    { description: 'Full active plan with all steps, decisions, and notes' },
+    RESOURCE_URI.ACTIVE_PLAN,
+    'Full active plan with all steps, decisions, and notes',
     async (uri, variables) => {
       const project = variables.project as string;
       // Session-bound like the briefing resource below — plan content
@@ -48,10 +79,11 @@ export function registerResources(
   // Full briefing without the 500-token budget constraint.
   // Includes pitfalls, corrections, decisions, and plan state.
 
-  server.resource(
+  registerResourceCompat(
+    server,
     'full-briefing',
-    new ResourceTemplate(RESOURCE_URI.FULL_BRIEFING, { list: undefined }),
-    { description: 'Full project briefing without token budget constraints' },
+    RESOURCE_URI.FULL_BRIEFING,
+    'Full project briefing without token budget constraints',
     async (uri, variables) => {
       const project = variables.project as string;
       // Session-bound private reads: the URI selects a project, but a

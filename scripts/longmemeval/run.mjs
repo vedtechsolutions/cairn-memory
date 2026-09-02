@@ -9,14 +9,14 @@
  * Reports carry two metric namespaces:
  *   official_compat — exact upstream evaluator semantics (comparable with
  *                     published LongMemEval numbers)
- *   unique_session  — cleaner deduplicated standard metrics (Cairn-internal)
+ *   unique_session  — cleaner deduplicated standard metrics (Waykeep-internal)
  *
  * Usage:
  *   node scripts/longmemeval/run.mjs                              # fixture, fts, user-only corpus
  *   node scripts/longmemeval/run.mjs --variant hybrid             # labeled hybrid-fts-fallback
  *   node scripts/longmemeval/run.mjs --variant hybrid --embed     # real hybrid (loads local model)
- *   node scripts/longmemeval/run.mjs --corpus all-roles           # Cairn experiment corpus
- *   node scripts/longmemeval/run.mjs --data ~/.cairn/benchmarks/longmemeval/longmemeval_s_cleaned.json
+ *   node scripts/longmemeval/run.mjs --corpus all-roles           # Waykeep experiment corpus
+ *   node scripts/longmemeval/run.mjs --data ~/.waykeep/benchmarks/longmemeval/longmemeval_s_cleaned.json
  *   node scripts/longmemeval/run.mjs --k 5,10 --max-questions 20 --out report.json --md report.md
  *   node scripts/longmemeval/run.mjs --timestamp                  # stamp generated_at (omit for CI determinism)
  */

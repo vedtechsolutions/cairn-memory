@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Waykeep Hook Relay — thin client for the hook socket (embedded in MCP server).
 # Fire-and-forget for async hooks; waits for response on sync hooks.
-# Usage: bash /opt/cairn/dist/src/hooks/hook-relay.sh [--client <name>] <hook-type>
+# Usage: bash /opt/waykeep/dist/src/hooks/hook-relay.sh [--client <name>] <hook-type>
 
 SCRIPT_DIR="${0%/*}"
 
@@ -15,7 +15,45 @@ else
   exit 0
 fi
 
-SOCK="$HOME/$WK_DATA_DIR/$WK_SOCKET_FILE"
+# Resolve the authoritative socket the SAME marker-aware way as
+# resolveStateRoot()/resolve_data_dir() (Phase B): the DIR override FIRST (it
+# needs no HOME — an explicit dir is authoritative even when HOME is
+# unresolvable, e.g. a container with an unmapped uid + WAYKEEP_DIR); else the
+# CURRENT dir when the migration marker exists; else an existing legacy store;
+# else current. ONE choice — a stale current socket must not pre-empt the live
+# legacy socket, and governance must not silently disarm. Phase D removes it.
+DIR_OVERRIDE="$(printenv "$WK_ENV_DIR" 2>/dev/null || true)"
+[ -z "$DIR_OVERRIDE" ] && DIR_OVERRIDE="$(printenv "$WK_LEGACY_ENV_DIR" 2>/dev/null || true)"
+if [ -n "$DIR_OVERRIDE" ]; then
+  SOCK="$DIR_OVERRIDE/$WK_SOCKET_FILE"
+else
+  # No override: the socket lives under HOME, so HOME must be an ABSOLUTE path.
+  # Resolve the passwd home when HOME is not absolute (unset/empty/relative) —
+  # mirrors the TS robustHomedir() so relay and server agree; a non-absolute
+  # HOME would point at a CWD-relative shadow store. `case /*` accepts only an
+  # absolute path (a failed tilde stays "~name").
+  case "${HOME:-}" in
+    /*) : ;;
+    *)
+      _wk_u="$(id -un 2>/dev/null)"
+      _wk_h=""
+      [ -n "$_wk_u" ] && eval "_wk_h=~$_wk_u" 2>/dev/null
+      case "${_wk_h:-}" in /*) HOME="$_wk_h"; export HOME ;; esac
+      ;;
+  esac
+  # Still non-absolute → fail-closed (mirror the C relay's `return -1`) rather
+  # than build a CWD-relative socket that misses the real daemon (codex B1).
+  case "${HOME:-}" in /*) : ;; *) exit 0 ;; esac
+  # -f (regular file) mirrors resolveStateRoot's isFile: a directory shaped
+  # like the marker/db must not flip the decision.
+  if [ -f "$HOME/$WK_DATA_DIR/$WK_MIGRATION_MARKER" ]; then
+    SOCK="$HOME/$WK_DATA_DIR/$WK_SOCKET_FILE"
+  elif [ -f "$HOME/$WK_LEGACY_DATA_DIR/$WK_LEGACY_DB_FILE" ]; then
+    SOCK="$HOME/$WK_LEGACY_DATA_DIR/$WK_SOCKET_FILE"
+  else
+    SOCK="$HOME/$WK_DATA_DIR/$WK_SOCKET_FILE"
+  fi
+fi
 
 # Optional declared client identity (codex, …). Forwarded as a header on the
 # socket path and as the client env var on direct-node paths; claude when absent.
@@ -56,7 +94,7 @@ is_standalone() {
 }
 
 if is_standalone "$HOOK_TYPE"; then
-  env "$WK_ENV_CLIENT=$CLIENT" node "$SCRIPT_DIR/$HOOK_TYPE.js" < "$INPUT_FILE"
+  env -u "$WK_LEGACY_ENV_CLIENT" "$WK_ENV_CLIENT=$CLIENT" node "$SCRIPT_DIR/$HOOK_TYPE.js" < "$INPUT_FILE"
   exit 0
 fi
 
@@ -97,7 +135,7 @@ if [ -S "$SOCK" ]; then
     (
       HTTP_CODE=$(curl -s --max-time 3 --unix-socket "$SOCK" "http://localhost/$HOOK_TYPE" -H "Content-Type: application/json" "${CLIENT_HDR[@]}" --data-binary @"$INPUT_FILE" -o /dev/null -w '%{http_code}' 2>/dev/null)
       if [ "$?" = "7" ] || [ "$HTTP_CODE" = "404" ] || [ "$HTTP_CODE" = "410" ]; then
-        env "$WK_ENV_CLIENT=$CLIENT" node "$SCRIPT_DIR/$HOOK_TYPE.js" < "$INPUT_FILE" >/dev/null 2>&1
+        env -u "$WK_LEGACY_ENV_CLIENT" "$WK_ENV_CLIENT=$CLIENT" node "$SCRIPT_DIR/$HOOK_TYPE.js" < "$INPUT_FILE" >/dev/null 2>&1
       fi
       rm -f "$INPUT_FILE"
     ) &
@@ -110,11 +148,11 @@ fi
 # Sync hooks fall back to direct Node.js; async hooks do the same in the
 # background (capture must not vanish just because the daemon is down).
 if is_sync "$HOOK_TYPE"; then
-  [ "$HOOK_TYPE" != "governance-gate" ] && env "$WK_ENV_CLIENT=$CLIENT" node "$SCRIPT_DIR/$HOOK_TYPE.js" < "$INPUT_FILE"
+  [ "$HOOK_TYPE" != "governance-gate" ] && env -u "$WK_LEGACY_ENV_CLIENT" "$WK_ENV_CLIENT=$CLIENT" node "$SCRIPT_DIR/$HOOK_TYPE.js" < "$INPUT_FILE"
 else
   trap - EXIT
   (
-    env "$WK_ENV_CLIENT=$CLIENT" node "$SCRIPT_DIR/$HOOK_TYPE.js" < "$INPUT_FILE" >/dev/null 2>&1
+    env -u "$WK_LEGACY_ENV_CLIENT" "$WK_ENV_CLIENT=$CLIENT" node "$SCRIPT_DIR/$HOOK_TYPE.js" < "$INPUT_FILE" >/dev/null 2>&1
     rm -f "$INPUT_FILE"
   ) &
 fi

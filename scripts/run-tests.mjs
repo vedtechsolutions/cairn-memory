@@ -88,7 +88,7 @@ async function main() {
     return 1;
   }
 
-  const tapDir = mkdtempSync(join(tmpdir(), 'cairn-tap-'));
+  const tapDir = mkdtempSync(join(tmpdir(), 'waykeep-tap-'));
   const tapPath = join(tapDir, 'results.tap');
   // When invoked from inside another node:test process (e.g. this wrapper's
   // own guard tests), the inherited NODE_TEST_CONTEXT makes the child runner

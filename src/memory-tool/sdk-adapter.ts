@@ -17,7 +17,7 @@ export interface InsertCommand { command: 'insert'; path: string; insert_line: n
 export interface DeleteCommand { command: 'delete'; path: string }
 export interface RenameCommand { command: 'rename'; old_path: string; new_path: string }
 
-export interface CairnMemoryToolHandlers {
+export interface WaykeepMemoryToolHandlers {
   view(cmd: ViewCommand): string;
   create(cmd: CreateCommand): string;
   str_replace(cmd: StrReplaceCommand): string;
@@ -38,7 +38,7 @@ function toViewRange(raw: number[] | undefined): [number, number] | undefined {
 }
 
 /** Build the handler object `betaMemoryTool(...)` consumes. */
-export function createMemoryToolHandlers(deps: HandlerDeps): CairnMemoryToolHandlers {
+export function createMemoryToolHandlers(deps: HandlerDeps): WaykeepMemoryToolHandlers {
   const h = new MemoryCommandHandlers(deps);
   return {
     view: (cmd) => h.view(cmd.path, toViewRange(cmd.view_range)),

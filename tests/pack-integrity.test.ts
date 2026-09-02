@@ -31,7 +31,7 @@ describe('npm pack integrity', () => {
       // Entry points and both post-tool fallback shims (D3 cross-version).
       'dist/src/cli/index.js',
       'dist/src/mcp/server.js',
-      'dist/src/daemon/cairn-daemon.js',
+      'dist/src/daemon/waykeep-daemon.js',
       'dist/src/hooks/post-tool.js',
       'dist/src/hooks/codex-post-tool.js',
       'src/hooks/hook-relay.c',

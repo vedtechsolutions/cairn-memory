@@ -34,7 +34,7 @@ export function sessionProjectId(): string | null {
     // Fail-closed is right (deny private reads), but the OWNER inside
     // their own private project deserves to know WHY nothing came back.
     if (!warnedFailClosed) {
-      console.error(`[cairn] session project could not be derived from cwd (${(err as Error).message}) — private-project content is unavailable to this session`);
+      console.error(`[waykeep] session project could not be derived from cwd (${(err as Error).message}) — private-project content is unavailable to this session`);
       warnedFailClosed = true;
     }
     return null;

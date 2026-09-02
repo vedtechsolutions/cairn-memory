@@ -1,10 +1,10 @@
 import { createHash } from 'node:crypto';
-import { readFileSync, realpathSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { dirname, isAbsolute, posix, relative, resolve, sep } from 'node:path';
 import {
   GATE_CONFIG_LIMITS, GateConfigSchema, type ParsedGateConfig,
 } from './gates-schema.js';
-import { gatesPath, GATES_RELATIVE_PATH } from '../constants/paths.js';
+import { gatesPath, legacyGatesPaths, GATES_RELATIVE_PATH } from '../constants/paths.js';
 
 export type GateConfigErrorCode =
   | 'invalid-project-root'
@@ -180,10 +180,17 @@ function canonicalConfigPath(root: string, requested?: string): string {
     throw new GateConfigError('invalid-config-path', 'config path must not contain traversal');
   }
   const expected = gatesPath(root);
+  // Phase-B compat: a repo configured before the namespace flip carries its
+  // gates under the legacy dir — honored as a fallback when the current
+  // path does not exist, so governance never silently deactivates on
+  // un-migrated projects. An EXPLICITLY requested path must still match
+  // one of the sanctioned locations exactly.
+  const legacyExisting = legacyGatesPaths(root).find(p2 => existsSync(p2));
+  const preferred = existsSync(expected) ? expected : (legacyExisting ?? expected);
   const lexical = requested === undefined
-    ? expected
+    ? preferred
     : resolve(root, requested);
-  if (lexical !== expected) {
+  if (lexical !== expected && !(legacyGatesPaths(root).includes(lexical) && existsSync(lexical))) {
     throw new GateConfigError(
       'invalid-config-path', `config path must resolve exactly to ${GATES_RELATIVE_PATH}`,
     );

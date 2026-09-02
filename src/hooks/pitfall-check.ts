@@ -31,6 +31,6 @@ try {
   client.close();
 } catch (err) {
   recordTelemetry('pitfall-check', 'error', _startTime, false, String(err));
-  console.error('[cairn] Pitfall check hook error:', err);
+  console.error('[waykeep] Pitfall check hook error:', err);
   process.exit(0);
 }

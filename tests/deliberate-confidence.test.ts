@@ -62,7 +62,7 @@ describe('deliberate vs auto-detected confidence', () => {
   });
 
   it('GATE: an explicit cairn_learn pitfall is born injection-eligible', async () => {
-    const learned = await call('cairn_learn', {
+    const learned = await call(TOOL.LEARN, {
       kind: 'pitfall',
       content: 'sentinel: deliberate lesson must clear the injection gate at birth',
     });
@@ -85,7 +85,7 @@ describe('deliberate vs auto-detected confidence', () => {
   });
 
   it('a deliberate pitfall passes the gate filter that proactive injection applies', async () => {
-    await call('cairn_learn', { kind: 'pitfall', content: 'sentinel: gate filter eligibility row' });
+    await call(TOOL.LEARN, { kind: 'pitfall', content: 'sentinel: gate filter eligibility row' });
     const eligible = db.prepare(
       'SELECT COUNT(*) AS n FROM memories WHERE kind = ? AND confidence >= ? AND content LIKE ?',
     ).get('pitfall', RELEVANCE.MIN_CONFIDENCE_FOR_PITFALL, 'sentinel: gate filter%') as { n: number };
@@ -101,7 +101,7 @@ describe('deliberate vs auto-detected confidence', () => {
       content: 'sentinel: always check tsc exit codes because emit happens before errors',
       project: SESSION_PROJECT,
     });
-    const learned = await call('cairn_learn', {
+    const learned = await call(TOOL.LEARN, {
       kind: 'pitfall',
       content: 'sentinel: always check tsc exit codes because emit happens before errors',
     });
@@ -114,15 +114,15 @@ describe('deliberate vs auto-detected confidence', () => {
   });
 
   it('non-pitfall kinds keep their existing defaults (surgical change)', async () => {
-    await call('cairn_learn', { kind: 'fact', content: 'sentinel: fact default check row' });
+    await call(TOOL.LEARN, { kind: 'fact', content: 'sentinel: fact default check row' });
     const fact = db.prepare("SELECT confidence FROM memories WHERE content LIKE 'sentinel: fact default%'").get() as { confidence: number };
     assert.equal(fact.confidence, CONFIDENCE.LEARNED, 'facts keep CONFIDENCE.LEARNED');
 
-    await call('cairn_learn', { kind: 'decision', content: 'sentinel: decision default check row because reasons' });
+    await call(TOOL.LEARN, { kind: 'decision', content: 'sentinel: decision default check row because reasons' });
     const decision = db.prepare("SELECT confidence FROM memories WHERE content LIKE 'sentinel: decision default%'").get() as { confidence: number };
     assert.equal(decision.confidence, CONFIDENCE.LEARNED, 'decisions keep the gateway LEARNED default');
 
-    await call('cairn_learn', { kind: 'correction', content: 'sentinel: correction default check row' });
+    await call(TOOL.LEARN, { kind: 'correction', content: 'sentinel: correction default check row' });
     const correction = db.prepare("SELECT confidence FROM memories WHERE content LIKE 'sentinel: correction default%'").get() as { confidence: number };
     assert.equal(correction.confidence, CONFIDENCE.CORRECTION, 'corrections keep CONFIDENCE.CORRECTION');
   });
@@ -133,7 +133,7 @@ describe('deliberate vs auto-detected confidence', () => {
     // first decay charge. Strengthen is deliberate validation; it must
     // leave the row genuinely injection-eligible.
     const auto = repo.storePitfall({ content: 'sentinel: strengthen floor probe row', project: SESSION_PROJECT });
-    const reply = await call('cairn_strengthen', { id: auto.id });
+    const reply = await call(TOOL.STRENGTHEN, { id: auto.id });
     assert.equal(reply.isError, false, reply.text);
     const row = db.prepare('SELECT confidence FROM memories WHERE id = ?').get(auto.id) as { confidence: number };
     assert.equal(row.confidence, CONFIDENCE.DELIBERATE,
@@ -143,12 +143,12 @@ describe('deliberate vs auto-detected confidence', () => {
 
   it('BLOCK 1: strengthen above the floor still increments normally (pitfall and fact)', async () => {
     const strong = repo.storePitfall({ content: 'sentinel: strengthen increment probe row', project: SESSION_PROJECT, confidence: 0.75 });
-    await call('cairn_strengthen', { id: strong.id });
+    await call(TOOL.STRENGTHEN, { id: strong.id });
     const p = db.prepare('SELECT confidence FROM memories WHERE id = ?').get(strong.id) as { confidence: number };
     assert.ok(Math.abs(p.confidence - 0.85) < 1e-9, `expected 0.75 + increment, got ${p.confidence}`);
 
     const fact = repo.create({ content: 'sentinel: fact strengthen unaffected row', kind: 'fact', project: SESSION_PROJECT, confidence: 0.5 });
-    await call('cairn_strengthen', { id: fact.id });
+    await call(TOOL.STRENGTHEN, { id: fact.id });
     const f = db.prepare('SELECT confidence FROM memories WHERE id = ?').get(fact.id) as { confidence: number };
     assert.ok(Math.abs(f.confidence - 0.6) < 1e-9, 'non-pitfall strengthen semantics unchanged');
   });
@@ -157,7 +157,7 @@ describe('deliberate vs auto-detected confidence', () => {
     // 0.6 + 0.1 landed exactly ON PROACTIVE.MIN_DECISION_CONFIDENCE — the
     // same F4 borderline as the pitfall case, one gate over.
     const dec = repo.create({ content: 'sentinel: decision strengthen floor probe row because reasons', kind: 'decision', project: SESSION_PROJECT, confidence: 0.6 });
-    await call('cairn_strengthen', { id: dec.id });
+    await call(TOOL.STRENGTHEN, { id: dec.id });
     const row = db.prepare('SELECT confidence FROM memories WHERE id = ?').get(dec.id) as { confidence: number };
     assert.equal(row.confidence, CONFIDENCE.STRENGTHENED_DECISION_FLOOR,
       `strengthened decision must clear the 0.7 gate with headroom, got ${row.confidence}`);
@@ -165,7 +165,7 @@ describe('deliberate vs auto-detected confidence', () => {
 
     // Above the floor: plain increment.
     const strong = repo.create({ content: 'sentinel: strong decision increment probe row because reasons', kind: 'decision', project: SESSION_PROJECT, confidence: 0.8 });
-    await call('cairn_strengthen', { id: strong.id });
+    await call(TOOL.STRENGTHEN, { id: strong.id });
     const s2 = db.prepare('SELECT confidence FROM memories WHERE id = ?').get(strong.id) as { confidence: number };
     assert.ok(Math.abs(s2.confidence - 0.9) < 1e-9);
   });
@@ -190,7 +190,7 @@ describe('deliberate vs auto-detected confidence', () => {
     const content = 'sentinel: ratchet probe — always pin the exact dependency version in lockfiles';
     const confidences: number[] = [];
     for (let i = 0; i < 8; i++) {
-      await call('cairn_learn', { kind: 'pitfall', content });
+      await call(TOOL.LEARN, { kind: 'pitfall', content });
       const row = db.prepare("SELECT confidence FROM memories WHERE content LIKE 'sentinel: ratchet probe%'").get() as { confidence: number };
       confidences.push(row.confidence);
     }
@@ -206,7 +206,7 @@ describe('deliberate vs auto-detected confidence', () => {
 
   it('BLOCK 2: automatic re-detections cannot ratchet a deliberate row past the ceiling', async () => {
     const content = 'sentinel: auto ratchet probe — never trust emitted dist without checking exit codes';
-    await call('cairn_learn', { kind: 'pitfall', content });
+    await call(TOOL.LEARN, { kind: 'pitfall', content });
     for (let i = 0; i < 8; i++) {
       repo.storePitfall({ content, project: SESSION_PROJECT }); // auto: no confidence
     }
@@ -219,7 +219,7 @@ describe('deliberate vs auto-detected confidence', () => {
     const content = 'sentinel: authority preservation probe — verify backups by restoring them';
     const created = repo.storePitfall({ content, project: SESSION_PROJECT, confidence: CONFIDENCE.USER_CORRECTION, source: 'user' });
     for (let i = 0; i < 4; i++) {
-      await call('cairn_learn', { kind: 'pitfall', content });
+      await call(TOOL.LEARN, { kind: 'pitfall', content });
     }
     const row = db.prepare('SELECT confidence FROM memories WHERE id = ?').get(created.id) as { confidence: number };
     assert.ok(Math.abs(row.confidence - CONFIDENCE.USER_CORRECTION) < 1e-9,
@@ -491,6 +491,7 @@ import { handlePitfallCheck } from '../src/hooks/handlers/pitfall-handler.js';
 import type { PreToolUseInput } from '../src/hooks/shared/hook-io.js';
 import { projectId } from '../src/utils/project-id.js';
 import { PROACTIVE } from '../src/constants/index.js';
+import { TOOL } from '../src/constants/mcp.js';
 
 describe('deliberate confidence end-to-end: MCP learn → proactive warning path', () => {
   let edb: Database.Database;
@@ -546,7 +547,7 @@ describe('deliberate confidence end-to-end: MCP learn → proactive warning path
   });
 
   const learn = async (content: string) => {
-    const res = await emcp.callTool({ name: 'cairn_learn', arguments: { kind: 'pitfall', content } }) as {
+    const res = await emcp.callTool({ name: TOOL.LEARN, arguments: { kind: 'pitfall', content } }) as {
       content: Array<{ type: string; text?: string }>; isError?: boolean;
     };
     assert.notEqual(res.isError, true, res.content[0]?.text);

@@ -1,7 +1,7 @@
 /**
  * Cross-encoder reranker registry (roadmap W2 slice 4). Reranking is
- * opt-in (CAIRN_RERANK=1), MCP-server only — hook paths never load models.
- * Model selected via CAIRN_RERANK_MODEL (default jina-turbo-v1).
+ * opt-in (WAYKEEP_RERANK=1), MCP-server only — hook paths never load models.
+ * Model selected via WAYKEEP_RERANK_MODEL (default jina-turbo-v1).
  *
  * Default is jina-turbo-v1, NOT bge-base, reversing the roadmap's initial
  * pick on smoke evidence (2026-07-21, this hardware): bge-reranker-base

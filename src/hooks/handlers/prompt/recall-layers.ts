@@ -142,7 +142,7 @@ export function runRecallLayers(ctx: PromptCtx): void {
         if (!budgetAvailable()) break;
         // A push the budget REFUSES was never shown — it must not be
         // stamped as exposure (codex fold block 1).
-        if (budgetPush(`[CAIRN ref] ${formatMemoryContent(r.memory)}`)) {
+        if (budgetPush(`[WAYKEEP ref] ${formatMemoryContent(r.memory)}`)) {
           newlyInjected.push(r.memory.id);
         }
       }
@@ -154,7 +154,7 @@ export function runRecallLayers(ctx: PromptCtx): void {
     const fired = client.reminderRepo.checkAndFire(prompt, project);
     for (const r of fired) {
       if (!budgetAvailable()) break;
-      budgetPush(`[CAIRN REMINDER] ${r.action.substring(0, 200)}`);
+      budgetPush(`[WAYKEEP REMINDER] ${r.action.substring(0, 200)}`);
     }
   }
 }

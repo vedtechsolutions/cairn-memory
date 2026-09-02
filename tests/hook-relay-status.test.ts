@@ -21,10 +21,12 @@ import { join } from 'node:path';
 import { createServer, type Server } from 'node:http';
 
 import { prepareRelayDir, runRelay, TEST_GENEROUS_TIMEOUT_MS } from './relay-harness.js';
+import { ENV } from '../src/constants/env.js';
+import { DATA_DIR_NAME } from 'waykeep-contract';
 
 /** Round-trip tests that read a 200 body must not race the production daemon
  *  timeout against a CPU-starved mock socket under full-suite load. */
-const GENEROUS_DAEMON_ENV = { CAIRN_DAEMON_TIMEOUT_MS: TEST_GENEROUS_TIMEOUT_MS };
+const GENEROUS_DAEMON_ENV = { [ENV.DAEMON_TIMEOUT_MS]: TEST_GENEROUS_TIMEOUT_MS };
 
 describe('hook-relay HTTP status + body integrity (H1/H2/M12)', () => {
   let tmpBinDir: string;
@@ -39,13 +41,13 @@ describe('hook-relay HTTP status + body integrity (H1/H2/M12)', () => {
     // (EPERM). Skip the suite there instead of failing — the relay logic
     // itself is environment-independent.
     const probeHome = mkdtempSync(join(tmpdir(), 'cairn-relay-home-'));
-    mkdirSync(join(probeHome, '.cairn'), { recursive: true });
+    mkdirSync(join(probeHome, DATA_DIR_NAME), { recursive: true });
     homes.push(probeHome);
     try {
       await new Promise<void>((resolveProbe, rejectProbe) => {
         const probe = createServer(() => {});
         probe.once('error', rejectProbe);
-        probe.listen(join(probeHome, '.cairn', 'hook-daemon.sock'), () => probe.close(() => resolveProbe()));
+        probe.listen(join(probeHome, DATA_DIR_NAME, 'hook-daemon.sock'), () => probe.close(() => resolveProbe()));
       });
     } catch (err) {
       skipReason = `unix-socket listen not permitted in this environment: ${(err as Error).message}`;
@@ -68,11 +70,11 @@ describe('hook-relay HTTP status + body integrity (H1/H2/M12)', () => {
   async function listen(handler: Parameters<typeof createServer>[1]): Promise<string> {
     if (server) await new Promise<void>((resolveClose) => server!.close(() => resolveClose()));
     const home = mkdtempSync(join(tmpdir(), 'cairn-relay-home-'));
-    mkdirSync(join(home, '.cairn'), { recursive: true });
+    mkdirSync(join(home, DATA_DIR_NAME), { recursive: true });
     homes.push(home);
     server = createServer(handler);
     await new Promise<void>((resolveListen) =>
-      server!.listen(join(home, '.cairn', 'hook-daemon.sock'), () => resolveListen()));
+      server!.listen(join(home, DATA_DIR_NAME, 'hook-daemon.sock'), () => resolveListen()));
     return home;
   }
 

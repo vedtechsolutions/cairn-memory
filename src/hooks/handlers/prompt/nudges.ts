@@ -9,7 +9,7 @@ import { validateMemoryContent } from '../../../utils/validation.js';
 import { originClientOf } from '../../shared/client-adapter.js';
 import { CONFIDENCE } from '../../../constants/index.js';
 import type { PromptCtx } from './types.js';
-import { checkTranscriptForCairnCalls, hasEntityTerms, summarizeRecentActions } from './helpers.js';
+import { checkTranscriptForMemoryToolCalls, hasEntityTerms, summarizeRecentActions } from './helpers.js';
 import { TOOL } from '../../../constants/mcp.js';
 
 /** Layer 2a/2b/2c workflow reminders — pre-flight, compliance, decision. */
@@ -25,8 +25,8 @@ export function applyWorkflowNudges(ctx: PromptCtx): void {
 
   if (ctx.intent === 'task' && !tracker.complianceNudgeFired && mode === 'normal'
     && prompt.length > 50 && tracker.toolChain.length > 0 && hasEntityTerms(prompt)) {
-    const hasCairnCalls = checkTranscriptForCairnCalls(input.transcript_path);
-    if (!hasCairnCalls) {
+    const hasMemoryToolCalls = checkTranscriptForMemoryToolCalls(input.transcript_path);
+    if (!hasMemoryToolCalls) {
       output.push(`[WAYKEEP] No explicit recall this session. Consider ${TOOL.PLAN}(get) for active plans and ${TOOL.RECALL}(query) for prior decisions.`);
       tracker.complianceNudgeFired = true;
     }
@@ -49,7 +49,7 @@ export function applyWorkflowNudges(ctx: PromptCtx): void {
   // had decision markers but no sigils AND the Socratic reflection
   // returned empty (sampling unavailable, API error, or the LLM found
   // nothing). Surface one short line so the agent knows to emit sigils
-  // or call cairn_learn(decision) next time. Always clear the flag
+  // or call waykeep_learn(decision) next time. Always clear the flag
   // after reading, so it's at-most-once per drop.
   //
   // Intentionally runs regardless of mode — the nudge is tiny (one line)

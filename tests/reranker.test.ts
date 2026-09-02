@@ -20,6 +20,7 @@ import { isRerankEnabled, orderByScore, resolveRerankerModel, scoresFromLogits, 
 import { runBenchmark, type RerankFn } from '../src/benchmark/longmemeval/runner.js';
 import { validateDataset, type LmeQuestion } from '../src/benchmark/longmemeval/data.js';
 import { toMarkdownReport } from '../src/benchmark/longmemeval/report.js';
+import { ENV } from '../src/constants/env.js';
 
 const FIXTURE_PATH = join(process.cwd(), 'scripts', 'longmemeval', 'fixture', 'harness-fixture.json');
 const loadFixture = (): LmeQuestion[] => validateDataset(JSON.parse(readFileSync(FIXTURE_PATH, 'utf8')));
@@ -36,19 +37,19 @@ describe('reranker registry + env contract', () => {
   });
 
   it('unknown and prototype-property model keys fail closed', () => {
-    assert.throws(() => resolveRerankerModel('gpt-reranker'), /unknown CAIRN_RERANK_MODEL/);
+    assert.throws(() => resolveRerankerModel('gpt-reranker'), new RegExp(`unknown ${ENV.RERANK_MODEL}`));
     for (const key of ['__proto__', 'constructor', 'toString']) {
-      assert.throws(() => resolveRerankerModel(key), /unknown CAIRN_RERANK_MODEL/);
+      assert.throws(() => resolveRerankerModel(key), new RegExp(`unknown ${ENV.RERANK_MODEL}`));
     }
   });
 
-  it('CAIRN_RERANK: unset/empty/0 off, 1 on, anything else fails closed', () => {
+  it('RERANK env contract: unset/empty/0 off, 1 on, anything else fails closed', () => {
     assert.equal(isRerankEnabled(undefined), false);
     assert.equal(isRerankEnabled(''), false);
     assert.equal(isRerankEnabled('0'), false);
     assert.equal(isRerankEnabled('1'), true);
     for (const bad of ['true', 'yes', '2', 'on']) {
-      assert.throws(() => isRerankEnabled(bad), /invalid CAIRN_RERANK/);
+      assert.throws(() => isRerankEnabled(bad), new RegExp(`invalid ${ENV.RERANK}`));
     }
   });
 });
@@ -216,7 +217,7 @@ describe('MCP server — reranker config fail-closed at startup', () => {
   function spawnServer(env: Record<string, string>): { status: number | null; stderr: string } {
     const dir = mkdtempSync(join(tmpdir(), 'cairn-rerank-gate-'));
     try {
-      const fullEnv: NodeJS.ProcessEnv = { ...process.env, CAIRN_DB_PATH: join(dir, 'gate.db'), ...env };
+      const fullEnv: NodeJS.ProcessEnv = { ...process.env, [ENV.DB_PATH]: join(dir, 'gate.db'), ...env };
       delete fullEnv.NODE_TEST_CONTEXT;
       const result = spawnSync(process.execPath, [SERVER_PATH], { env: fullEnv, timeout: 15_000, encoding: 'utf8' });
       assert.equal(result.error, undefined, `spawn failed or timed out: ${result.error}`);
@@ -227,14 +228,14 @@ describe('MCP server — reranker config fail-closed at startup', () => {
   }
 
   it('exits 1 on an invalid CAIRN_RERANK value', () => {
-    const { status, stderr } = spawnServer({ CAIRN_RERANK: 'yes' });
+    const { status, stderr } = spawnServer({ [ENV.RERANK]: 'yes' });
     assert.equal(status, 1);
-    assert.match(stderr, /invalid CAIRN_RERANK "yes"/);
+    assert.match(stderr, new RegExp(`invalid ${ENV.RERANK} "yes"`));
   });
 
   it('exits 1 on an unknown CAIRN_RERANK_MODEL when reranking is enabled', () => {
-    const { status, stderr } = spawnServer({ CAIRN_RERANK: '1', CAIRN_RERANK_MODEL: 'bogus-reranker' });
+    const { status, stderr } = spawnServer({ [ENV.RERANK]: '1', [ENV.RERANK_MODEL]: 'bogus-reranker' });
     assert.equal(status, 1);
-    assert.match(stderr, /unknown CAIRN_RERANK_MODEL "bogus-reranker"/);
+    assert.match(stderr, new RegExp(`unknown ${ENV.RERANK_MODEL} "bogus-reranker"`));
   });
 });

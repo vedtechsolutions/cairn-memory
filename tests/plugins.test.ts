@@ -3,7 +3,7 @@
  *
  * The plugins ship STATIC wiring for marketplace distribution; these
  * guards pin it to the canonical generators so the two can never drift:
- * the Claude plugin's hooks.json must equal cairnHooks() rendered
+ * the Claude plugin's hooks.json must equal waykeepHooks() rendered
  * against the plugin launcher, versions must ride package.json, and no
  * plugin file may carry a machine-absolute path.
  */
@@ -15,8 +15,9 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { cairnHooks } from '../src/cli/init.js';
+import { waykeepHooks } from '../src/cli/init.js';
 import { VERSION } from '../src/constants/index.js';
+import { RELAY_PROBE_SENTINEL, RELAY_PROBE_FLAG, MCP_SERVER_NAME } from 'waykeep-contract';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const PLUGIN_RELAY = '${CLAUDE_PLUGIN_ROOT}/bin/waykeep-relay.sh';
@@ -26,7 +27,7 @@ const readJson = (rel: string): Record<string, unknown> => JSON.parse(read(rel))
 describe('thin-plugin packaging', () => {
   it('Claude plugin hooks.json equals the canonical generator (zero drift)', () => {
     const generated = JSON.parse(
-      JSON.stringify(cairnHooks(PLUGIN_RELAY))
+      JSON.stringify(waykeepHooks(PLUGIN_RELAY))
         // The generator's node-form hooks carry THIS install's absolute
         // paths; the plugin routes them through the same launcher.
         .replace(/"node [^"]*dist\/src\/hooks\/([a-z-]+\.js)"/g,
@@ -34,7 +35,7 @@ describe('thin-plugin packaging', () => {
     ) as Record<string, unknown>;
     const checkedIn = readJson('plugins/claude/waykeep/hooks/hooks.json');
     assert.deepEqual(checkedIn.hooks, generated,
-      'plugins/claude/waykeep/hooks/hooks.json must be regenerated when cairnHooks() changes');
+      'plugins/claude/waykeep/hooks/hooks.json must be regenerated when waykeepHooks() changes');
   });
 
   it('plugin versions AND the MCP serverInfo constant ride package.json (lockstep)', () => {
@@ -91,9 +92,9 @@ describe('thin-plugin packaging', () => {
     // load, and connect with `cairn` absent from PATH) — GUI-safe
     // without a shell. Codex: bare command (plugin-root-relative spawn
     // is unproven there; caveat documented, step-7 validation item).
-    assert.equal(claudeMcp.mcpServers.cairn.command, '${CLAUDE_PLUGIN_ROOT}/bin/waykeep-mcp.sh');
-    assert.equal(codexPlugin.mcpServers.cairn.command, 'cairn');
-    assert.deepEqual(codexPlugin.mcpServers.cairn.args, ['serve']);
+    assert.equal(claudeMcp.mcpServers[MCP_SERVER_NAME].command, '${CLAUDE_PLUGIN_ROOT}/bin/waykeep-mcp.sh');
+    assert.equal(codexPlugin.mcpServers[MCP_SERVER_NAME].command, MCP_SERVER_NAME);
+    assert.deepEqual(codexPlugin.mcpServers[MCP_SERVER_NAME].args, ['serve']);
   });
 
   it('MCP launcher resolves off-PATH, picks the NEWEST nvm version, carries node', () => {
@@ -136,7 +137,7 @@ describe('thin-plugin packaging', () => {
 
   it('hook launcher refuses to cache without a trustworthy directory (no HOME)', () => {
     // ${HOME:-/tmp} put the cache in a world-writable dir: a planted
-    // /tmp/.cairn/plugin-hook-dir got EXECUTED by the next hook
+    // /tmp/${DATA_DIR_NAME}/plugin-hook-dir got EXECUTED by the next hook
     // (review, demonstrated). No HOME and no plugin-data = no cache.
     const sim = mkdtempSync(join(tmpdir(), 'cairn-nohome-sim-'));
     const priorMode = statSync(CLI_JS).mode;
@@ -157,8 +158,8 @@ describe('thin-plugin packaging', () => {
       assert.ok(!launcherCode.includes('/tmp'),
         'the launcher CODE must never reference /tmp (the comment documenting the removed fallback may)');
       const env: Record<string, string> = { PATH: `${join(sim, 'bin')}:/usr/bin:/bin` };
-      const r = spawnSync(LAUNCHER, ['--cairn-probe'], { encoding: 'utf-8', env });
-      assert.equal(r.stdout.trim(), 'cairn-relay', 'still works — just uncached');
+      const r = spawnSync(LAUNCHER, [RELAY_PROBE_FLAG], { encoding: 'utf-8', env });
+      assert.equal(r.stdout.trim(), RELAY_PROBE_SENTINEL, 'still works — just uncached');
     } finally {
       chmodSync(CLI_JS, priorMode);
       rmSync(sim, { recursive: true, force: true });
@@ -209,18 +210,18 @@ describe('thin-plugin packaging', () => {
       symlinkSync(REPO_ROOT, join(sim, 'lib', 'node_modules', 'cairn-memory'));
       symlinkSync('../lib/node_modules/cairn-memory/dist/src/cli/index.js', join(sim, 'bin', 'cairn'));
       chmodSync(CLI_JS, 0o755); // npm sets this on real installs
-      const r = runLauncher(['--cairn-probe'], join(sim, 'bin'), join(sim, 'data'));
-      assert.equal(r.stdout.trim(), 'cairn-relay', 'the launcher must reach the real relay through the bin symlink chain');
+      const r = runLauncher([RELAY_PROBE_FLAG], join(sim, 'bin'), join(sim, 'data'));
+      assert.equal(r.stdout.trim(), RELAY_PROBE_SENTINEL, 'the launcher must reach the real relay through the bin symlink chain');
       // Resolution is CACHED, keyed to the resolving bin ("bin|dir").
       const cached = readFileSync(join(sim, 'data', 'plugin-hook-dir'), 'utf-8').trim();
       assert.match(cached, /^\/.+\|\/.+dist\/src\/hooks$/);
       // Cache REUSE: second run still answers.
-      assert.equal(runLauncher(['--cairn-probe'], join(sim, 'bin'), join(sim, 'data')).stdout.trim(), 'cairn-relay');
+      assert.equal(runLauncher([RELAY_PROBE_FLAG], join(sim, 'bin'), join(sim, 'data')).stdout.trim(), RELAY_PROBE_SENTINEL);
       // IDENTITY invalidation: a cache recorded by a DIFFERENT bin (an
       // old package-manager tree that still exists) must not be reused
       // — existence alone ran outdated hooks forever (review).
       writeFileSync(join(sim, 'data', 'plugin-hook-dir'), `/somewhere/else/bin/cairn|${cached.split('|')[1]}\n`);
-      assert.equal(runLauncher(['--cairn-probe'], join(sim, 'bin'), join(sim, 'data')).stdout.trim(), 'cairn-relay', 're-resolves past the foreign-bin cache');
+      assert.equal(runLauncher([RELAY_PROBE_FLAG], join(sim, 'bin'), join(sim, 'data')).stdout.trim(), RELAY_PROBE_SENTINEL, 're-resolves past the foreign-bin cache');
       assert.match(readFileSync(join(sim, 'data', 'plugin-hook-dir'), 'utf-8'), /^\//, 'cache rewritten');
       assert.ok(readFileSync(join(sim, 'data', 'plugin-hook-dir'), 'utf-8').startsWith(join(sim, 'bin', 'cairn')), 'rewritten under the CURRENT bin');
     } finally {
@@ -242,8 +243,8 @@ describe('thin-plugin packaging', () => {
 exec node "${CLI_JS}" "$@"
 `);
       chmodSync(shim, 0o755);
-      const r = runLauncher(['--cairn-probe'], join(sim, 'bin'), join(sim, 'data'));
-      assert.equal(r.stdout.trim(), 'cairn-relay', 'shim layouts must resolve through cairn locate');
+      const r = runLauncher([RELAY_PROBE_FLAG], join(sim, 'bin'), join(sim, 'data'));
+      assert.equal(r.stdout.trim(), RELAY_PROBE_SENTINEL, 'shim layouts must resolve through cairn locate');
     } finally {
       rmSync(sim, { recursive: true, force: true });
     }

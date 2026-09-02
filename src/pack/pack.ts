@@ -7,7 +7,7 @@ import { SHAREABLE_KINDS } from 'waykeep-contract';
 
 import { LIMITS } from '../constants/index.js';
 import { MemoryRepository } from '../db/memory-repository.js';
-import { cairnConfigSnapshot } from '../config/cairn-config.js';
+import { waykeepConfigSnapshot } from '../config/waykeep-config.js';
 import { scrubSecrets, sanitize } from '../utils/index.js';
 import { neutralizeMemoryText } from '../utils/validation.js';
 import { learnSections, type LearnSection } from '../importers/learn-pipeline.js';
@@ -194,7 +194,7 @@ export function packExport(db: Database.Database, dir: string, project: string |
   // refuses to run on an unhealthy config — a malformed privacy file
   // must never widen what leaves the store — and per-row checks read
   // this snapshot, never the file again.
-  const snapshot = cairnConfigSnapshot();
+  const snapshot = waykeepConfigSnapshot();
   if (project === 'all-shared' && !snapshot.health.healthy) {
     throw new Error(`config at ${snapshot.health.path} is unhealthy (${snapshot.health.problem}) — bulk export refuses fail-closed; fix the config or name a project explicitly`);
   }

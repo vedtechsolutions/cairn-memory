@@ -87,7 +87,7 @@ const TOOL_CALL_PATTERN = new RegExp(
   `mcp__${MCP_SERVER_NAME}__|"(?:${[TOOL.RECALL, TOOL.PLAN, TOOL.LEARN, TOOL.EXPORT, TOOL.REMIND].join('|')})"`,
 );
 
-export function checkTranscriptForCairnCalls(transcriptPath: string | null): boolean {
+export function checkTranscriptForMemoryToolCalls(transcriptPath: string | null): boolean {
   try {
     if (!transcriptPath || !existsSync(transcriptPath)) return false;
 

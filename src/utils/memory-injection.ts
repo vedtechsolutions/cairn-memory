@@ -1,5 +1,5 @@
 import type { Memory } from '../db/memory-repository.js';
-import { neutralizeMemoryText } from './validation.js';
+import { neutralizeMemoryText, BRAND_MARKER_ALTERNATION } from './validation.js';
 
 /**
  * Explicit retirement markers accepted at the start of pitfall content.
@@ -32,20 +32,20 @@ export function isResolvedPitfallContent(content: string): boolean {
  * spelling) is defanged, so nothing else can occupy that offset.
  * Zero-width splits are stripped in neutralizeMemoryText. The middle
  * dot in "[·…]" is the DEFANG marker, not a rendering bug — do not
- * "fix" it; Waykeep's own captured log prefixes ([cairn]) degrade to
- * [·cairn] by design.
+ * "fix" it; Waykeep's own captured log prefixes ([waykeep]) degrade to
+ * [·waykeep] by design.
  */
 // Anchors cover every line-break form: a BARE \r returns the carriage
 // in a terminal, so `ok\r[waykeep-team: …]` rendered at the visual line
 // start (formatter review C1).
-const LINE_LEADING_MARKERS = /(^|[\r\n])(?:\s*\[\s*(?:cairn|waykeep)\b[^\]\n]*\]\s*)+/gi;
+const LINE_LEADING_MARKERS = new RegExp(`(^|[\\r\\n])(?:\\s*\\[\\s*(?:${BRAND_MARKER_ALTERNATION})\\b[^\\]\\n]*\\]\\s*)+`, 'gi');
 
 // Inline brand-marker DEFANG (Codex m1s7 #3/#4): the apply sanitizer
 // collapses newlines, turning line-leading attacks into inline ones, so
 // inline occurrences are the reachable smuggling form — a middle dot
 // breaks the exact-brand match while staying readable, and legitimate
 // quoting degrades gracefully to "[·waykeep…]".
-const INLINE_BRAND_MARKERS = /\[(\s*)(cairn|waykeep)\b/gi;
+const INLINE_BRAND_MARKERS = new RegExp(`\\[(\\s*)(${BRAND_MARKER_ALTERNATION})\\b`, 'gi');
 
 // Render-side identity escape (defense in depth behind the validator's
 // token charset): whatever reaches the label slot cannot carry bracket,

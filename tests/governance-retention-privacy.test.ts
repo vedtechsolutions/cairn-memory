@@ -17,6 +17,8 @@ import { GovernanceRepository } from '../src/governance/repository.js';
 import { GovernanceRuleRepository } from '../src/governance/rule-repository.js';
 import { projectId } from '../src/utils/project-id.js';
 import { runMaintenance } from '../src/db/maintenance.js';
+import { ENV } from '../src/constants/env.js';
+import { DATA_DIR_NAME } from 'waykeep-contract';
 
 const roots: string[] = [];
 
@@ -28,13 +30,13 @@ afterEach(() => {
 function tempProject(secretInCommand = false, evidenceDays = 30): string {
   const root = mkdtempSync(join(tmpdir(), 'cairn-recorder-privacy-'));
   roots.push(root);
-  mkdirSync(join(root, '.cairn'));
+  mkdirSync(join(root, DATA_DIR_NAME));
   mkdirSync(join(root, 'src'));
   writeFileSync(join(root, 'src', 'a.ts'), 'source\n');
   const argv = secretInCommand
     ? ['env', 'API_TOKEN=needle-command-secret', 'npm', 'test']
     : ['npm', 'test'];
-  writeFileSync(join(root, '.cairn', 'gates.json'), JSON.stringify({
+  writeFileSync(join(root, DATA_DIR_NAME, 'gates.json'), JSON.stringify({
     version: 1,
     defaults: { retention: { evidenceDays } },
     gates: {
@@ -154,7 +156,7 @@ describe('governance recorder privacy and retention (A5)', () => {
       await recordGovernanceEvent(
         db,
         bashEvent(root, 'optin-1', command, nodeOutput()),
-        { environment: { ...process.env, CAIRN_PERSIST_RAW_COMMAND: '1' } },
+        { environment: { ...process.env, [ENV.PERSIST_RAW_COMMAND]: '1' } },
       );
       const event = db.prepare(`
         SELECT raw_command FROM governance_tool_events WHERE tool_use_id = 'optin-1'

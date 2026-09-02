@@ -11,7 +11,7 @@ import { normalizeHookInput } from './client-adapter.js';
 
 export type {
   RawHookPayload,
-  CairnHookEvent,
+  WaykeepHookEvent,
   HookEventBase as HookInput,
   ToolHookEvent as ToolHookInput,
   SessionStartEvent as SessionStartInput,

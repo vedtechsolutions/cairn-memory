@@ -226,7 +226,7 @@ export function parseExportDocument(text: string): ParsedExport {
     } else if (section > 0) {
       sectionLines.push(line);
     }
-    // Preamble lines before the first section (# Cairn Export …) drop.
+    // Preamble lines before the first section (# Waykeep Export …) drop.
   }
   flush();
 

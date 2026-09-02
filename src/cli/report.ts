@@ -1,3 +1,4 @@
+import { NAMESPACE } from 'waykeep-contract';
 /**
  * `waykeep report` — the tokens-saved report.
  *
@@ -31,7 +32,7 @@ export async function runReport(days: number = ROLLUP.REPORT_DAYS): Promise<numb
       "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'telemetry_rollup'",
     ).get() !== undefined;
     if (!hasTable) {
-      console.log('cairn report — no rollup data (database predates schema v30; data accrues from the next session).');
+      console.log(`${NAMESPACE} report — no rollup data (database predates schema v30; data accrues from the next session).`);
       return 0;
     }
     // A stale v30 shape (events column added while v30 was unreleased):

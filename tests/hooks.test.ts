@@ -10,6 +10,7 @@ import { PlanRepository } from '../src/db/plan-repository.js';
 import { compileBriefing, type BriefingContext } from '../src/hooks/shared/briefing-compiler.js';
 import { parseTranscript } from '../src/hooks/shared/transcript-parser.js';
 import { archiveUntouchedPlans, cleanupSnapshots } from '../src/db/maintenance.js';
+import { TOOL, qualifiedToolName } from '../src/constants/mcp.js';
 
 let db: Database.Database;
 let memoryRepo: MemoryRepository;
@@ -311,7 +312,7 @@ describe('Transcript Parser', () => {
   it('should extract decisions from cairn_learn(kind: "decision") calls', () => {
     const transcriptPath = join(tmpDir, 'transcript.jsonl');
     const entries = [
-      assistantEntry([{ type: 'tool_use', name: 'mcp__cairn__cairn_learn', id: 't1', input: {
+      assistantEntry([{ type: 'tool_use', name: qualifiedToolName(TOOL.LEARN), id: 't1', input: {
         kind: 'decision',
         content: 'Use SQLite with WAL mode for memory storage',
       }}]),
@@ -326,7 +327,7 @@ describe('Transcript Parser', () => {
   it('should extract decisions from cairn_plan(decide) calls', () => {
     const transcriptPath = join(tmpDir, 'transcript.jsonl');
     const entries = [
-      assistantEntry([{ type: 'tool_use', name: 'mcp__cairn__cairn_plan', id: 't1', input: {
+      assistantEntry([{ type: 'tool_use', name: qualifiedToolName(TOOL.PLAN), id: 't1', input: {
         action: 'decide',
         chose: 'Use authlib over python-social-auth',
         why: 'Better maintained, fewer CVEs',
@@ -343,7 +344,7 @@ describe('Transcript Parser', () => {
   it('should NOT extract non-decision cairn_learn calls', () => {
     const transcriptPath = join(tmpDir, 'transcript.jsonl');
     const entries = [
-      assistantEntry([{ type: 'tool_use', name: 'mcp__cairn__cairn_learn', id: 't1', input: {
+      assistantEntry([{ type: 'tool_use', name: qualifiedToolName(TOOL.LEARN), id: 't1', input: {
         kind: 'pitfall',
         content: 'Always check for null before accessing properties',
       }}]),

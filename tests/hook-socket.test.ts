@@ -20,13 +20,14 @@ import { createServer, request, type Server as HttpServer } from 'node:http';
 import { createHookDbClient, type HookDbClient } from '../src/hooks/shared/db-client.js';
 import { SessionCache } from '../src/hooks/shared/session-cache.js';
 import { getTrackerPath, loadTracker, type EditTracker } from '../src/hooks/shared/edit-tracker.js';
+import { ENV } from '../src/constants/env.js';
 
 // hook-socket resolves its socket/PID paths lazily from CAIRN_DIR (like
 // edit-tracker/state-io), so pointing CAIRN_DIR at a sandbox before the
 // server starts is sufficient — no HOME juggling or import-order games.
 const stateDir = mkdtempSync(join(tmpdir(), 'cairn-hook-socket-state-'));
-process.env.CAIRN_DIR = join(stateDir, '.cairn');
-process.env.CAIRN_STATE_PATH = join(stateDir, 'cairn-state.json');
+process.env[ENV.DIR] = join(stateDir, '.cairn');
+process.env[ENV.STATE_PATH] = join(stateDir, 'cairn-state.json');
 
 const SOCKET_PATH = join(stateDir, '.cairn', 'hook-daemon.sock');
 const PROBE_SOCKET_PATH = join(stateDir, '.cairn', 'probe.sock');
@@ -162,7 +163,7 @@ describe('hook-socket embedded daemon router', () => {
     assert.match(reply.body, /^Waykeep: (normal|compact|minimal|critical) \| \d+% free/);
     assert.match(reply.body, /\| \d+ mem/, 'cwd-scoped DB stats must be appended');
 
-    const statePath = process.env.CAIRN_STATE_PATH!;
+    const statePath = process.env[ENV.STATE_PATH]!;
     assert.ok(existsSync(statePath), 'statusline must persist cairn-state.json');
     const state = JSON.parse(readFileSync(statePath, 'utf-8')) as { mode: string; freeUntilCompact: number };
     assert.ok(['normal', 'compact', 'minimal', 'critical'].includes(state.mode));

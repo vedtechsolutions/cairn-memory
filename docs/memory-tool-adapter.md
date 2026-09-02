@@ -4,7 +4,7 @@ Waykeep implements the handler side of Anthropic's `memory_20250818` tool:
 Claude reads and edits its memory through the standard six file commands
 (`view`, `create`, `str_replace`, `insert`, `delete`, `rename`) while every
 write lands in Waykeep's structured store — same records, same smart-merge
-gateway, same truth maintenance as `cairn_learn`/`cairn_recall`.
+gateway, same truth maintenance as `waykeep_learn`/`waykeep_recall`.
 
 Design contract: `docs/plans/2026-07-22-w4-memory-tool-adapter-design.md`
 (frozen v3.1). This document describes the as-built behavior.
@@ -25,7 +25,7 @@ import { openDatabase } from 'waykeep/dist/src/db/connection.js';
 import { PlanRepository } from 'waykeep/dist/src/db/plan-repository.js';
 import { createMemoryToolHandlers } from 'waykeep/dist/src/memory-tool/sdk-adapter.js';
 
-const db = openDatabase(); // resolves the default ~/.cairn/cairn.db
+const db = openDatabase(); // resolves the default ~/.waykeep/waykeep.db
 const tool = betaMemoryTool(createMemoryToolHandlers({
   db,
   planRepo: new PlanRepository(db),
@@ -98,7 +98,7 @@ Materialized files render one block per record:
 - A stale token (`@rev` no longer current) fails the WHOLE edit:
   `stale record [fac:…@1] — its current revision is 2. View … again before
   editing.`
-- Creates run through the same smart-merge gateway as `cairn_learn`:
+- Creates run through the same smart-merge gateway as `waykeep_learn`:
   a duplicate of an existing record rejects with that record's canonical
   token; a write that would supersede an existing record rolls back and
   reports the post-rollback token; blocks that duplicate or supersede
@@ -112,7 +112,7 @@ Materialized files render one block per record:
   validation) and writes. Any failure rolls back with zero mutation.
 - Existence is decided by RAW active rows — corrupt-but-active rows keep
   their file existing, listed, wholly movable, and deletable (they render
-  as a counted `[cairn: N records unrenderable — see logs]` warning).
+  as a counted `[waykeep: N records unrenderable — see logs]` warning).
 - Directory deletion touches only VFS-owned kinds, LIKE-escapes free-form
   path matching (base64url contains `_`), and atomically rejects while an
   active plan exists in the directory. `rename` moves whole category files
@@ -134,7 +134,7 @@ Materialized files render one block per record:
 
 ## Round-trip v2 (portable export/restore)
 
-`cairn_export` emits v2 sections — a human heading plus one line of
+`waykeep_export` emits v2 sections — a human heading plus one line of
 canonical JSON (`data: {…}`, recursively sorted keys) — lossless for
 multiline context, `##`-bearing content, fenced bodies, and full
 fingerprint arrays. Free-form files export as `## File:` sections on
@@ -153,7 +153,7 @@ every candidate validates through the same gate the parser applies on
 import, so corrupt stored rows fail the export naming the record id and
 field — an emitted document always reparses cleanly.
 
-`cairn_ingest` modes:
+`waykeep_ingest` modes:
 
 - `learn` (default): current gateway semantics — dedup, merge, confidence
   boost, conflict detection. v1 markdown (`## Kind: heading` sections)

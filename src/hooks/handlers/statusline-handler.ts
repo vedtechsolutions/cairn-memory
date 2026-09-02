@@ -4,7 +4,7 @@
  * Uses the daemon's shared DB connection (read-only queries only).
  */
 import type { HookDbClient } from '../shared/db-client.js';
-import { writeState, type CairnState } from '../shared/state-io.js';
+import { writeState, type WaykeepState } from '../shared/state-io.js';
 import { projectId } from '../../utils/project-id.js';
 import {
   CONTEXT_THRESHOLDS,
@@ -48,7 +48,7 @@ export function handleStatusLine(input: StatusLineInput, client: HookDbClient): 
     mode = 'critical';
   }
 
-  writeState({ mode, freeUntilCompact } as CairnState);
+  writeState({ mode, freeUntilCompact } as WaykeepState);
 
   let display = `Waykeep: ${mode} | ${freeUntilCompact}% free`;
 

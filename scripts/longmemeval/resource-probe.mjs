@@ -31,6 +31,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getRerankerModelConfig, verifyArtifacts } from '../../dist/src/utils/reranker.js';
 import { MAX_TURN_CHARS, splitTurn } from '../../dist/src/benchmark/longmemeval/ingest.js';
+import { DATA_DIR_NAME } from '../../packages/contract/dist/identity.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
@@ -43,7 +44,7 @@ const WARMUPS = 3;
 const WINDOW = 20;
 const outPath = argValue('--out');
 const dataPath = argValue('--data')
-  ?? join(process.env.HOME ?? '', '.cairn', 'benchmarks', 'longmemeval', 'longmemeval_s_cleaned.json');
+  ?? join(process.env.HOME ?? '', DATA_DIR_NAME, 'benchmarks', 'longmemeval', 'longmemeval_s_cleaned.json');
 
 const mb = (b) => Math.round(b / 1024 / 1024);
 

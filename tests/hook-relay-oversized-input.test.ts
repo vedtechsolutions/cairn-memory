@@ -16,18 +16,19 @@ import { join } from 'node:path';
 
 import { prepareRelayDir, runRelay } from './relay-harness.js';
 import { nodeGrandchildSkipReason } from './spawn-probe.js';
+import { DATA_DIR_NAME } from 'waykeep-contract';
 
 const RELAY_BUFFER_CAP = 256 * 1024;
 
 function makeFakeHome(prefix: string): string {
   const home = mkdtempSync(join(tmpdir(), prefix));
-  mkdirSync(join(home, '.cairn'), { recursive: true });
+  mkdirSync(join(home, DATA_DIR_NAME), { recursive: true });
   return home;
 }
 
 function readRelayLog(home: string): string {
   try {
-    return readFileSync(join(home, '.cairn', 'hook-relay-fallback.log'), 'utf8');
+    return readFileSync(join(home, DATA_DIR_NAME, 'hook-relay-fallback.log'), 'utf8');
   } catch {
     return '(no fallback log written)';
   }

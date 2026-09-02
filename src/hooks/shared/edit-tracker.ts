@@ -21,17 +21,17 @@ import { dataDir } from '../../constants/paths.js';
 
 const TRACKER_BASE = TRACKER_FILENAME.replace('.json', '');
 
-/** Tracker directory — CAIRN_DIR env override (mirrors CAIRN_DB_PATH) keeps
- *  tests and sandboxed environments off the real ~/.cairn. Resolved lazily
+/** Tracker directory — WAYKEEP_DIR env override (mirrors WAYKEEP_DB_PATH) keeps
+ *  tests and sandboxed environments off the real ~/.waykeep. Resolved lazily
  *  so the override works regardless of import order. */
-function cairnDir(): string {
+function waykeepDir(): string {
   return dataDir();
 }
 
 /** Get tracker path — per-session when session_id is provided (concurrent session isolation) */
 export function getTrackerPath(sessionId?: string): string {
-  if (!sessionId) return join(cairnDir(), TRACKER_FILENAME);
-  return join(cairnDir(), `${TRACKER_BASE}-${sessionId}.json`);
+  if (!sessionId) return join(waykeepDir(), TRACKER_FILENAME);
+  return join(waykeepDir(), `${TRACKER_BASE}-${sessionId}.json`);
 }
 
 export interface SessionErrorEntry {
@@ -260,7 +260,7 @@ export function cleanupOrphanTrackers(): number {
   const prefix = `${TRACKER_BASE}-`;
   let cleaned = 0;
   try {
-    const dir = cairnDir();
+    const dir = waykeepDir();
     const files = readdirSync(dir);
     const maxAgeMs = TRACKER_ORPHAN_MAX_AGE_DAYS * 86_400_000;
     const now = Date.now();

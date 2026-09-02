@@ -34,7 +34,7 @@ import { SHAREABLE_KINDS } from 'waykeep-contract';
  *    retire through the shared helpers below; a record edit journals
  *    ONE upsert at the transaction's final revision (a mixed
  *    content+metadata edit must not journal an intermediate revision).
- *  - Explicit trust changes (cairn_strengthen / cairn_weaken) journal
+ *  - Explicit trust changes (waykeep_strengthen / waykeep_weaken) journal
  *    upserts — confidence is a portable field; a terminal weaken is a
  *    retraction (tombstone log + journal tombstone). AUTONOMOUS trust
  *    churn (precision loop, error-learning) journals nothing, and its

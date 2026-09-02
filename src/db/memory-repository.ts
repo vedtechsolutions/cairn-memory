@@ -283,7 +283,7 @@ export class MemoryRepository {
     return briefing.activeCorrections(this.db, project, limit);
   }
 
-  /** Export memories matching filter criteria (for cairn_export) */
+  /** Export memories matching filter criteria (for waykeep_export) */
   exportMemories(options: {
     project?: string | null;
     kind?: MemoryKind;
@@ -327,7 +327,7 @@ export class MemoryRepository {
     return stats.countByProject(this.db, project);
   }
 
-  /** Aggregate stats for cairn_stats summary */
+  /** Aggregate stats for waykeep_stats summary */
   getStats(): {
     total: number;
     active: number;
@@ -337,7 +337,7 @@ export class MemoryRepository {
     return stats.getStats(this.db);
   }
 
-  /** Health metrics for cairn_stats health */
+  /** Health metrics for waykeep_stats health */
   getHealthMetrics(): {
     confidenceDistribution: { high: number; medium: number; low: number };
     decayCandidates: number;

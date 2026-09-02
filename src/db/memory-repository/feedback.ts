@@ -97,7 +97,7 @@ export function applyPrecisionFeedback(
 }
 
 /** Negative feedback: decrease trust, auto-invalidate below threshold.
- *  Explicit (default, cairn_weaken): the confidence change journals an
+ *  Explicit (default, waykeep_weaken): the confidence change journals an
  *  upsert; a terminal weaken is a real retraction and routes through
  *  invalidate() — tombstone log + journal tombstone. Autonomous callers
  *  (error-learning) pass `autonomous`: their churn journals nothing,

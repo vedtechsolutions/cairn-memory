@@ -153,7 +153,7 @@ export interface ProjectGoalResolution {
  * Resolve the project_goal (Project tier) for a snapshot — sticky across
  * meta turns (Phase 1).
  *
- * Priority: transcript mine (cairn_plan create) → carry-forward from DB →
+ * Priority: transcript mine (waykeep_plan create) → carry-forward from DB →
  * active plan name → branch synthesis. The result persists even when the
  * current turn is meta, so the briefing can surface "what this branch is
  * FOR" across SNR audits, /compact, and exit+return cycles.

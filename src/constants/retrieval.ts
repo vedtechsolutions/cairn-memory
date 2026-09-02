@@ -22,7 +22,7 @@ export const DEDUP = {
  *  build has no latency guarantee), so no user-acceptable barrier budget
  *  can promise conversion to hybrid, while taxing every cold call by the
  *  full budget; eager warmup at
- *  server/daemon start (server.ts / cairn-daemon.ts) minimizes the window
+ *  server/daemon start (server.ts / waykeep-daemon.ts) minimizes the window
  *  instead. Bistability between the two rankings is step 6's remit — this
  *  step guarantees the path is never SILENT. */
 export const RETRIEVAL_PATHS = {

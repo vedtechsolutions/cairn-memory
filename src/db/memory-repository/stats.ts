@@ -4,7 +4,7 @@ import type { CleanupFilter, Memory, MemoryRow } from './types.js';
 import { rowToMemory } from './reads.js';
 import { journalTombstonesForIds, type JournalOptions } from './journal.js';
 
-/** Aggregate stats for cairn_stats summary */
+/** Aggregate stats for waykeep_stats summary */
 export function getStats(db: Database.Database): {
   total: number;
   active: number;
@@ -24,7 +24,7 @@ export function getStats(db: Database.Database): {
   return { total, active, invalidated, byKind };
 }
 
-/** Health metrics for cairn_stats health */
+/** Health metrics for waykeep_stats health */
 export function getHealthMetrics(db: Database.Database): {
   confidenceDistribution: { high: number; medium: number; low: number };
   decayCandidates: number;
@@ -94,7 +94,7 @@ export function getStatsByProject(db: Database.Database): Array<{ project: strin
   `).all() as Array<{ project: string | null; count: number; avgConfidence: number; lastActivity: string | null }>;
 }
 
-/** Export memories matching filter criteria (for cairn_export) */
+/** Export memories matching filter criteria (for waykeep_export) */
 export function exportMemories(db: Database.Database, options: {
   project?: string | null;
   kind?: MemoryKind;

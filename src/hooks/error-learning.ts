@@ -28,7 +28,7 @@ try {
 
   if (result.surfacedProcessed) {
     const { count, files } = result.surfacedProcessed;
-    console.error(`[cairn] Processed ${count} surfaced pitfall(s) after error on ${files.join(', ')}`);
+    console.error(`[waykeep] Processed ${count} surfaced pitfall(s) after error on ${files.join(', ')}`);
   }
 
   // result.output is the serialized hookSpecificOutput/additionalContext
@@ -55,6 +55,6 @@ try {
   client.close();
 } catch (err) {
   recordTelemetry('error-learning', 'error', _startTime, false, String(err));
-  console.error('[cairn] Error learning hook error:', err);
+  console.error('[waykeep] Error learning hook error:', err);
   process.exit(0);
 }

@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHookDbClient, type HookDbClient } from '../src/hooks/shared/db-client.js';
 import { startRolloutTailer } from '../src/daemon/rollout-tailer.js';
+import { ENV } from '../src/constants/env.js';
 
 // Classifier dedup state persists across runs (by design) — every learnable
 // error in these tests carries a per-run tag so keys never collide.
@@ -28,12 +29,12 @@ before(() => {
     String(d.getMonth() + 1).padStart(2, '0'),
     String(d.getDate()).padStart(2, '0'));
   mkdirSync(dayDir, { recursive: true });
-  process.env.CAIRN_CODEX_SESSIONS_DIR = root;
+  process.env[ENV.CODEX_SESSIONS_DIR] = root;
   client = createHookDbClient(':memory:');
 });
 
 after(() => {
-  delete process.env.CAIRN_CODEX_SESSIONS_DIR;
+  delete process.env[ENV.CODEX_SESSIONS_DIR];
   client.close();
   rmSync(root, { recursive: true, force: true });
 });

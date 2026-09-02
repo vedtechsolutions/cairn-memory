@@ -6,6 +6,7 @@
  */
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { ENV } from '../src/constants/env.js';
 import {
   DEFAULT_EMBEDDING_MODEL_KEY, EMBEDDING_MODELS,
 } from '../src/constants/embedding-models.js';
@@ -75,12 +76,12 @@ describe('resolveEmbeddingModel — env selection, fail closed', () => {
   });
 
   it('rejects unknown keys with the valid key list', () => {
-    assert.throws(() => resolveEmbeddingModel('gpt-embeddings'), /unknown CAIRN_EMBEDDING_MODEL "gpt-embeddings".*minilm-l6/);
+    assert.throws(() => resolveEmbeddingModel('gpt-embeddings'), new RegExp(`unknown ${ENV.EMBEDDING_MODEL} "gpt-embeddings".*minilm-l6`));
   });
 
   it('rejects inherited object-property keys as unknown, not as gated challengers', () => {
     for (const key of ['__proto__', 'constructor', 'toString']) {
-      assert.throws(() => resolveEmbeddingModel(key), /unknown CAIRN_EMBEDDING_MODEL/, `${key} must hit the unknown-key path`);
+      assert.throws(() => resolveEmbeddingModel(key), new RegExp(`unknown ${ENV.EMBEDDING_MODEL}`), `${key} must hit the unknown-key path`);
     }
   });
 

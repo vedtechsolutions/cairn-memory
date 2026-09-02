@@ -9,7 +9,7 @@
  *
  * Determinism: every run seeds an IDENTICAL DB (fixed ids, contents, and
  * created_at anchored 30 days before the harness run so relative-time
- * rendering rounds stably within a capture session); CAIRN_TZ is cleared;
+ * rendering rounds stably within a capture session); WAYKEEP_TZ is cleared;
  * each hook spawn gets a fresh copy of the seeded DB (snapshot-restore),
  * so one hook's writes can never leak into another's output.
  */
@@ -44,7 +44,7 @@ const work = mkdtempSync(join(tmpdir(), `${ID.NAMESPACE}-golden-`));
 const seedDb = join(work, 'seed.db');
 // FIXED path (not per-run temp): the project id derives from the cwd, so a
 // varying path would change the id and defeat byte-identical captures.
-const cwdFixture = join(tmpdir(), 'cairn-golden-project');
+const cwdFixture = join(tmpdir(), 'waykeep-golden-project');
 mkdirSync(cwdFixture, { recursive: true });
 
 // ---- Seed a deterministic DB via the real repository layer ----------------

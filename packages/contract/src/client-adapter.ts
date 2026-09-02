@@ -1,6 +1,6 @@
 /**
  * The extension seam: one client adapter per agent, registered by
- * canonical name. Adding an agent to Cairn means implementing this
+ * canonical name. Adding an agent to Waykeep means implementing this
  * interface — nothing else in the pipeline may branch on a client name.
  *
  * Adapters ship IN-TREE (reviewed like any code); there is no runtime
@@ -63,7 +63,7 @@ export interface ClientAdapter {
   /** Wrap plain context for injection per this agent's contract. */
   wrapContextOutput(hookEventName: string, output: string): string;
   /** Parse this agent's transcript format into the caller's snapshot
-   *  shape; absent when the format is not parseable by Cairn. (A semantic
+   *  shape; absent when the format is not parseable by Waykeep. (A semantic
    *  method rather than a format enum — a third format is a new
    *  implementation, not a new enum value.) */
   readTranscriptSnapshot?(transcriptPath: string | null): unknown;

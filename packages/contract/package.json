@@ -1,7 +1,7 @@
 {
   "name": "waykeep-contract",
-  "version": "1.0.0-dev.1",
-  "description": "Integration contract for Waykeep (formerly Cairn) — normalized hook event types, client identity, memory vocabulary, portable round-trip format, and hook-socket routes. Types and constants only; zero dependencies.",
+  "version": "2.0.0",
+  "description": "Integration contract for Waykeep (formerly Cairn) \u2014 normalized hook event types, client identity, memory vocabulary, portable round-trip format, and hook-socket routes. Types and constants only; zero dependencies.",
   "license": "MIT",
   "type": "module",
   "main": "dist/index.js",

@@ -12,6 +12,8 @@ import { openDatabase } from '../src/db/connection.js';
 import { GovernanceRuleRepository } from '../src/governance/rule-repository.js';
 import { registerGovernanceTools } from '../src/mcp/tools/governance-tools.js';
 import { projectId } from '../src/utils/project-id.js';
+import { TOOL } from '../src/constants/mcp.js';
+import { DATA_DIR_NAME } from 'waykeep-contract';
 
 let db: Database.Database;
 let server: McpServer;
@@ -22,8 +24,8 @@ let elicitation: { action: 'accept' | 'decline' | 'cancel'; content?: Record<str
 beforeEach(async () => {
   db = openDatabase({ dbPath: ':memory:' });
   root = mkdtempSync(join(tmpdir(), 'cairn-override-'));
-  mkdirSync(join(root, '.cairn'));
-  writeFileSync(join(root, '.cairn', 'gates.json'), JSON.stringify({
+  mkdirSync(join(root, DATA_DIR_NAME));
+  writeFileSync(join(root, DATA_DIR_NAME, 'gates.json'), JSON.stringify({
     version: 1,
     defaults: { level: 'warn', evaluationTimeoutMs: 1000, retention: { evidenceDays: 30 } },
     gates: { 'test-core': { argv: ['npm', 'test'], parser: 'node-test', timeoutMs: 30_000 } },
@@ -53,12 +55,12 @@ afterEach(async () => {
 });
 
 async function call(args: Record<string, unknown>) {
-  return client.callTool({ name: 'cairn_governance_override', arguments: args }) as Promise<{
+  return client.callTool({ name: TOOL.GOVERNANCE_OVERRIDE, arguments: args }) as Promise<{
     content: Array<{ type: string; text?: string }>; isError?: boolean;
   }>;
 }
 
-describe('cairn_governance_override', () => {
+describe(TOOL.GOVERNANCE_OVERRIDE, () => {
   it('writes nothing when the user declines interactive confirmation', async () => {
     const result = await call({ project_root: root, session_id: 'session-a' });
     assert.equal(result.isError, undefined, JSON.stringify(result));

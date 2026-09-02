@@ -369,7 +369,7 @@ export function handleSessionStart(
     budgetOverride: budget,
     // Use auto mode: full briefing on startup/clear where context is fresh,
     // compact index briefing on post-compaction/resume where context is tight.
-    // Claude pulls detail via cairn_expand when needed.
+    // Claude pulls detail via waykeep_expand when needed.
     briefingMode: 'auto',
     governance: loadGovernanceBriefing(client.db, {
       project, projectRoot: input.cwd, sessionId,

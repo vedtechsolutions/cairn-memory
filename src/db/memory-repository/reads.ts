@@ -63,7 +63,7 @@ export function findByIds(db: Database.Database, ids: string[]): Memory[] {
 }
 
 /** Resolve a memory by its short-id prefix (first N chars of the full id).
- *  Used by cairn_expand to map briefing index entries like "pit:a1b2c3d4"
+ *  Used by waykeep_expand to map briefing index entries like "pit:a1b2c3d4"
  *  back to full memory rows. Returns null if zero or multiple rows match
  *  the prefix — short-id collisions are rare at 8 chars over thousands of
  *  memories but the caller should treat ambiguous results as "not found"

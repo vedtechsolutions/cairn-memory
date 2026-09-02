@@ -16,6 +16,7 @@ import { openDatabase } from '../src/db/connection.js';
 import { MemoryRepository } from '../src/db/memory-repository.js';
 import { EdgeRepository } from '../src/db/edge-repository.js';
 import { registerMemoryTools, type RerankerImpl } from '../src/mcp/tools/memory-tools.js';
+import { TOOL } from '../src/constants/mcp.js';
 
 interface ToolResult {
   content: Array<{ type: 'text'; text: string }>;
@@ -57,7 +58,7 @@ const recallCount = (id: string): number =>
 
 async function callRecall(): Promise<string> {
   const result = await client.callTool({
-    name: 'cairn_recall',
+    name: TOOL.RECALL,
     arguments: { query: 'crimson harbor beacon', max_results: 2 },
   }) as unknown as ToolResult;
   return result.content.map(c => c.text).join('\n');

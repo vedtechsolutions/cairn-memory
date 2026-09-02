@@ -39,7 +39,7 @@ try {
     if (input.tool_response && typeof input.tool_response === 'string') {
       const parsed = parsePlanContent(input.tool_response);
       if (parsed && parsed.steps.length >= 2) {
-        createCairnPlan(input, parsed);
+        createWaykeepPlan(input, parsed);
       }
     }
     process.exit(0);
@@ -58,19 +58,19 @@ try {
       const content = readFileSync(filePath, 'utf-8');
       const parsed = parsePlanContent(content);
       if (parsed && parsed.steps.length >= 2) {
-        createCairnPlan(input, parsed);
+        createWaykeepPlan(input, parsed);
         break;
       }
     } catch { continue; }
   }
 } catch (err) {
   recordTelemetry('plan-bridge', 'error', _startTime, false, String(err));
-  console.error('[cairn] Plan bridge hook error:', err);
+  console.error('[waykeep] Plan bridge hook error:', err);
   process.exit(0);
 }
 
 /** Create a persistent Waykeep plan and output confirmation context */
-function createCairnPlan(
+function createWaykeepPlan(
   input: PostToolUseInput,
   planContent: { name: string; steps: string[] },
 ): void {

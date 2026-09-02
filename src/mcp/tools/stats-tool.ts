@@ -1,6 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { formatMemoryContent } from '../../utils/memory-injection.js';
-import { canReadPrivate } from '../../config/cairn-config.js';
+import { canReadPrivate } from '../../config/waykeep-config.js';
 import { sessionProjectId } from '../../utils/session-project.js';
 import * as z from 'zod/v4';
 import type { MemoryRepository } from '../../db/memory-repository.js';
@@ -10,7 +10,7 @@ import type Database from 'better-sqlite3';
 import { getEmbeddingModelConfig } from '../../utils/embeddings.js';
 import { formatTimestamp } from '../../utils/time.js';
 import { STATS_ACTIONS, HEALTH, CONSOLIDATION, type ContextMode } from '../../constants/index.js';
-import { isCritical } from './helpers.js';
+import { isCritical , registerToolCompat } from './helpers.js';
 import { TOOL } from '../../constants/mcp.js';
 
 type ContextModeFn = () => ContextMode;
@@ -25,7 +25,7 @@ export function registerStatsTools(
   db: Database.Database,
   getMode: ContextModeFn,
 ): void {
-  server.registerTool(
+  registerToolCompat(server, 
     TOOL.STATS,
     {
       title: 'Memory Statistics',

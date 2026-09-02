@@ -4,7 +4,7 @@ import { mkdtempSync, writeFileSync, chmodSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { resolveRelay, binaryUsable } from '../src/cli/relay.js';
-import { cairnHooks } from '../src/cli/init.js';
+import { waykeepHooks } from '../src/cli/init.js';
 import { RELAY_PROBE_FLAG, RELAY_PROBE_SENTINEL, NAMESPACE } from 'waykeep-contract';
 
 const dirs: string[] = [];
@@ -63,7 +63,7 @@ describe('relay resolution', () => {
 describe('hook config generation per relay form', () => {
   it('renders every hook command against the shell-fallback relay prefix', () => {
     const prefix = 'bash /pkg/dist/src/hooks/hook-relay.sh';
-    const hooks = cairnHooks(prefix);
+    const hooks = waykeepHooks(prefix);
     assert.equal(hooks.SessionStart[0].hooks[0].command, `${prefix} session-start`);
     // async flag preserved through the shell form
     assert.equal(hooks.PostToolUseFailure[0].hooks[0].command, `${prefix} error-learning`);

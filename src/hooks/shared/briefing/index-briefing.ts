@@ -30,7 +30,7 @@ import { TOOL } from '../../../constants/mcp.js';
 /**
  * Emit a compact index briefing. Each memory entry is rendered as a single
  * short line prefixed with a stable type-coded ID (dec:/pit:/cor:/inv:) that
- * Claude can pass to the cairn_expand MCP tool to pull full content, why,
+ * Claude can pass to the waykeep_expand MCP tool to pull full content, why,
  * how_to_apply, confidence, and effectiveness on demand.
  *
  * Target: ~400 tokens total. Much tighter than the full briefing. Trades

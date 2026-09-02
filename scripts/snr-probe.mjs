@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Ad-hoc probe: compile a startup briefing against the live ~/.cairn/cairn.db
+ * Ad-hoc probe: compile a startup briefing against the live store (resolveStateRoot: ~/.waykeep, legacy ~/.cairn until migration)
  * and emit the exact text the compiler would produce right now, so SNR can
  * be measured against the latest committed state instead of a canned ctx.
  *
@@ -27,10 +27,10 @@ import { MemoryRepository } from '../dist/src/db/memory-repository.js';
 import { PlanRepository } from '../dist/src/db/plan-repository.js';
 import { compileBriefing, buildBriefingQueryFp } from '../dist/src/hooks/shared/briefing-compiler.js';
 import { projectId } from '../dist/src/utils/project-id.js';
-import { homedir } from 'node:os';
+import { resolveStateRoot } from '../dist/src/constants/paths.js';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 
 const args = process.argv.slice(2);
 const isCold = args.includes('--cold');
@@ -39,7 +39,20 @@ const projectArgIdx = args.indexOf('--project');
 const projectOverride = projectArgIdx >= 0 ? args[projectArgIdx + 1] : null;
 
 const cwd = process.cwd();
-const dbPath = join(homedir(), '.cairn', 'cairn.db');
+// THE coherent state root (Phase B): a hardcoded legacy ~/.cairn/cairn.db would let
+// openDatabase (which CREATES the file + schema) mint an EMPTY legacy store on
+// a fresh/migrated install, and resolveStateRoot would then pick that empty
+// legacy DB over the populated current one — presenting total memory loss
+// (codex B1 review). Resolve the same marker-aware root every process uses,
+// and refuse to run rather than create a shadow store.
+const dbArgIdx = args.indexOf('--db');
+const dbOverride = dbArgIdx >= 0 ? args[dbArgIdx + 1] : null;
+const root = resolveStateRoot();
+const dbPath = dbOverride ?? join(root.dir, root.dbFilename);
+if (!existsSync(dbPath)) {
+  console.error(`snr-probe: no store at ${dbPath} — refusing to create one. Point --db at an existing store.`);
+  process.exit(1);
+}
 const db = openDatabase({ dbPath });
 const memRepo = new MemoryRepository(db);
 const planRepo = new PlanRepository(db);

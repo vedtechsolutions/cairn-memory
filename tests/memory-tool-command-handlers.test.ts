@@ -17,6 +17,7 @@ import { PlanRepository } from '../src/db/plan-repository.js';
 import { MemoryCommandHandlers } from '../src/memory-tool/command-handlers.js';
 import { RenderCache } from '../src/memory-tool/render-cache.js';
 import { encodeProjectSegment } from '../src/memory-tool/path-router.js';
+import { TOOL } from '../src/constants/mcp.js';
 
 class SpyCache extends RenderCache {
   invalidations: string[] = [];
@@ -352,7 +353,7 @@ describe('zero mutation on every error path (sweep)', () => {
   it('read-only plan.md rejects every mutating command', () => {
     planRepo.create({ project: PROJ, name: 'Guarded plan', steps: [{ description: 'step one' }] });
     const plan = `${PROJ_DIR}/plan.md`;
-    failsClean(() => h.create(plan, '- content: "x"'), /read-only — manage the plan via the cairn_plan tool/);
+    failsClean(() => h.create(plan, '- content: "x"'), new RegExp(`read-only — manage the plan via the ${TOOL.PLAN} tool`));
     failsClean(() => h.strReplace(plan, '- [fac:0123abcd@1] content: "x"'), /read-only/);
     failsClean(() => h.insert(plan, 0, '- content: "x"'), /read-only/);
     failsClean(() => h.delete(plan), /read-only/);
@@ -506,7 +507,7 @@ describe('contract behaviors', () => {
     planRepo.create({ project: PROJ, name: 'Visible plan', steps: [{ description: 'do the thing' }] });
     const out = h.view(`${PROJ_DIR}/plan.md`);
     assert.match(out, /# Plan: Visible plan \[active\]/);
-    assert.match(out, /read-only — manage via the cairn_plan tool/);
+    assert.match(out, new RegExp(`read-only — manage via the ${TOOL.PLAN} tool`));
     assert.match(out, /- \[ \] 1\. do the thing/);
     assert.doesNotMatch(out, /@\d+\]/);
     assert.throws(() => h.view('/memories/global/plan.md'), /does not exist/);

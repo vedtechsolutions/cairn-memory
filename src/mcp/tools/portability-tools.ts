@@ -4,11 +4,11 @@ import * as z from 'zod/v4';
 import type { MemoryRepository } from '../../db/memory-repository.js';
 import type { SessionCache } from '../../hooks/shared/session-cache.js';
 import { LIMITS, PROMOTION, type ContextMode, type LearnableKind, type MemoryKind, LEARNABLE_KINDS, CONFIDENCE } from '../../constants/index.js';
-import { isPrivateProject, canReadPrivate } from '../../config/cairn-config.js';
+import { isPrivateProject, canReadPrivate } from '../../config/waykeep-config.js';
 import { PrivateScopeChangeError } from '../../db/memory-repository/portability.js';
 import { learnSections, safeExcerpt } from '../../importers/learn-pipeline.js';
 import { sessionProjectId } from '../../utils/session-project.js';
-import { isCritical } from './helpers.js';
+import { isCritical , registerToolCompat } from './helpers.js';
 import { buildFileSection, buildRecordSection, parseExportDocument } from '../../memory-tool/round-trip.js';
 import { parseMarkdown } from '../../utils/markdown-parser.js';
 import { sanitize, neutralizeMemoryText } from '../../utils/validation.js';
@@ -22,9 +22,9 @@ export function registerPortabilityTools(
   getMode: ContextModeFn,
   sessionCache?: SessionCache,
 ): void {
-  // --- cairn_ingest -----------------------------------------------------------
+  // --- waykeep_ingest -----------------------------------------------------------
 
-  server.registerTool(
+  registerToolCompat(server, 
     TOOL.INGEST,
     {
       title: 'Ingest Markdown',
@@ -191,9 +191,9 @@ export function registerPortabilityTools(
     },
   );
 
-  // --- cairn_export -----------------------------------------------------------
+  // --- waykeep_export -----------------------------------------------------------
 
-  server.registerTool(
+  registerToolCompat(server, 
     TOOL.EXPORT,
     {
       title: 'Export Memories',
@@ -261,9 +261,9 @@ export function registerPortabilityTools(
     },
   );
 
-  // --- cairn_promote ----------------------------------------------------------
+  // --- waykeep_promote ----------------------------------------------------------
 
-  server.registerTool(
+  registerToolCompat(server, 
     TOOL.PROMOTE,
     {
       title: 'Promote to Global',

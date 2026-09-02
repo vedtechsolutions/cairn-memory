@@ -9,8 +9,8 @@
  *  - `NAMESPACE` is the TECHNICAL SLUG the product occupies in identifiers
  *    users and integrators can see: the environment-variable prefix, the
  *    home-relative state directory, the database filename, the MCP server
- *    name, the MCP tool prefix, and the MCP resource URI scheme. It is
- *    still "cairn" for backward compatibility.
+ *    name, the MCP tool prefix, and the MCP resource URI scheme. As of
+ *    v6.0.0 it is "waykeep"; "cairn" is the legacy namespace.
  *
  * Everything in the second group DERIVES from `NAMESPACE`, so completing
  * the rename is a one-line change here rather than an edit across 245
@@ -34,15 +34,15 @@ export const PRODUCT_DISPLAY_NAME = 'Waykeep';
 
 /**
  * The technical slug every machine-visible identifier is built from.
- * Flipping this to 'waykeep' is the v6.0.0 rename, and is the ONLY line
- * that needs to change to perform it.
+ * Flipped to 'waykeep' at v6.0.0 (the rename); 'cairn' lives on only in
+ * LEGACY_NAMESPACES and the compatibility fallbacks.
  */
-export const NAMESPACE = 'cairn';
+export const NAMESPACE = 'waykeep';
 
 /** Uppercase prefix shared by every environment variable. */
 export const ENV_PREFIX = NAMESPACE.toUpperCase() as Uppercase<typeof NAMESPACE>;
 
-/** Home-relative state directory, e.g. `~/.cairn`. */
+/** Home-relative state directory, e.g. `~/.waykeep`. */
 export const DATA_DIR_NAME = `.${NAMESPACE}` as const;
 
 /** SQLite database filename inside the state directory. */
@@ -51,10 +51,10 @@ export const DB_FILENAME = `${NAMESPACE}.db` as const;
 /** Name the MCP server registers under; appears in every client's config. */
 export const MCP_SERVER_NAME = NAMESPACE;
 
-/** Prefix on every MCP tool name, e.g. `cairn_recall`. */
+/** Prefix on every MCP tool name, e.g. `waykeep_recall`. */
 export const MCP_TOOL_PREFIX = `${NAMESPACE}_` as const;
 
-/** Scheme for MCP resource URIs, e.g. `cairn://briefing/{project}`. */
+/** Scheme for MCP resource URIs, e.g. `waykeep://briefing/{project}`. */
 export const MCP_URI_SCHEME = NAMESPACE;
 
 /**
@@ -65,11 +65,10 @@ export const MCP_URI_SCHEME = NAMESPACE;
  * trying to find what the rename missed. This list is what keeps them looking
  * backwards too.
  *
- * Empty while `NAMESPACE` has never changed. The v6.0.0 flip must add the
- * outgoing name here in the same commit, or the guards lose their ability to
- * find stragglers.
+ * The v6.0.0 flip added 'cairn' here in the same commit — the guards keep
+ * hunting the retired name for stragglers.
  */
-export const LEGACY_NAMESPACES: readonly string[] = [];
+export const LEGACY_NAMESPACES: readonly string[] = ['cairn'];
 
 /**
  * The compiled relay's self-identification handshake. `binaryUsable()` and the

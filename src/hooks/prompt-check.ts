@@ -31,6 +31,6 @@ try {
   });
 } catch (err) {
   recordTelemetry('prompt-check', 'error', _startTime, false, String(err));
-  console.error('[cairn] Prompt check hook error:', err);
+  console.error('[waykeep] Prompt check hook error:', err);
   process.exit(0);
 }

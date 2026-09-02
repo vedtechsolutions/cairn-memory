@@ -22,7 +22,7 @@ export const CONFIDENCE = {
   USER_CORRECTION: 0.9,
   AUTO_DETECTED: 0.55,
   /** Confidence for a lesson the user or agent EXPLICITLY stored via
-   *  cairn_learn (pitfalls only — other kinds have working defaults).
+   *  waykeep_learn (pitfalls only — other kinds have working defaults).
    *  Strictly above MIN_CONFIDENCE_FOR_PITFALL (0.65): equality passes at
    *  birth and dies at the first decay charge, leaving the row invisible on
    *  every confidence-gated recall/injection surface. At pitfall stability
@@ -31,10 +31,10 @@ export const CONFIDENCE = {
    *  birth); longer retention is reinforcement's job (impact boosts,
    *  strengthen) — deliberate learning buys a real head start, not
    *  immortality. Aligned with PROMOTION.MIN_CONFIDENCE so a deliberate
-   *  lesson is born promotable. Also the floor cairn_strengthen applies to
+   *  lesson is born promotable. Also the floor waykeep_strengthen applies to
    *  pitfalls: explicit validation must never strand a row ON the gate. */
   DELIBERATE: 0.7,
-  /** Floor cairn_strengthen applies to DECISIONS (step-6 carry-in F-A):
+  /** Floor waykeep_strengthen applies to DECISIONS (step-6 carry-in F-A):
    *  0.6 + STRENGTHEN_INCREMENT landed exactly ON the 0.7 decision
    *  surfacing gate (PROACTIVE.MIN_DECISION_CONFIDENCE, >= semantics) —
    *  eligible for an instant, gone at the first decay charge. 0.75 clears
@@ -46,7 +46,7 @@ export const CONFIDENCE = {
   /** Ceiling for repetition-driven dedup reinforcement (== CORRECTION, and
    *  pinned to it by test): re-observing the same lesson boosts its row by
    *  BOOST_INCREMENT per merge but can never push it PAST correction
-   *  authority — without this, six identical cairn_learn calls ratcheted a
+   *  authority — without this, six identical waykeep_learn calls ratcheted a
    *  0.7 pitfall to 1.0, above USER_CORRECTION (review block: repetition is
    *  not authority). A row already above the ceiling keeps its level (no
    *  downgrade, no further repetition growth); only an explicitly

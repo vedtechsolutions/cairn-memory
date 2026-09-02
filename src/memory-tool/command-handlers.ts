@@ -64,7 +64,7 @@ export class MemoryCommandHandlers {
     this.db = deps.db;
     this.planRepo = deps.planRepo;
     this.cache = deps.cache ?? new RenderCache();
-    this.log = deps.log ?? ((m) => console.error(`[cairn:memory-tool] ${m}`));
+    this.log = deps.log ?? ((m) => console.error(`[waykeep:memory-tool] ${m}`));
   }
 
   // --- view -------------------------------------------------------------------

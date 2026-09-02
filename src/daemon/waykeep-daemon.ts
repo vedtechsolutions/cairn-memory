@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
- * cairn-daemon — standalone owner of the shared hook socket.
+ * waykeep-daemon — standalone owner of the shared hook socket.
  *
- * One instance per machine (systemd unit: deploy/cairn-daemon.service)
- * serves ~/.cairn/hook-daemon.sock permanently, so every agent client on
+ * One instance per machine (systemd unit: deploy/waykeep-daemon.service)
+ * serves ~/.waykeep/hook-daemon.sock permanently, so every agent client on
  * the host (Claude Code, Codex, future MCP consumers) shares one warm hook
  * pipeline regardless of session churn. Client MCP servers detect the live
  * daemon through the cooperative claim protocol (socket-ownership.ts) and
@@ -19,7 +19,7 @@ import { createHookDbClient } from '../hooks/shared/db-client.js';
 import { SessionCache } from '../hooks/shared/session-cache.js';
 import { startHookSocket } from '../mcp/hook-socket.js';
 import { ADAPTER_WORKERS } from '../adapters/workers.js';
-import { ensureCairnDirSecure, isOwnerOnly } from '../mcp/socket-ownership.js';
+import { ensureWaykeepDirSecure, isOwnerOnly } from '../mcp/socket-ownership.js';
 import { assertManifestPinned } from '../utils/artifact-verification.js';
 import { warmupEmbeddings, getEmbeddingModelConfig } from '../utils/embeddings.js';
 import { isRerankEnabled, resolveRerankerModel, warmupReranker } from '../utils/reranker.js';
@@ -43,15 +43,15 @@ async function main(): Promise<void> {
   if (isRerankEnabled()) assertManifestPinned(resolveRerankerModel(), 'reranker');
 
   // Fail-closed: the daemon's whole job is to serve a same-uid-only socket. If
-  // ~/.cairn cannot be secured to owner-only, refuse to start so the
+  // ~/.waykeep cannot be secured to owner-only, refuse to start so the
   // misconfiguration surfaces instead of spinning in the claim loop or serving
   // an exposed socket. Exit 1 pairs with RestartPreventExitStatus=1 in
-  // deploy/cairn-daemon.service so systemd marks the unit `failed` rather than
+  // deploy/waykeep-daemon.service so systemd marks the unit `failed` rather than
   // relaunching every RestartSec forever.
-  const dir = ensureCairnDirSecure();
+  const dir = ensureWaykeepDirSecure();
   if (!isOwnerOnly(dir, { followSymlink: true })) {
     console.error(
-      `[cairn-daemon] Fatal: ${dir} is not owner-only (uid/mode) — refusing to serve. Fix ownership/permissions and restart.`,
+      `[waykeep-daemon] Fatal: ${dir} is not owner-only (uid/mode) — refusing to serve. Fix ownership/permissions and restart.`,
     );
     process.exit(1);
   }
@@ -66,7 +66,7 @@ async function main(): Promise<void> {
     server = await startHookSocket(client, cache, undefined, { mode: 'standalone' });
     if (server === null) {
       console.error(
-        `[cairn-daemon] Socket owned by another process — retrying in ${CLAIM_RETRY_INTERVAL_MS / 1000}s`,
+        `[waykeep-daemon] Socket owned by another process — retrying in ${CLAIM_RETRY_INTERVAL_MS / 1000}s`,
       );
       await delay(CLAIM_RETRY_INTERVAL_MS);
     }
@@ -76,7 +76,7 @@ async function main(): Promise<void> {
   // Adapter daemon workers (currently: the Codex rollout tailer — capture
   // fallback for sessions with untrusted or disabled hooks, naturally
   // quiescent while hooks are live via seen-marker dedup). Standalone
-  // daemon only; CAIRN_TAILER=0 disables all adapter workers.
+  // daemon only; WAYKEEP_TAILER=0 disables all adapter workers.
   const workers: { name: string; handle: { stop(): void } }[] = [];
   if (process.env[ENV.TAILER] !== '0') {
     for (const set of ADAPTER_WORKERS) {
@@ -85,12 +85,12 @@ async function main(): Promise<void> {
       }
     }
   }
-  for (const worker of workers) console.error(`[cairn] ${worker.name} adapter worker started`);
+  for (const worker of workers) console.error(`[waykeep] ${worker.name} adapter worker started`);
 
   // Graceful shutdown so the process 'exit' cleanup (tracker flush + claim
   // release) actually runs — a default signal death would skip it.
   const shutdown = (signal: NodeJS.Signals): void => {
-    console.error(`[cairn-daemon] ${signal} received — shutting down`);
+    console.error(`[waykeep-daemon] ${signal} received — shutting down`);
     for (const worker of workers) worker.handle.stop();
     httpServer.close(() => process.exit(0));
     setTimeout(() => process.exit(0), SHUTDOWN_GRACE_MS).unref();
@@ -100,6 +100,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((error) => {
-  console.error('[cairn-daemon] Fatal:', error);
+  console.error('[waykeep-daemon] Fatal:', error);
   process.exit(1);
 });

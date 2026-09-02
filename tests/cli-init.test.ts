@@ -5,8 +5,14 @@ import { mkdtempSync, writeFileSync, readFileSync, existsSync, rmSync } from 'no
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { ENV } from '../src/constants/env.js';
+import { MCP_SERVER_NAME } from '../src/constants/mcp.js';
+import { BACKUP_SUFFIX } from '../src/constants/paths.js';
+import { LEGACY_NAMESPACES } from 'waykeep-contract';
 
 const CLI = join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'cli', 'index.js');
+/** The exact absolute server.js path `waykeep init` resolves for THIS install. */
+const SERVER = join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'mcp', 'server.js');
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -25,10 +31,10 @@ function init(settingsPath: string, args: string[] = []): SpawnSyncReturns<strin
     encoding: 'utf8',
     env: {
       ...process.env,
-      CAIRN_CLAUDE_SETTINGS: settingsPath,
+      [ENV.CLAUDE_SETTINGS]: settingsPath,
       // init WRITES the Codex dir now — must stay hermetic even when this
       // file is run directly without the hermetic-env preload.
-      CAIRN_CODEX_DIR: process.env.CAIRN_CODEX_DIR ?? `${settingsPath}.codex-hermetic`,
+      [ENV.CODEX_DIR]: process.env[ENV.CODEX_DIR] ?? `${settingsPath}.codex-hermetic`,
     },
   }) as SpawnSyncReturns<string>;
 }
@@ -48,7 +54,7 @@ describe('cairn init CLI', () => {
     const result = init(path);
     assert.equal(result.status, 0, result.stdout + result.stderr);
     const s = read(path);
-    assert.ok(s.mcpServers?.cairn, 'cairn MCP server written');
+    assert.ok(s.mcpServers?.[MCP_SERVER_NAME], 'cairn MCP server written');
     assert.ok(s.statusLine, 'statusLine written');
     // All 14 hook events present.
     const events = Object.keys(s.hooks ?? {});
@@ -61,6 +67,47 @@ describe('cairn init CLI', () => {
     const stop = s.hooks!.Stop[0].hooks;
     assert.match(stop[0].command, /governance-gate/u);
     assert.match(stop[1].command, /hook-relay stop$/u);
+  });
+
+  it('sweeps a legacy `cairn` MCP server that launches OUR EXACT server.js on in-place upgrade', () => {
+    const legacy = LEGACY_NAMESPACES[0];
+    const path = tempSettingsPath();
+    writeFileSync(path, JSON.stringify({
+      mcpServers: { [legacy]: { command: 'node', args: [SERVER] } },
+    }));
+    const result = init(path);
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    const s = read(path);
+    assert.equal(s.mcpServers?.[legacy], undefined, 'retired-namespace alias of THIS install removed');
+    assert.ok(s.mcpServers?.[MCP_SERVER_NAME], 'waykeep server added');
+  });
+
+  it('KEEPS + WARNS on a legacy `cairn` server at a DIFFERENT install path (never deletes foreign)', () => {
+    const legacy = LEGACY_NAMESPACES[0];
+    const path = tempSettingsPath();
+    // A waykeep/cairn server.js, but a DIFFERENT install — could be a relocated
+    // old install OR another project. Must NOT be deleted (codex B1 review).
+    writeFileSync(path, JSON.stringify({
+      mcpServers: { [legacy]: { command: 'node', args: ['/home/user/other-project/dist/src/mcp/server.js'] } },
+    }));
+    const result = init(path);
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    const s = read(path);
+    assert.ok(s.mcpServers?.[legacy], 'a look-alike at another path must NOT be deleted');
+    assert.match(result.stdout, /left in place/u, 'must warn about the retained legacy server');
+  });
+
+  it('KEEPS a foreign server merely named `cairn` that does not launch our server.js', () => {
+    const legacy = LEGACY_NAMESPACES[0];
+    const path = tempSettingsPath();
+    // Substring-y but NOT ours: a full-segment/exact-suffix match must reject it.
+    writeFileSync(path, JSON.stringify({
+      mcpServers: { [legacy]: { command: 'node', args: ['/some/notdist/src/mcp/server.js-wrapper'] } },
+    }));
+    const result = init(path);
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    const s = read(path);
+    assert.ok(s.mcpServers?.[legacy], 'a foreign server merely named cairn must NOT be swept');
   });
 
   it('--dry-run previews and writes nothing', () => {
@@ -84,7 +131,7 @@ describe('cairn init CLI', () => {
     const s = read(path);
     assert.equal(s.model, 'opus', 'unrelated setting kept');
     assert.ok(s.mcpServers?.other, 'other MCP server kept');
-    assert.ok(s.mcpServers?.cairn, 'cairn MCP server added');
+    assert.ok(s.mcpServers?.[MCP_SERVER_NAME], 'cairn MCP server added');
     assert.equal(s.statusLine?.command, 'my-custom-statusline', 'non-Cairn StatusLine untouched');
     const ss = s.hooks!.SessionStart;
     assert.ok(ss.some(e => e.hooks.some(h => h.command === 'user-own-hook')), 'user hook preserved');
@@ -117,7 +164,7 @@ describe('cairn init CLI', () => {
     writeFileSync(path, JSON.stringify({ model: 'sonnet' }));
     init(path);
     init(path); // second run must not clobber the pristine backup
-    const backup = JSON.parse(readFileSync(`${path}.cairn-backup`, 'utf-8')) as Settings;
+    const backup = JSON.parse(readFileSync(`${path}${BACKUP_SUFFIX}`, 'utf-8')) as Settings;
     assert.equal(backup.model, 'sonnet');
     assert.equal(backup.mcpServers, undefined, 'backup is the pre-init original, not a merged copy');
   });
@@ -189,7 +236,7 @@ describe('statusline-only migration sweep (review N4)', () => {
     assert.equal(first.status, 0, first.stderr);
     const before = JSON.parse(readFileSync(settingsPath, 'utf8')) as Settings;
     assert.ok(Object.keys(before.hooks ?? {}).length >= 10, 'sanity: fully wired');
-    assert.ok(before.mcpServers?.cairn, 'sanity: MCP wired');
+    assert.ok(before.mcpServers?.[MCP_SERVER_NAME], 'sanity: MCP wired');
     // Add a foreign hook that must survive the sweep.
     before.hooks!.SessionStart!.push({ hooks: [{ command: 'users-own-hook' }] });
     writeFileSync(settingsPath, JSON.stringify(before));
@@ -197,7 +244,7 @@ describe('statusline-only migration sweep (review N4)', () => {
     const r = init(settingsPath, ['--statusline-only']);
     assert.equal(r.status, 0, r.stderr);
     const after = JSON.parse(readFileSync(settingsPath, 'utf8')) as Settings;
-    assert.equal(after.mcpServers?.cairn, undefined, 'Cairn MCP removed — the plugin provides it');
+    assert.equal(after.mcpServers?.[MCP_SERVER_NAME], undefined, 'Cairn MCP removed — the plugin provides it');
     const allCommands = JSON.stringify(after.hooks ?? {});
     assert.ok(!allCommands.includes('dist/src/hooks'), 'no settings-wired Cairn hooks remain (double-fire closed)');
     assert.ok(allCommands.includes('users-own-hook'), 'foreign hooks survive');
