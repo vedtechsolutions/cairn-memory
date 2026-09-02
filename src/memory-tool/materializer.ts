@@ -14,12 +14,14 @@
  * and never crashes the view.
  */
 import type Database from 'better-sqlite3';
+import { NAMESPACE } from 'waykeep-contract';
 import type { Memory, MemoryRow } from '../db/memory-repository/types.js';
 import { rowToMemory } from '../db/memory-repository/reads.js';
 import { precisionRatio } from '../utils/scoring-primitives.js';
 import { CATEGORY_KINDS, type Category } from './path-router.js';
 import { RenderCache, type FrozenRendering } from './render-cache.js';
 import { KIND_CODES } from './token-codes.js';
+import { log } from '../utils/log.js';
 
 /** plan is repo-backed and deferred — the materializer refuses it. */
 export type MaterializableCategory = Exclude<Category, 'plan'>;
@@ -29,7 +31,8 @@ export const FRESH_RENDERING_NOTICE =
 export const RECORD_SANITY_LIMIT = 10_000;
 
 export type Log = (message: string) => void;
-const defaultLog: Log = (message) => console.error(`[waykeep:materializer] ${message}`);
+const materializerLog = log.child('materializer');
+const defaultLog: Log = (message) => materializerLog.warn(message);
 
 /** Identity contract: canonical LOWERCASE UUID ids only — the §5 grammar
  *  is lowercase-hex, so an uppercase id would render a token the parser
@@ -255,10 +258,10 @@ export function renderRecords(
     }
   }
   if (records.length > RECORD_SANITY_LIMIT) {
-    lines.unshift(`[waykeep: ${records.length} records in this file — consider cleanup]`);
+    lines.unshift(`[${NAMESPACE}: ${records.length} records in this file — consider cleanup]`);
   }
   if (unrenderable > 0) {
-    lines.unshift(`[waykeep: ${unrenderable} records unrenderable — see logs]`);
+    lines.unshift(`[${NAMESPACE}: ${unrenderable} records unrenderable — see logs]`);
   }
   return { lines, unrenderable };
 }

@@ -16,6 +16,7 @@ import { createHookDbClient } from './shared/db-client.js';
 import { handleSubagentContext } from './handlers/subagent-context-handler.js';
 import { recordTelemetry } from './shared/hook-telemetry.js';
 import { ENV } from '../constants/env.js';
+import { log } from '../utils/log.js';
 
 const _startTime = Date.now();
 try {
@@ -36,6 +37,6 @@ try {
   });
 } catch (err) {
   recordTelemetry('subagent-context', 'error', _startTime, false, String(err));
-  console.error('[waykeep] SubagentStart hook error:', err);
+  log.error('SubagentStart hook error:', err);
   process.exit(0);
 }

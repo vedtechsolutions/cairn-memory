@@ -31,6 +31,7 @@ import type Database from 'better-sqlite3';
 import {
   CONFIDENCE, DECAY, LIMITS, NON_DECAYING_KINDS, STABILITY_BY_KIND, SOURCE_WEIGHT,
 } from '../constants/index.js';
+import { log } from '../utils/log.js';
 
 const MS_PER_DAY = 86_400_000;
 const NON_DECAYING_PLACEHOLDERS = NON_DECAYING_KINDS.map(() => '?').join(',');
@@ -162,7 +163,7 @@ export function applyConfidenceDecay(db: Database.Database, nowMs: number = Date
          AND id NOT IN (SELECT local_memory_id FROM sync_entity_map WHERE state = 'bound')`
     ).run(...ids).changes;
     // Forensic trail — decay runs unattended and this delete is irreversible.
-    console.error(`[waykeep] decay: pruned ${pruned} dead memory row(s) (floored, never recalled, ${DECAY.PRUNE_DEAD_AGE_DAYS}d+ old)`);
+    log.warn(`decay: pruned ${pruned} dead memory row(s) (floored, never recalled, ${DECAY.PRUNE_DEAD_AGE_DAYS}d+ old)`);
   }
 
   // Also clean up invalidated memories older than 30 days

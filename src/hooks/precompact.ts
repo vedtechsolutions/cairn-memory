@@ -18,6 +18,7 @@ import { generateFingerprint } from '../utils/fingerprint.js';
 import { extractWhyContext } from '../utils/intent-classifier.js';
 import { isSystemContent } from '../utils/validation.js';
 import { ENV } from '../constants/env.js';
+import { log } from '../utils/log.js';
 
 const _startTime = Date.now();
 try {
@@ -174,7 +175,7 @@ try {
       if (!result.deduplicated) minedCount++;
     }
     if (minedCount > 0) {
-      console.error(`[waykeep] PreCompact: auto-mined ${minedCount} decision(s) from assistant text`);
+      log.info(`PreCompact: auto-mined ${minedCount} decision(s) from assistant text`);
     }
   }
 
@@ -211,7 +212,7 @@ try {
   });
 } catch (err) {
   recordTelemetry('precompact', 'error', _startTime, false, String(err));
-  console.error('[waykeep] PreCompact hook error:', err);
+  log.error('PreCompact hook error:', err);
   process.exit(0);
 }
 

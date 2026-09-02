@@ -19,6 +19,7 @@ import { markRecallSuccess } from '../utils/prediction.js';
 import { InvestigationRepository } from '../db/investigation-repository.js';
 import { recordGovernanceEventFailOpen } from '../governance/recorder.js';
 import { ENV } from '../constants/env.js';
+import { log } from '../utils/log.js';
 
 const _startTime = Date.now();
 
@@ -159,7 +160,7 @@ try {
   recordTelemetry('success-tracker', input.tool_name, _startTime, true);
 } catch (err) {
   recordTelemetry('success-tracker', 'error', _startTime, false, String(err));
-  console.error('[waykeep] Success tracker hook error:', err);
+  log.error('Success tracker hook error:', err);
   process.exit(0);
 }
 

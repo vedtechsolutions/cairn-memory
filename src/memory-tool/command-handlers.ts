@@ -28,6 +28,10 @@ import {
 } from '../db/memory-repository/journal.js';
 import { RenderCache } from './render-cache.js';
 import { renderDirectoryListing, renderFileView, renderPlanLines } from './view-renderer.js';
+import { log } from '../utils/log.js';
+
+const toolLog = log.child('memory-tool');
+const defaultLog: Log = (m) => toolLog.warn(m);
 
 export interface HandlerDeps {
   db: Database.Database;
@@ -64,7 +68,7 @@ export class MemoryCommandHandlers {
     this.db = deps.db;
     this.planRepo = deps.planRepo;
     this.cache = deps.cache ?? new RenderCache();
-    this.log = deps.log ?? ((m) => console.error(`[waykeep:memory-tool] ${m}`));
+    this.log = deps.log ?? defaultLog;
   }
 
   // --- view -------------------------------------------------------------------

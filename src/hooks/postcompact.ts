@@ -10,6 +10,7 @@ import { createHookDbClient } from './shared/db-client.js';
 import { handlePostCompact } from './handlers/postcompact-handler.js';
 import { recordTelemetry } from './shared/hook-telemetry.js';
 import { ENV } from '../constants/env.js';
+import { log } from '../utils/log.js';
 
 const _startTime = Date.now();
 try {
@@ -31,6 +32,6 @@ try {
   }
 } catch (err) {
   recordTelemetry('postcompact', 'error', _startTime, false, String(err));
-  console.error('[waykeep] PostCompact hook error:', err);
+  log.error('PostCompact hook error:', err);
   process.exit(0);
 }

@@ -12,6 +12,7 @@ import { createHookDbClient } from './shared/db-client.js';
 import { recordTelemetry } from './shared/hook-telemetry.js';
 import { handlePitfallCheck } from './handlers/pitfall-handler.js';
 import { ENV } from '../constants/env.js';
+import { log } from '../utils/log.js';
 
 const _startTime = Date.now();
 try {
@@ -31,6 +32,6 @@ try {
   client.close();
 } catch (err) {
   recordTelemetry('pitfall-check', 'error', _startTime, false, String(err));
-  console.error('[waykeep] Pitfall check hook error:', err);
+  log.error('Pitfall check hook error:', err);
   process.exit(0);
 }

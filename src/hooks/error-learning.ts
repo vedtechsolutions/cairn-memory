@@ -17,6 +17,7 @@ import { createHookDbClient } from './shared/db-client.js';
 import { handleErrorLearning } from './handlers/error-learning-handler.js';
 import { recordTelemetry } from './shared/hook-telemetry.js';
 import { ENV } from '../constants/env.js';
+import { log } from '../utils/log.js';
 
 const _startTime = Date.now();
 try {
@@ -28,7 +29,7 @@ try {
 
   if (result.surfacedProcessed) {
     const { count, files } = result.surfacedProcessed;
-    console.error(`[waykeep] Processed ${count} surfaced pitfall(s) after error on ${files.join(', ')}`);
+    log.info(`Processed ${count} surfaced pitfall(s) after error on ${files.join(', ')}`);
   }
 
   // result.output is the serialized hookSpecificOutput/additionalContext
@@ -55,6 +56,6 @@ try {
   client.close();
 } catch (err) {
   recordTelemetry('error-learning', 'error', _startTime, false, String(err));
-  console.error('[waykeep] Error learning hook error:', err);
+  log.error('Error learning hook error:', err);
   process.exit(0);
 }

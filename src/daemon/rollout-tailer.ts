@@ -29,6 +29,7 @@ import type { RolloutToolRecord } from '../hooks/shared/rollout-lookup.js';
 import { CLIENT_CODEX } from '../constants/clients.js';
 import { ROLLOUT_LOOKUP, ROLLOUT_TAILER } from '../constants/index.js';
 import { ENV } from '../constants/env.js';
+import { log } from '../utils/log.js';
 
 interface FileState {
   offset: number;
@@ -112,7 +113,7 @@ function warnVersionOnce(state: FileState, cliVersion: string | null, path: stri
   // known rollout carries cli_version, so its absence implies a format
   // change too.
   if (cliVersion === null || !cliVersion.startsWith(ROLLOUT_TAILER.KNOWN_CLI_PREFIX)) {
-    console.error(`[waykeep] rollout-tailer: ${path} written by codex ${cliVersion ?? '(no cli_version)'} (validated against ${ROLLOUT_TAILER.KNOWN_CLI_PREFIX}x) — parsing continues; verify capture after codex upgrades`);
+    log.warn(`rollout-tailer: ${path} written by codex ${cliVersion ?? '(no cli_version)'} (validated against ${ROLLOUT_TAILER.KNOWN_CLI_PREFIX}x) — parsing continues; verify capture after codex upgrades`);
   }
   state.versionWarned = true;
 }
@@ -199,7 +200,7 @@ export function startRolloutTailer(
   }
 
   const interval = setInterval(() => {
-    tick().catch((err) => console.error('[waykeep] rollout-tailer tick failed:', err));
+    tick().catch((err) => log.error('rollout-tailer tick failed:', err));
   }, ROLLOUT_TAILER.INTERVAL_MS);
   interval.unref();
 

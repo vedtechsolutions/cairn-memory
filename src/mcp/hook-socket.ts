@@ -34,6 +34,7 @@ import { handleStatusLine } from '../hooks/handlers/statusline-handler.js';
 import { handleSessionStart } from '../hooks/handlers/session-start-handler.js';
 import { recordTelemetry } from '../hooks/shared/hook-telemetry.js';
 import { evaluateGovernanceWarnStop } from '../governance/warn-stop.js';
+import { log } from '../utils/log.js';
 
 // --- Constants ---
 const REQUEST_TIMEOUT_MS = 5000;
@@ -302,18 +303,14 @@ export async function startHookSocket(
   // pre-existing wrong-owned dir), refuse to serve — hooks fall back to
   // direct-node execution, which is safe, rather than exposing the socket.
   if (!isOwnerOnly(dir, { followSymlink: true })) {
-    console.error(
-      `[waykeep] Refusing to serve hook socket: ${dir} is not owner-only — hooks will use the direct-node fallback`,
-    );
+    log.error(`Refusing to serve hook socket: ${dir} is not owner-only — hooks will use the direct-node fallback`);
     return null;
   }
   const mode: HookSocketMode = options?.mode ?? 'embedded';
 
   const claim = await acquireSocketClaim();
   if (!claim.claimed) {
-    console.error(
-      `[waykeep] Hook socket already served by PID ${claim.ownerPid ?? 'unknown'} — sharing it, not claiming`,
-    );
+    log.info(`Hook socket already served by PID ${claim.ownerPid ?? 'unknown'} — sharing it, not claiming`);
     return null;
   }
 
@@ -425,7 +422,7 @@ export async function startHookSocket(
       res.writeHead(200, { 'Content-Type': 'text/plain' });
       res.end(result.output ?? '');
     } catch (err) {
-      console.error(`[waykeep] Hook handler error on ${req.url}:`, err);
+      log.error(`Hook handler error on ${req.url}:`, err);
       recordTelemetry('daemon', req.url ?? 'unknown', startTime, false, String(err), undefined, client.db);
       res.writeHead(500);
       res.end(`Handler error: ${err}`);
@@ -434,7 +431,7 @@ export async function startHookSocket(
 
   const server = createServer((req, res) => {
     handleRequest(req, res).catch(err => {
-      console.error('[waykeep] Unhandled hook request error:', err);
+      log.error('Unhandled hook request error:', err);
       if (!res.headersSent) {
         res.writeHead(500);
         res.end('Internal error');
@@ -457,7 +454,7 @@ export async function startHookSocket(
       server.listen(socketPath(), onListening);
     });
   } catch (err) {
-    console.error(`[waykeep] Hook socket bind failed on ${socketPath()}: ${err}`);
+    log.error(`Hook socket bind failed on ${socketPath()}: ${err}`);
     releaseSocketClaim();
     return null;
   }
@@ -469,9 +466,7 @@ export async function startHookSocket(
   // guard; this is the verified defense in depth on the socket file itself.
   try { chmodSync(socketPath(), FS_PERMS.FILE); } catch { /* best-effort */ }
   if (!isOwnerOnly(socketPath())) {
-    console.error(
-      `[waykeep] Refusing to serve hook socket: ${socketPath()} is not owner-only after bind — using direct-node fallback`,
-    );
+    log.error(`Refusing to serve hook socket: ${socketPath()} is not owner-only after bind — using direct-node fallback`);
     // Drop any connection opened in the pre-verify window so close() can't
     // stall on a held-open keep-alive socket (Node >= 18.2; engines require 20).
     server.closeAllConnections();
@@ -483,7 +478,7 @@ export async function startHookSocket(
   // Refresh the claim written by acquireSocketClaim — diagnostic identity for
   // probes and for the claim protocol's mid-startup back-off.
   writeFileSync(pidPath(), String(process.pid), { mode: FS_PERMS.FILE });
-  console.error(`[waykeep] Hook socket listening on ${socketPath()} (${mode}, PID ${process.pid})`);
+  log.info(`Hook socket listening on ${socketPath()} (${mode}, PID ${process.pid})`);
 
   // Now that we are actually serving, start the tracker flush timer. Deferred
   // to here so the bind-failure / not-owner-only bail-outs above never leave a
@@ -496,7 +491,7 @@ export async function startHookSocket(
   // without a listener the EventEmitter would throw and crash the process. Log
   // and keep running — the direct-node hook fallback covers a degraded socket.
   server.on('error', (err) => {
-    console.error(`[waykeep] Hook socket runtime error on ${socketPath()}:`, err);
+    log.error(`Hook socket runtime error on ${socketPath()}:`, err);
   });
 
   // Cleanup on process exit — one shared listener; repeated startHookSocket

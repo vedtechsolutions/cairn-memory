@@ -11,6 +11,15 @@ export const DB = {
   BUSY_TIMEOUT_MS: 5000,
 } as const;
 
+// --- Diagnostic logging -----------------------------------------------------
+
+/** Levels for the stderr diagnostics of the long-running processes and the
+ *  data layer, most to least severe. `WAYKEEP_LOG_LEVEL` selects the least
+ *  severe level still printed; `WAYKEEP_VERBOSE=1` is a shortcut for debug. */
+export const LOG_LEVELS = ['silent', 'error', 'warn', 'info', 'debug'] as const;
+export type LogLevel = typeof LOG_LEVELS[number];
+export const DEFAULT_LOG_LEVEL: LogLevel = 'info';
+
 // --- Atomic file replacement ------------------------------------------------
 
 /** Temp-name allocation for writeFileAtomic: names carry this many random

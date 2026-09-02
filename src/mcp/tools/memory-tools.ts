@@ -28,6 +28,7 @@ import { embed, embedQuery, embeddingToBuffer, isEmbeddingReady, bufferToEmbeddi
 import { extractAnchor, anchorToJson } from '../../utils/anchor.js';
 import { cosineSimilarity } from '../../utils/similarity.js';
 import { TOOL } from '../../constants/mcp.js';
+import { log } from '../../utils/log.js';
 
 type ContextModeFn = () => ContextMode;
 
@@ -167,7 +168,7 @@ export function registerMemoryTools(
         if (reordered === null) {
           // Transient unavailability — degrade EXPLICITLY, never silently
           rerankFallback = true;
-          console.error('[waykeep] rerank unavailable — returning RRF order (labeled)');
+          log.warn('rerank unavailable — returning RRF order (labeled)');
         } else {
           const byId = new Map(results.map(r => [r.memory.id, r]));
           results = reordered.map(c => byId.get(c.id)).filter((r): r is NonNullable<typeof r> => r !== undefined);

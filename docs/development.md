@@ -197,7 +197,7 @@ node scripts/longmemeval/run.mjs \
 node scripts/repair-confidence.mjs                  # dry-run confidence repair (see --execute)
 ```
 
-Test-environment overrides (all set automatically by `tests/hermetic-env.cjs`):
+Environment overrides (`tests/hermetic-env.cjs` sets the hermetic ones automatically; the rest are operator knobs, honored in production):
 
 | Env var | Effect |
 |---------|--------|
@@ -212,6 +212,8 @@ Test-environment overrides (all set automatically by `tests/hermetic-env.cjs`):
 | `WAYKEEP_CLAUDE_SETTINGS` | Overrides `~/.claude/settings.json` for `waykeep init` |
 | `WAYKEEP_CLAUDE_CONFIG` | Overrides `~/.claude.json` (the MCP registry `waykeep init` reads) |
 | `WAYKEEP_CLAUDE_BIN` | Path of the `claude` CLI `waykeep init` runs (also useful when it is installed off-PATH) |
+| `WAYKEEP_LOG_LEVEL` | Diagnostic verbosity for the MCP server, daemon, hooks and data layer: `silent`, `error`, `warn`, `info` (default), `debug` (also honored in production; `waykeep init` sets `info`) |
+| `WAYKEEP_VERBOSE` | `1` selects `debug` logging and per-statement SQLite tracing |
 
 
 

@@ -34,6 +34,8 @@ import { migrateToV28 } from './migrations/v28-governance.js';
 import { migrateToV29 } from './migrations/v29-origin-client.js';
 import { migrateToV30 } from './migrations/v30-telemetry-rollup.js';
 import { migrateToV32 } from './migrations/v32-team-sync.js';
+import { log } from '../utils/log.js';
+const dbLog = log.child('db');
 
 const LAST_LEGACY_SCHEMA_VERSION = 27;
 
@@ -74,7 +76,7 @@ export function openDatabase(options: ConnectionOptions = {}): Database.Database
   }
 
   const db = new Database(dbPath, {
-    verbose: options.verbose ? (msg: unknown) => console.error('[waykeep-db]', msg) : undefined,
+    verbose: options.verbose ? (msg: unknown) => dbLog.debug(String(msg)) : undefined,
   });
 
   // Restrict the DB file to its owner. Older installs left it world-readable
@@ -515,7 +517,7 @@ function checkIntegrity(dbPath: string, verbose?: boolean): boolean {
     testDb.close();
     const ok = result.length === 1 && result[0].integrity_check === 'ok';
     if (!ok && verbose) {
-      console.error('[waykeep-db] Integrity check failed:', result);
+      dbLog.error('Integrity check failed:', result);
     }
     return ok;
   } catch {
@@ -526,7 +528,7 @@ function checkIntegrity(dbPath: string, verbose?: boolean): boolean {
 function recoverCorruptDb(dbPath: string, verbose?: boolean): void {
   const backupPath = `${dbPath}.corrupt.${Date.now()}`;
   if (verbose) {
-    console.error(`[waykeep-db] Database corrupt. Backing up to ${backupPath} and creating fresh DB.`);
+    dbLog.error(`Database corrupt. Backing up to ${backupPath} and creating fresh DB.`);
   }
   try {
     copyFileSync(dbPath, backupPath);
@@ -537,6 +539,6 @@ function recoverCorruptDb(dbPath: string, verbose?: boolean): void {
       if (existsSync(sidecar)) unlinkSync(sidecar);
     }
   } catch (err) {
-    console.error('[waykeep-db] Recovery failed:', err);
+    dbLog.error('Recovery failed:', err);
   }
 }

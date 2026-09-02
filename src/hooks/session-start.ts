@@ -25,6 +25,7 @@ import { handleSessionStart } from './handlers/session-start-handler.js';
 import { recordTelemetry } from './shared/hook-telemetry.js';
 import { appendFileSync } from 'node:fs';
 import { ENV } from '../constants/env.js';
+import { log } from '../utils/log.js';
 
 const _startTime = Date.now();
 const _diagLog = (msg: string) => {
@@ -49,6 +50,6 @@ try {
 } catch (err) {
   _diagLog(`ERROR: ${String(err)}`);
   recordTelemetry('session-start', 'error', _startTime, false, String(err));
-  console.error('[waykeep] SessionStart hook error:', err);
+  log.error('SessionStart hook error:', err);
   process.exit(0);
 }

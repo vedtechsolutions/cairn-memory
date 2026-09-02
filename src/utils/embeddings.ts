@@ -12,6 +12,7 @@ import {
 import { assertManifestPinned, verifyModelPackage } from './artifact-verification.js';
 import { createVerifiedLoader, type VerifiedLoader } from './verified-loader.js';
 import { ENV } from '../constants/env.js';
+import { log } from './log.js';
 
 /** Which side of asymmetric retrieval an input belongs to. Symmetric models
  *  (minilm-l6) ignore the distinction; prefix models (nomic, gemma) require
@@ -112,7 +113,7 @@ function getLoader(): VerifiedLoader<Extractor> {
       },
       verify: () => verifyModelPackage(config, 'embedding'),
       onPoison: (err) => {
-        console.error(`[waykeep] embedding artifact verification FAILED — embeddings disabled for this process: ${err.message}`);
+        log.error(`embedding artifact verification FAILED — embeddings disabled for this process: ${err.message}`);
       },
     });
   }
@@ -178,6 +179,6 @@ export function bufferToEmbedding(buf: Buffer): Float32Array {
 /** Pre-warm the model on startup (fire-and-forget) */
 export function warmupEmbeddings(): void {
   getPipeline().catch(err => {
-    console.error('[waykeep] Embedding model warmup failed:', err);
+    log.warn('Embedding model warmup failed:', err);
   });
 }

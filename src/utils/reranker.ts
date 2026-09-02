@@ -15,6 +15,7 @@ import {
 import { assertManifestPinned, verifyArtifacts as verifyArtifactsGeneric, verifyModelPackage } from './artifact-verification.js';
 import { createVerifiedLoader, type VerifiedLoader } from './verified-loader.js';
 import { ENV } from '../constants/env.js';
+import { log } from './log.js';
 
 /** WAYKEEP_RERANK contract: unset/''/'0' = off, '1' = on, anything else is a
  *  misconfiguration and fails closed rather than guessing intent. */
@@ -71,7 +72,7 @@ function getLoader(): VerifiedLoader<RerankerPipeline> {
       },
       verify: () => verifyModelPackage(config, 'reranker'),
       onPoison: (err) => {
-        console.error(`[waykeep] reranker artifact verification FAILED — reranking disabled for this process: ${err.message}`);
+        log.error(`reranker artifact verification FAILED — reranking disabled for this process: ${err.message}`);
       },
     });
   }
@@ -87,7 +88,7 @@ export function isRerankerReady(): boolean {
 /** Pre-warm the model (fire-and-forget; MCP server startup). */
 export function warmupReranker(): void {
   getPipeline().catch(err => {
-    console.error('[waykeep] Reranker warmup failed (will retry on use):', err);
+    log.warn('Reranker warmup failed (will retry on use):', err);
   });
 }
 
@@ -157,7 +158,7 @@ export async function rerank(query: string, candidates: RerankCandidate[]): Prom
   const { logits } = await pipeline.model(inputs);
   const scores = scoresFromLogits(logits.data, candidates.length);
   if (scores === null) {
-    console.error(`[waykeep] reranker returned unusable output (${logits.data.length} logits for ${candidates.length} candidates, or non-finite scores) — falling back`);
+    log.warn(`reranker returned unusable output (${logits.data.length} logits for ${candidates.length} candidates, or non-finite scores) — falling back`);
     return null;
   }
   return orderByScore(candidates, scores);

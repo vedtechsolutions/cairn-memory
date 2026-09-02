@@ -24,6 +24,8 @@ import { assertManifestPinned } from '../utils/artifact-verification.js';
 import { warmupEmbeddings, getEmbeddingModelConfig } from '../utils/embeddings.js';
 import { isRerankEnabled, resolveRerankerModel, warmupReranker } from '../utils/reranker.js';
 import { ENV } from '../constants/env.js';
+import { log } from '../utils/log.js';
+const daemonLog = log.child('daemon');
 
 const DB_PATH = process.env[ENV.DB_PATH] ?? undefined;
 /** Retry cadence while a legacy embedded owner still holds the socket; the
@@ -50,9 +52,7 @@ async function main(): Promise<void> {
   // relaunching every RestartSec forever.
   const dir = ensureWaykeepDirSecure();
   if (!isOwnerOnly(dir, { followSymlink: true })) {
-    console.error(
-      `[waykeep-daemon] Fatal: ${dir} is not owner-only (uid/mode) — refusing to serve. Fix ownership/permissions and restart.`,
-    );
+    daemonLog.error(`Fatal: ${dir} is not owner-only (uid/mode) — refusing to serve. Fix ownership/permissions and restart.`);
     process.exit(1);
   }
 
@@ -65,9 +65,7 @@ async function main(): Promise<void> {
   while (server === null) {
     server = await startHookSocket(client, cache, undefined, { mode: 'standalone' });
     if (server === null) {
-      console.error(
-        `[waykeep-daemon] Socket owned by another process — retrying in ${CLAIM_RETRY_INTERVAL_MS / 1000}s`,
-      );
+      daemonLog.info(`Socket owned by another process — retrying in ${CLAIM_RETRY_INTERVAL_MS / 1000}s`);
       await delay(CLAIM_RETRY_INTERVAL_MS);
     }
   }
@@ -85,12 +83,12 @@ async function main(): Promise<void> {
       }
     }
   }
-  for (const worker of workers) console.error(`[waykeep] ${worker.name} adapter worker started`);
+  for (const worker of workers) daemonLog.info(`${worker.name} adapter worker started`);
 
   // Graceful shutdown so the process 'exit' cleanup (tracker flush + claim
   // release) actually runs — a default signal death would skip it.
   const shutdown = (signal: NodeJS.Signals): void => {
-    console.error(`[waykeep-daemon] ${signal} received — shutting down`);
+    daemonLog.info(`${signal} received — shutting down`);
     for (const worker of workers) worker.handle.stop();
     httpServer.close(() => process.exit(0));
     setTimeout(() => process.exit(0), SHUTDOWN_GRACE_MS).unref();
@@ -100,6 +98,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((error) => {
-  console.error('[waykeep-daemon] Fatal:', error);
+  daemonLog.error('Fatal:', error);
   process.exit(1);
 });

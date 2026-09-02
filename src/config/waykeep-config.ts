@@ -17,6 +17,7 @@
  */
 import { readFileSync, statSync } from 'node:fs';
 import { configPath as sharedConfigPath } from '../constants/paths.js';
+import { log } from '../utils/log.js';
 
 export interface WaykeepScopeConfig {
   /** Projects whose memories never surface OUTSIDE the project — on any
@@ -129,7 +130,7 @@ export function loadWaykeepConfig(): WaykeepConfig {
     st = statSync(path, { throwIfNoEntry: false });
   } catch (err) {
     if (warnedIdentity !== 'stat-error') {
-      console.error(`[waykeep] config at ${path} could not be read (${(err as NodeJS.ErrnoException).code ?? 'stat failed'}) — scope settings are INACTIVE`);
+      log.warn(`config at ${path} could not be read (${(err as NodeJS.ErrnoException).code ?? 'stat failed'}) — scope settings are INACTIVE`);
       warnedIdentity = 'stat-error';
     }
     cache = null;
@@ -164,7 +165,7 @@ export function loadWaykeepConfig(): WaykeepConfig {
   // version, NAMING the broken section (a warning pointing at the wrong
   // block is worse than none).
   if (problem !== null && warnedIdentity !== identity) {
-    console.error(`[waykeep] config at ${path} ${problem}`);
+    log.warn(`config at ${path} ${problem}`);
     warnedIdentity = identity;
   }
   if (Date.now() - st.mtimeMs >= MTIME_GRANULARITY_MS) {

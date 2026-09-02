@@ -12,6 +12,7 @@ import { createHookDbClient } from './shared/db-client.js';
 import { recordTelemetry } from './shared/hook-telemetry.js';
 import { handlePromptCheck } from './handlers/prompt-handler.js';
 import { ENV } from '../constants/env.js';
+import { log } from '../utils/log.js';
 
 const _startTime = Date.now();
 try {
@@ -31,6 +32,6 @@ try {
   });
 } catch (err) {
   recordTelemetry('prompt-check', 'error', _startTime, false, String(err));
-  console.error('[waykeep] Prompt check hook error:', err);
+  log.error('Prompt check hook error:', err);
   process.exit(0);
 }

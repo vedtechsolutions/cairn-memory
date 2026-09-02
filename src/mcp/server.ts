@@ -27,6 +27,7 @@ import { postMemoryBumpToOwner } from './socket-ownership.js';
 import { SessionCache } from '../hooks/shared/session-cache.js';
 import { ENV } from '../constants/env.js';
 import { MCP_SERVER_NAME } from '../constants/mcp.js';
+import { log } from '../utils/log.js';
 
 const DB_PATH = process.env[ENV.DB_PATH] ?? undefined;
 const VERBOSE = process.env[ENV.VERBOSE] === '1';
@@ -114,7 +115,7 @@ async function main(): Promise<void> {
 
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  console.error('Waykeep MCP server running on stdio');
+  log.info('MCP server running on stdio');
 }
 
 /** Background backfill: embed existing memories that don't have embeddings yet.
@@ -149,11 +150,11 @@ async function runEmbeddingBackfill(repo: MemoryRepository): Promise<void> {
   }
 
   if (total > 0) {
-    console.error(`[waykeep] Backfilled embeddings for ${total} memories`);
+    log.info(`Backfilled embeddings for ${total} memories`);
   }
 }
 
 main().catch((error) => {
-  console.error('Fatal error in Waykeep:', error);
+  log.error('Fatal error:', error);
   process.exit(1);
 });

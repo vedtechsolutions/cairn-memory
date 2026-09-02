@@ -23,6 +23,7 @@ import { journalUpsertForId, retireIdsByInvalidation, syncBoundIds } from '../db
 import { computeRecallPrecision } from '../utils/prediction.js';
 import { findConsolidationCandidates, mergedConfidence, mergedTags } from '../utils/consolidation.js';
 import { ENV } from '../constants/env.js';
+import { log } from '../utils/log.js';
 
 export interface SessionQuality {
   errorCount: number;
@@ -338,7 +339,7 @@ try {
   recordTelemetry('session-end', input.reason, _startTime, true);
 } catch (err) {
   recordTelemetry('session-end', 'error', _startTime, false, String(err));
-  console.error('[waykeep] SessionEnd hook error:', err);
+  log.error('SessionEnd hook error:', err);
   process.exit(0);
 }
 

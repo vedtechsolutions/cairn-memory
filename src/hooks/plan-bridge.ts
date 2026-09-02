@@ -20,6 +20,7 @@ import { LIMITS } from '../constants/index.js';
 import { recordTelemetry } from './shared/hook-telemetry.js';
 import { ENV } from '../constants/env.js';
 import { TOOL } from '../constants/mcp.js';
+import { log } from '../utils/log.js';
 
 const _startTime = Date.now();
 
@@ -65,7 +66,7 @@ try {
   }
 } catch (err) {
   recordTelemetry('plan-bridge', 'error', _startTime, false, String(err));
-  console.error('[waykeep] Plan bridge hook error:', err);
+  log.error('Plan bridge hook error:', err);
   process.exit(0);
 }
 
