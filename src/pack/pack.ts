@@ -1,5 +1,5 @@
-import { createHash, randomBytes } from 'node:crypto';
-import { mkdirSync, readFileSync, writeFileSync, unlinkSync, existsSync, lstatSync, renameSync, openSync, fstatSync, closeSync, opendirSync, constants as fsConstants } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { mkdirSync, readFileSync, unlinkSync, existsSync, openSync, fstatSync, closeSync, opendirSync, constants as fsConstants } from 'node:fs';
 import { join } from 'node:path';
 
 import type Database from 'better-sqlite3';
@@ -10,6 +10,7 @@ import { MemoryRepository } from '../db/memory-repository.js';
 import { waykeepConfigSnapshot } from '../config/waykeep-config.js';
 import { scrubSecrets, sanitize } from '../utils/index.js';
 import { neutralizeMemoryText } from '../utils/validation.js';
+import { writeFileAtomic, isRegularFile } from '../utils/atomic-write.js';
 import { learnSections, type LearnSection } from '../importers/learn-pipeline.js';
 
 /**
@@ -55,37 +56,6 @@ export const PACK_BOUNDS = {
  *  regular files are read, written, or pruned — a planted symlink can
  *  neither leak an outside file in nor route a write OUT (the probe
  *  overwrote a file outside --dir through a content-address symlink). */
-function isRegularFile(path: string): boolean {
-  try {
-    return lstatSync(path).isFile();
-  } catch {
-    return false;
-  }
-}
-
-/** Symlink-safe write: UNPREDICTABLE temp name opened with 'wx'
- *  (O_CREAT|O_EXCL — refuses to open through ANY pre-existing path,
- *  symlinks included; Codex pack delta Z3 planted a link at the
- *  previous predictable .tmp-pid name), then rename. Refuses to replace
- *  a non-regular destination. */
-function writeRegularFile(path: string, dir: string, name: string, bytes: string): void {
-  if (existsSync(path) && !isRegularFile(path)) {
-    throw new Error(`${name} exists and is not a regular file — refusing to write through it`);
-  }
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const tmp = join(dir, `.tmp-${randomBytes(8).toString('hex')}`);
-    try {
-      writeFileSync(tmp, bytes, { flag: 'wx' });
-      renameSync(tmp, path);
-      return;
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === 'EEXIST') continue;
-      throw err;
-    }
-  }
-  throw new Error(`could not allocate a temp file for ${name}`);
-}
-
 /** Bounded symlink-race-free read (Codex pack delta Z4): the fd is
  *  opened O_NOFOLLOW, fstat'd for type+size ON THE OPEN FD, then read —
  *  no path-based stat-then-read window to swap a symlink or grow the
@@ -109,6 +79,7 @@ function readBoundedRegular(path: string, maxBytes: number): string {
     closeSync(fd);
   }
 }
+
 const PACK_HEADER = '# waykeep pack record v1';
 
 export interface PackRecord {
@@ -248,7 +219,7 @@ export function packExport(db: Database.Database, dir: string, project: string |
     if (existingBytes === serialized) {
       result.unchanged++;
     } else {
-      writeRegularFile(path, dir, file, serialized);
+      writeFileAtomic(path, serialized, { refuseNonRegular: true });
       result.written++;
     }
   }
@@ -281,7 +252,7 @@ export function packExport(db: Database.Database, dir: string, project: string |
     }
   }
   manifest.scopes[scopeKey] = [...current].sort();
-  writeRegularFile(manifestPath, dir, PACK_MANIFEST, JSON.stringify(manifest, null, 2) + '\n');
+  writeFileAtomic(manifestPath, JSON.stringify(manifest, null, 2) + '\n', { refuseNonRegular: true });
   return result;
 }
 

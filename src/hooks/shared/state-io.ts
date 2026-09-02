@@ -2,7 +2,8 @@
  * Read/write the waykeep-state.json shared state file.
  * Written by StatusLine, read by MCP server and hooks.
  */
-import { readFileSync, writeFileSync, existsSync, mkdirSync, statSync, renameSync } from 'node:fs';
+import { readFileSync, existsSync, mkdirSync, statSync } from 'node:fs';
+import { writeFileAtomic } from '../../utils/atomic-write.js';
 import { join, dirname } from 'node:path';
 import { homedir } from 'node:os';
 import { STATE_STALENESS_MS, CONTEXT_MODES, type ContextMode } from '../../constants/index.js';
@@ -65,10 +66,7 @@ export function writeState(state: WaykeepState): void {
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true });
   }
-  // Temp + rename: written on every statusline fire and read by every hook,
-  // so a plain write risks torn reads. Rename is atomic on POSIX; the pid
-  // suffix keeps concurrent writers off the same temp file.
-  const tmpPath = `${path}.${process.pid}.tmp`;
-  writeFileSync(tmpPath, JSON.stringify(state), 'utf-8');
-  renameSync(tmpPath, path);
+  // Atomic replace: written on every statusline fire and read by every hook,
+  // so a plain write risks torn reads.
+  writeFileAtomic(path, JSON.stringify(state));
 }

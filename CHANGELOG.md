@@ -36,6 +36,7 @@
 
 ### Changed
 
+- Consolidated six temp-plus-rename file writers into one hardened `writeFileAtomic` (unpredictable exclusive temp name — the predictable `<path>.<pid>.tmp` form could be pre-planted as a symlink — with temp cleanup on failure and optional durable/mode/regular-file-only behavior) used by settings.json, the Codex hooks/config/trust files, the edit tracker, the StatusLine state file, the pack codec and the migration marker.
 - Moved the StopFailure hook's API-failure pitfall table into `src/constants/warnings.ts` and made the hook entry point run the shared handler instead of a duplicate of it.
 - Retrieval is read-only on every path (repo.recall/recallHybrid no longer bump recall counters); exposure and co-recall pairs are recorded solely at genuine injection boundaries under the real session id. Imported pitfalls start below the proactive-warning gate like auto-mined ones, and strengthening a decision floors it above its surfacing gate.
 

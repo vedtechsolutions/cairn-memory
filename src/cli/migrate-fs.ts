@@ -5,23 +5,21 @@
  * as one focused unit. See src/cli/migrate.ts for how they compose.
  */
 import {
-  statSync, lstatSync, mkdirSync, writeFileSync, renameSync, chmodSync, readFileSync,
-  openSync, fsyncSync, closeSync, unlinkSync, linkSync,
+  statSync, lstatSync, mkdirSync, renameSync, chmodSync, readFileSync,
+  openSync, closeSync, unlinkSync, linkSync,
 } from 'node:fs';
 import { join } from 'node:path';
-import { randomBytes } from 'node:crypto';
 import Database from 'better-sqlite3';
-import { FS_PERMS } from '../constants/index.js';
+import { FS_PERMS, ATOMIC_WRITE } from '../constants/index.js';
 import { isOwnerOnly } from '../mcp/socket-ownership.js';
+import { writeFileAtomic, writeTempExclusive, fsyncPath, fsyncStrict, isRegularFile } from '../utils/atomic-write.js';
+
+export { fsyncPath, fsyncStrict, isRegularFile };
 
 /** Lock file (inside the target dir) that serializes concurrent migrations. */
 export const LOCK_FILE = '.migrate.lock';
 /** Database sidecars that must move together with the main file. */
 export const DB_SUFFIXES = ['', '-wal', '-shm'] as const;
-/** fsync failures that mean "this filesystem does not implement fsync for the
- *  target", NOT "the bytes are not durable" — tolerated. Anything else (EIO,
- *  ENOSPC, …) means the data is NOT on disk and must fail the migration. */
-const FSYNC_NOT_APPLICABLE = new Set(['EINVAL', 'ENOTSUP', 'EOPNOTSUPP', 'EISDIR']);
 /** link(2) failures that mean "this filesystem has no hard links" (FAT, some
  *  network mounts) — fall back to a no-clobber rename rather than fail-closing a
  *  migration that would otherwise succeed. */
@@ -36,13 +34,6 @@ export function isFile(p: string): boolean {
  *  not followed (which would write the store to an unverified location). */
 export function lexists(p: string): boolean {
   try { lstatSync(p); return true; } catch { return false; }
-}
-
-/** A REAL regular file at `p` — NOT a symlink, even one pointing at a regular
- *  file. lstat-based, so a symlink is never mistaken for the file it targets
- *  (a symlinked marker/config must not read as an authoritative regular one). */
-export function isRegularFile(p: string): boolean {
-  try { return lstatSync(p).isFile(); } catch { return false; }
 }
 
 /** Per-table row counts for EVERY application table (sqlite internals excluded),
@@ -102,57 +93,13 @@ export function freeBackupPath(base: string, stamp: string, suffixes: readonly s
   }
 }
 
-/** fsync a path best-effort — for cases where a failure is fail-closed-safe (a
- *  lost marker directory entry leaves NO marker, so the legacy store stays
- *  authoritative). Some filesystems reject fsync on directories; that's fine. */
-export function fsyncPath(p: string): void {
-  try { const fd = openSync(p, 'r'); try { fsyncSync(fd); } finally { closeSync(fd); } }
-  catch { /* best-effort */ }
-}
-
-/** fsync a path and THROW if the bytes are genuinely not durable (EIO, ENOSPC, …).
- *  Only "fsync not implemented for this target" errors are tolerated. Used before
- *  the marker for the db/config, so a silent durability failure cannot flip
- *  authority onto data that is not on disk. */
-export function fsyncStrict(p: string): void {
-  let fd: number;
-  try { fd = openSync(p, 'r'); }
-  catch (err) {
-    if (FSYNC_NOT_APPLICABLE.has((err as NodeJS.ErrnoException).code ?? '')) return;
-    throw err;
-  }
-  try { fsyncSync(fd); }
-  catch (err) {
-    if (!FSYNC_NOT_APPLICABLE.has((err as NodeJS.ErrnoException).code ?? '')) throw err;
-  } finally { closeSync(fd); }
-}
 
 /** Atomic REPLACING publish (for the marker, which the lock makes exclusive):
- *  write an unpredictable `wx` temp, durably fsync it, rename into place, fsync
- *  the dir. Mirrors src/pack/pack.ts's symlink-safe write. Any temp we created
- *  but did not rename into place is removed, so a failed publish leaves no litter. */
+ *  the shared unpredictable-temp + rename primitive, durable (fsync of the
+ *  bytes and the directory) because a lost marker would silently leave the
+ *  legacy store authoritative. */
 export function publishFile(dir: string, name: string, bytes: string | Buffer, mode: number): void {
-  const target = join(dir, name);
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const tmp = join(dir, `.tmp-${randomBytes(8).toString('hex')}`);
-    let created = false;
-    try {
-      writeFileSync(tmp, bytes, { flag: 'wx', mode });
-      created = true;
-      try { chmodSync(tmp, mode); } catch { /* best-effort on exotic FS */ }
-      fsyncStrict(tmp);
-      renameSync(tmp, target);
-      created = false; // it IS the target now — do not clean it up
-      fsyncPath(dir);
-      return;
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === 'EEXIST' && !created) continue; // temp-name collision
-      throw err;
-    } finally {
-      if (created) { try { unlinkSync(tmp); } catch { /* nothing to remove */ } }
-    }
-  }
-  throw new Error(`could not allocate a temp file for ${name}`);
+  writeFileAtomic(join(dir, name), bytes, { mode, durable: true });
 }
 
 /** Atomic NO-REPLACE publish: write a `wx` temp, durably fsync it, then hard-LINK
@@ -164,12 +111,10 @@ export function publishFileNoReplace(
   dir: string, name: string, bytes: string | Buffer, mode: number, moveAside: (raced: string) => void,
 ): void {
   const target = join(dir, name);
-  for (let attempt = 0; attempt < 4; attempt++) {
-    const tmp = join(dir, `.tmp-${randomBytes(8).toString('hex')}`);
-    let created = false;
+  for (let attempt = 0; attempt < ATOMIC_WRITE.NO_REPLACE_LINK_ATTEMPTS; attempt++) {
+    const tmp = writeTempExclusive(target, bytes, mode);
+    let created = true;
     try {
-      writeFileSync(tmp, bytes, { flag: 'wx', mode });
-      created = true;
       try { chmodSync(tmp, mode); } catch { /* best-effort on exotic FS */ }
       fsyncStrict(tmp);
       try {
@@ -194,11 +139,8 @@ export function publishFileNoReplace(
           throw err;
         }
       }
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === 'EEXIST' && !created) continue; // temp-name collision
-      throw err;
     } finally {
-      try { unlinkSync(tmp); } catch { /* never created, or already linked away */ }
+      if (created) { try { unlinkSync(tmp); } catch { /* already linked away */ } }
     }
   }
   throw new Error(`could not publish ${name} without clobbering a raced file`);

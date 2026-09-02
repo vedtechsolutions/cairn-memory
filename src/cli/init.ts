@@ -11,7 +11,8 @@
  * other MCP-capable clients are detected and reported, not auto-edited,
  * since their config formats differ. `--dry-run` previews without writing.
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, renameSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, copyFileSync } from 'node:fs';
+import { writeFileAtomic } from '../utils/atomic-write.js';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -272,11 +273,8 @@ export function runInit(options: InitOptions = {}): number {
         console.log(`  ✓ backed up existing settings to ${backup}`);
       }
     }
-    // Atomic write (temp + rename) so a crash mid-write can't corrupt the
-    // user's primary config — same pattern as state-io.ts.
-    const tmp = `${path}.${process.pid}.tmp`;
-    writeFileSync(tmp, `${JSON.stringify(plan.result, null, 2)}\n`, 'utf-8');
-    renameSync(tmp, path);
+    // Atomic replace so a crash mid-write can't corrupt the user's primary config.
+    writeFileAtomic(path, `${JSON.stringify(plan.result, null, 2)}\n`);
     console.log(`  ✓ wrote ${path}`);
   }
 

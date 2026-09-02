@@ -11,6 +11,19 @@ export const DB = {
   BUSY_TIMEOUT_MS: 5000,
 } as const;
 
+// --- Atomic file replacement ------------------------------------------------
+
+/** Temp-name allocation for writeFileAtomic: names carry this many random
+ *  bytes and are opened exclusively, so a pre-planted path (a symlink at a
+ *  predictable name) cannot be written through; a collision — astronomically
+ *  rare — is retried this many times before giving up. */
+export const ATOMIC_WRITE = {
+  TEMP_NAME_RANDOM_BYTES: 8,
+  TEMP_NAME_ATTEMPTS: 3,
+  /** For the no-clobber (hard-link) publish: link collisions handled per attempt. */
+  NO_REPLACE_LINK_ATTEMPTS: 4,
+} as const;
+
 // --- Filesystem permissions -------------------------------------------------
 
 /** Owner-only permissions for the Waykeep state directory and the sensitive

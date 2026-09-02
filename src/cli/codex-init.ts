@@ -13,7 +13,8 @@
  * to invalidate existing trust, and hooks are silently skipped until the
  * user accepts them.
  */
-import { existsSync, readFileSync, writeFileSync, copyFileSync, renameSync } from 'node:fs';
+import { existsSync, readFileSync, copyFileSync } from 'node:fs';
+import { writeFileAtomic } from '../utils/atomic-write.js';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { CLIENT_CODEX } from '../constants/clients.js';
@@ -239,7 +240,7 @@ export function writeTrustShadow(hooksJsonPath: string, file: CodexHooksFile): v
         });
       });
     }
-    atomicWrite(trustShadowPath(), `${JSON.stringify({ v: 1, positions }, null, 2)}\n`);
+    writeFileAtomic(trustShadowPath(), `${JSON.stringify({ v: 1, positions }, null, 2)}\n`);
   } catch { /* tolerated — see doc comment */ }
 }
 
@@ -376,12 +377,6 @@ export function countTrustedHooksIn(configToml: string, hooksJsonPath: string, f
   };
 }
 
-function atomicWrite(path: string, content: string): void {
-  const tmp = `${path}.${process.pid}.tmp`;
-  writeFileSync(tmp, content, 'utf-8');
-  renameSync(tmp, path);
-}
-
 function backupOnce(path: string): void {
   if (!existsSync(path)) return;
   const backup = `${path}${BACKUP_SUFFIX}`;
@@ -501,7 +496,7 @@ export function runCodexInit(relayCmd: string, serverPath: string, dryRun: boole
         // (append safety). Fail either → leave the config untouched.
         if (pruneRemovedOnly(config, pruned, removedKeys) && configTomlParses(next)) {
           backupOnce(codexConfigPath());
-          atomicWrite(codexConfigPath(), next);
+          writeFileAtomic(codexConfigPath(), next);
           config = next;
           wroteConfig = true;
         } else {
@@ -509,7 +504,7 @@ export function runCodexInit(relayCmd: string, serverPath: string, dryRun: boole
         }
       }
       backupOnce(codexHooksPath());
-      atomicWrite(codexHooksPath(), `${JSON.stringify(merged, null, 2)}\n`);
+      writeFileAtomic(codexHooksPath(), `${JSON.stringify(merged, null, 2)}\n`);
       writeTrustShadow(codexHooksPath(), merged);
     } catch (err) {
       console.log(`  ✗ could not write Codex configuration: ${(err as Error).message} — ${

@@ -7,7 +7,8 @@
  * when multiple sessions run concurrently in the same project.
  * Subagents share the parent session_id, so they naturally share the tracker.
  */
-import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSync, unlinkSync, renameSync, rmdirSync } from 'node:fs';
+import { readFileSync, existsSync, mkdirSync, readdirSync, statSync, unlinkSync, rmdirSync } from 'node:fs';
+import { writeFileAtomic } from '../../utils/atomic-write.js';
 import { join, dirname } from 'node:path';
 import {
   TRACKER_FILENAME,
@@ -178,13 +179,11 @@ export function saveTracker(tracker: EditTracker, sessionId?: string): void {
   const path = getTrackerPath(sessionId);
   const dir = dirname(path);
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-  // Temp + rename prevents TORN writes only (rename is atomic on POSIX).
-  // For load→mutate→save sequences use updateTracker, which additionally
-  // holds a lock across the whole read-modify-write. Daemon mode is safe
-  // either way (SessionCache serialises tracker access in-process).
-  const tmpPath = `${path}.${process.pid}.tmp`;
-  writeFileSync(tmpPath, JSON.stringify(tracker), 'utf-8');
-  renameSync(tmpPath, path);
+  // Atomic replace prevents TORN writes only. For load→mutate→save
+  // sequences use updateTracker, which additionally holds a lock across the
+  // whole read-modify-write. Daemon mode is safe either way (SessionCache
+  // serialises tracker access in-process).
+  writeFileAtomic(path, JSON.stringify(tracker));
 }
 
 /** Synchronous sleep without spinning — hooks are short-lived sync processes. */
