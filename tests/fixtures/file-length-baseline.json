@@ -17,7 +17,6 @@
   "src/governance/gate-config.ts": 373,
   "src/governance/inspector.ts": 394,
   "src/governance/recorder.ts": 318,
-  "src/governance/repository.ts": 1230,
   "src/governance/shadow-evaluator.ts": 354,
   "src/governance/worktree-digest.ts": 711,
   "src/hooks/handlers/error-learning-handler.ts": 415,
