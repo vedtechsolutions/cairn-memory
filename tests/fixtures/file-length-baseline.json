@@ -4,7 +4,6 @@
   "src/cli/init.ts": 308,
   "src/config/waykeep-config.ts": 305,
   "src/db/connection.ts": 545,
-  "src/db/maintenance.ts": 642,
   "src/db/memory-repository/truth.ts": 400,
   "src/db/memory-repository/writes.ts": 404,
   "src/db/memory-repository.ts": 392,
