@@ -6,6 +6,7 @@
 import { extname, basename, dirname } from 'node:path';
 import type { ProjectContext } from './project-scanner.js';
 import { FINGERPRINT, RELEVANCE } from '../constants/index.js';
+import { CLAUDE_CODE } from '../constants/claude-code.js';
 
 /** Extract task-signal tokens from a git branch name: lowercased segments
  *  split on /-_ with short and conventional-prefix noise (feat, fix, ...)
@@ -244,7 +245,7 @@ const GENERIC_PATH_SEGMENTS = new Set([
   'node_modules', 'packages', 'vendor',
   'public', 'static', 'assets', 'resources',
   'opt', 'usr', 'var', 'home', 'root', 'tmp', 'etc',
-  '.claude', 'worktrees',
+  CLAUDE_CODE.CONFIG_DIR, 'worktrees',
   '.', '..',
 ]);
 

@@ -4,6 +4,7 @@
  */
 import type Database from 'better-sqlite3';
 import { generateId, now } from '../utils/index.js';
+import { USER_MODEL } from '../constants/index.js';
 
 export type UserDimension = 'role' | 'expertise' | 'preference' | 'team' | 'style';
 
@@ -37,11 +38,6 @@ export interface StructuredProfile {
   style: UserModelEntry[];
 }
 
-const CONFIDENCE_BOOST_PER_EVIDENCE = 0.05;
-const MAX_CONFIDENCE = 0.95;
-const DECAY_FACTOR = 0.9;
-const DECAY_MIN_AGE_DAYS = 30;
-
 export class UserModelRepository {
   constructor(private db: Database.Database) {}
 
@@ -57,7 +53,7 @@ export class UserModelRepository {
     ).get(dimension, key) as UserModelRow | undefined;
 
     if (existing) {
-      const newConfidence = Math.min(MAX_CONFIDENCE, existing.confidence + CONFIDENCE_BOOST_PER_EVIDENCE);
+      const newConfidence = Math.min(USER_MODEL.MAX_CONFIDENCE, existing.confidence + USER_MODEL.CONFIDENCE_BOOST_PER_EVIDENCE);
       const newEvidence = existing.evidence_count + 1;
       this.db.prepare(`
         UPDATE user_model SET value = ?, confidence = ?, evidence_count = ?, updated_at = ?
@@ -132,14 +128,14 @@ export class UserModelRepository {
     return parts.length > 0 ? parts.join(', ') : null;
   }
 
-  /** Decay confidence on entries not updated in DECAY_MIN_AGE_DAYS. */
+  /** Decay confidence on entries not updated in USER_MODEL.DECAY_MIN_AGE_DAYS. */
   decay(): number {
     const result = this.db.prepare(`
       UPDATE user_model
       SET confidence = MAX(0.1, confidence * ?),
           updated_at = datetime('now')
       WHERE julianday('now') - julianday(updated_at) > ?
-    `).run(DECAY_FACTOR, DECAY_MIN_AGE_DAYS);
+    `).run(USER_MODEL.DECAY_FACTOR, USER_MODEL.DECAY_MIN_AGE_DAYS);
     return result.changes;
   }
 }

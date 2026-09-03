@@ -9,10 +9,11 @@ import { join } from 'node:path';
 import type { ClientAdapterLifecycle } from 'waykeep-contract';
 import { CLIENT_CLAUDE } from '../constants/clients.js';
 import { waykeepHooks } from '../cli/init.js';
+import { CLAUDE_CODE } from '../constants/claude-code.js';
 
 export const claudeLifecycle: ClientAdapterLifecycle = {
   name: CLIENT_CLAUDE,
-  detectInstall: () => existsSync(join(homedir(), '.claude')),
+  detectInstall: () => existsSync(join(homedir(), CLAUDE_CODE.CONFIG_DIR)),
   hooksConfig: (relayCommand) => waykeepHooks(relayCommand),
   // No daemon workers: Claude's hooks engine delivers every capture event
   // directly, so no state tailer is needed.

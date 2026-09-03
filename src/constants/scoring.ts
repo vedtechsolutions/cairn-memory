@@ -135,3 +135,15 @@ export const SOURCE_WEIGHT: Record<MemorySource, number> = {
   confirmed: 1.1,
   learned: 1.0,
 } as const;
+
+// --- User model (structured profile entries) --------------------------------
+
+export const USER_MODEL = {
+  /** Confidence added per corroborating piece of evidence. */
+  CONFIDENCE_BOOST_PER_EVIDENCE: 0.05,
+  /** Ceiling — an inferred profile entry is never certain. */
+  MAX_CONFIDENCE: 0.95,
+  /** Multiplier applied to entries not refreshed within DECAY_MIN_AGE_DAYS. */
+  DECAY_FACTOR: 0.9,
+  DECAY_MIN_AGE_DAYS: 30,
+} as const;

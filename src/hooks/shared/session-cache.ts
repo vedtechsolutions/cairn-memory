@@ -32,6 +32,7 @@ import type Database from 'better-sqlite3';
 import type { EditTracker } from './edit-tracker.js';
 import type { ProjectContext } from '../../utils/project-scanner.js';
 import type { ContextFingerprint } from '../../utils/fingerprint.js';
+import { SESSION_CACHE } from '../../constants/index.js';
 
 // --- Cache entry types ---
 
@@ -56,15 +57,6 @@ interface SkipGateEntry {
   /** Hard-TTL expiry */
   expiresAt: number;
 }
-
-// --- Constants ---
-
-const FTS_CACHE_TTL_MS = 30_000;       // 30 seconds for FTS candidates
-const GIT_CACHE_TTL_MS = 300_000;      // 5 minutes fallback TTL for git
-const MAX_FTS_CACHE_ENTRIES = 50;      // Prevent unbounded growth
-const TRACKER_FLUSH_INTERVAL_MS = 60_000; // Flush trackers to disk every 60s
-const SKIP_GATE_TTL_MS = 60_000;       // Hard-TTL on skip-gate entries (staleness bound)
-const MAX_SKIP_GATE_ENTRIES = 200;     // Per-process cap
 
 // --- Session Cache ---
 
@@ -115,7 +107,7 @@ export class SessionCache {
   startPeriodicFlush(flushFn: (tracker: EditTracker, sessionId: string) => void): void {
     this.trackerFlushFn = flushFn;
     if (this.flushTimer) return;
-    this.flushTimer = setInterval(() => this.flushDirtyTrackers(), TRACKER_FLUSH_INTERVAL_MS);
+    this.flushTimer = setInterval(() => this.flushDirtyTrackers(), SESSION_CACHE.TRACKER_FLUSH_INTERVAL_MS);
     // Don't prevent process exit
     if (this.flushTimer.unref) this.flushTimer.unref();
   }
@@ -250,9 +242,9 @@ export class SessionCache {
     this.skipGateCache.set(key, {
       output,
       memoryVersion: this.memoryVersion,
-      expiresAt: Date.now() + SKIP_GATE_TTL_MS,
+      expiresAt: Date.now() + SESSION_CACHE.SKIP_GATE_TTL_MS,
     });
-    if (this.skipGateCache.size > MAX_SKIP_GATE_ENTRIES) {
+    if (this.skipGateCache.size > SESSION_CACHE.MAX_SKIP_GATE_ENTRIES) {
       const first = this.skipGateCache.keys().next().value;
       if (first) this.skipGateCache.delete(first);
     }
@@ -263,7 +255,7 @@ export class SessionCache {
   getGitState(cwd: string): GitCacheEntry | null {
     const entry = this.gitCache.get(cwd);
     if (!entry) return null;
-    if (Date.now() - entry.cachedAt > GIT_CACHE_TTL_MS) {
+    if (Date.now() - entry.cachedAt > SESSION_CACHE.GIT_TTL_MS) {
       this.gitCache.delete(cwd);
       return null;
     }
@@ -300,7 +292,7 @@ export class SessionCache {
   getFTSCandidates(queryKey: string): string[] | null {
     const entry = this.ftsCache.get(queryKey);
     if (!entry) return null;
-    if (Date.now() - entry.cachedAt > FTS_CACHE_TTL_MS) {
+    if (Date.now() - entry.cachedAt > SESSION_CACHE.FTS_TTL_MS) {
       this.ftsCache.delete(queryKey);
       return null;
     }
@@ -310,7 +302,7 @@ export class SessionCache {
   setFTSCandidates(queryKey: string, memoryIds: string[]): void {
     this.ftsCache.set(queryKey, { memoryIds, cachedAt: Date.now() });
     // Evict oldest if over limit
-    if (this.ftsCache.size > MAX_FTS_CACHE_ENTRIES) {
+    if (this.ftsCache.size > SESSION_CACHE.MAX_FTS_ENTRIES) {
       const first = this.ftsCache.keys().next().value;
       if (first) this.ftsCache.delete(first);
     }

@@ -76,3 +76,16 @@ export const LEARNABLE_SUCCESS_PATTERNS = [
   /build succeed/i,
   /no errors/i,
 ] as const;
+
+/** Character caps applied when transcript and error text is folded into
+ *  snapshots and pitfalls. Named per use so a retune touches one line. */
+export const TRUNCATE = {
+  USER_CONTEXT_CHARS: 300,
+  PROJECT_GOAL_CHARS: 200,
+  DECISION_FIELD_CHARS: 150,
+  TOOL_OUTPUT_SUMMARY_CHARS: 100,
+  COMMAND_CHARS: 200,
+  ERROR_FAIL_OUTPUT_CHARS: 200,
+  ERROR_OUTCOME_CHARS: 150,
+  ERROR_FIRST_LINE_CHARS: 100,
+} as const;

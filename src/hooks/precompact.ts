@@ -13,7 +13,7 @@ import { generateId, now } from '../utils/index.js';
 import { getGitHash, getGitWorkingState, scanProject } from '../utils/project-scanner.js';
 import { loadTracker } from './shared/edit-tracker.js';
 import { recordTelemetry } from './shared/hook-telemetry.js';
-import { CONFIDENCE, TOKEN_BUDGET } from '../constants/index.js';
+import { CONFIDENCE, TOKEN_BUDGET, TRUNCATE } from '../constants/index.js';
 import { generateFingerprint } from '../utils/fingerprint.js';
 import { extractWhyContext } from '../utils/intent-classifier.js';
 import { isSystemContent } from '../utils/validation.js';
@@ -41,8 +41,8 @@ try {
   if (activePlan && activePlan.decisions.length > 0) {
     // DB plan decisions are authoritative — use them, falling back to transcript only if none
     decisionsForSnapshot = activePlan.decisions.slice(-5).map(d => ({
-      chose: d.chose.slice(0, 150),
-      why: d.why.slice(0, 150),
+      chose: d.chose.slice(0, TRUNCATE.DECISION_FIELD_CHARS),
+      why: d.why.slice(0, TRUNCATE.DECISION_FIELD_CHARS),
     }));
   }
 

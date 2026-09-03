@@ -9,6 +9,7 @@ import { homedir } from 'node:os';
 import { STATE_STALENESS_MS, CONTEXT_MODES, type ContextMode } from '../../constants/index.js';
 import { ENV } from '../../constants/env.js';
 import { FILES } from '../../constants/paths.js';
+import { CLAUDE_CODE } from '../../constants/claude-code.js';
 
 export interface WaykeepState {
   mode: ContextMode;
@@ -38,7 +39,7 @@ function isValidState(value: unknown): value is WaykeepState {
  *  WAYKEEP_DB_PATH) keeps tests and sandboxed environments off the real
  *  ~/.claude. Resolved lazily so the override works regardless of import order. */
 function statePath(): string {
-  return process.env[ENV.STATE_PATH] ?? join(homedir(), '.claude', FILES.CLIENT_STATE);
+  return process.env[ENV.STATE_PATH] ?? join(homedir(), CLAUDE_CODE.CONFIG_DIR, FILES.CLIENT_STATE);
 }
 
 export function readState(): WaykeepState {

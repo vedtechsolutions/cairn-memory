@@ -7,6 +7,7 @@ import { passesCrossProjectGuard, passesSameProjectRelevance, deriveProjectIdent
 import { NARROW_OVERLAP_MIN_MEANINGFUL_TOKENS, narrowPolicyExclusions, broadRelevanceFp } from './query-fingerprint.js';
 import { truncate } from './render-helpers.js';
 import { isMemoryEligibleForInjection , formatMemoryContent } from '../../../utils/memory-injection.js';
+import { MS_PER_DAY } from '../../../constants/time.js';
 
 /** Compute effectiveness score (0–1) for a memory.
  *  High surface count with low impact = noise. High impact/surface ratio = valuable.
@@ -16,7 +17,7 @@ export function computeEffectiveness(memory: Memory): number {
   if (memory.surface_count === 0) {
     const fallbackWeight = memory.confidence >= 0.55 ? 0.5 : 0.3;
     // Age penalty: halve effectiveness every 30 days for never-surfaced memories
-    const ageDays = (Date.now() - new Date(memory.created_at).getTime()) / 86_400_000;
+    const ageDays = (Date.now() - new Date(memory.created_at).getTime()) / MS_PER_DAY;
     const agePenalty = 1.0 / (1.0 + ageDays / 30);
     return memory.confidence * fallbackWeight * agePenalty;
   }

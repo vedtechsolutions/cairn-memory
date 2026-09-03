@@ -9,6 +9,22 @@ import { DB_DEFAULT_PATH } from './paths.js';
 export const DB = {
   DEFAULT_PATH: DB_DEFAULT_PATH,
   BUSY_TIMEOUT_MS: 5000,
+  /** Contention budget for a telemetry rollup write. The global busy_timeout
+   *  above is longer than both relays' 3s deadlines, so a contended ROLLUP
+   *  insert on a sync path could starve a ready briefing out of its delivery
+   *  window (review P1). A bookkeeping row is never worth that: near-zero
+   *  budget, dropped on contention. */
+  ROLLUP_BUSY_TIMEOUT_MS: 50,
+} as const;
+
+// --- Standalone daemon lifecycle ----------------------------------------------
+
+export const DAEMON = {
+  /** Retry cadence while a legacy embedded owner still holds the socket; the
+   *  daemon waits for it to exit rather than displacing it. */
+  CLAIM_RETRY_INTERVAL_MS: 10_000,
+  /** Grace period for in-flight hook requests after a shutdown signal. */
+  SHUTDOWN_GRACE_MS: 3_000,
 } as const;
 
 // --- Diagnostic logging -----------------------------------------------------

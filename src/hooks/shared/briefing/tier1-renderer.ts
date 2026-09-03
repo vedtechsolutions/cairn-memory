@@ -10,7 +10,6 @@ import type { BriefingContext } from './types.js';
 import { tokeniseForOverlap, jaccardOverlap } from './query-fingerprint.js';
 import { renderGoalTiers, formatGoalTierLine } from './goal-tiers.js';
 import {
-  DECISION_DEDUP_JACCARD,
   truncate,
   renderResumeCursor,
   isConversationalApproach,
@@ -123,7 +122,7 @@ export function renderTier1(
         const tokens = tokeniseForOverlap(d.chose);
         for (const sig of seenSigs) {
           if (sig.prefix === prefix) return false;
-          if (jaccardOverlap(tokens, sig.tokens) >= DECISION_DEDUP_JACCARD) return false;
+          if (jaccardOverlap(tokens, sig.tokens) >= LIMITS.DECISION_DEDUP_JACCARD) return false;
         }
         seenSigs.push({ prefix, tokens });
         return true;

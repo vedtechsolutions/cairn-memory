@@ -43,6 +43,7 @@ import {
   warningBudgetAvailable,
   warningTokensRemaining,
 } from '../shared/warning-budget.js';
+import { MS_PER_DAY } from '../../constants/time.js';
 
 // Re-export so existing importers (tests/pitfall-cross-project-guard.test.ts)
 // keep working — canonical impl now lives in src/utils/cross-project-guard.ts.
@@ -161,7 +162,7 @@ export function handlePitfallCheck(input: PreToolUseInput, client: CachedHookCon
     ? PROACTIVE.SESSION_ERROR_CONFIDENCE_FLOOR
     : RELEVANCE.MIN_CONFIDENCE_FOR_PITFALL;
   const now = Date.now();
-  const probationCutoff = now - PROACTIVE.PROBATION_DAYS * 86_400_000;
+  const probationCutoff = now - PROACTIVE.PROBATION_DAYS * MS_PER_DAY;
   const fingerprintSurfacedIds = new Set<string>();
   const identityTokens = deriveProjectIdentityTokens(project);
 

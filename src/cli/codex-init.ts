@@ -25,10 +25,11 @@ import { MCP_SERVER_NAME } from '../constants/mcp.js';
 import { LEGACY_NAMESPACES } from 'waykeep-contract';
 import { parse as parseToml } from 'smol-toml';
 import { isDeepStrictEqual } from 'node:util';
+import { CODEX } from '../constants/codex.js';
 
 /** ~/.codex, overridable for hermetic tests. */
 export function codexDir(): string {
-  return process.env[ENV.CODEX_DIR] ?? join(homedir(), '.codex');
+  return process.env[ENV.CODEX_DIR] ?? join(homedir(), CODEX.CONFIG_DIR);
 }
 export function codexHooksPath(): string { return join(codexDir(), 'hooks.json'); }
 export function codexConfigPath(): string { return join(codexDir(), 'config.toml'); }
@@ -44,12 +45,6 @@ interface CodexHookCommand {
 interface CodexMatcherGroup { matcher?: string; hooks: CodexHookCommand[] }
 export interface CodexHooksFile { description: string; hooks: Record<string, CodexMatcherGroup[]> }
 
-/** Codex clamps SessionEnd hook timeouts to 3s and warns above it. */
-const SESSION_END_TIMEOUT_S = 3;
-const SYNC_TIMEOUT_S = 10;
-const ASYNC_TIMEOUT_S = 30;
-/** Explicit so a Codex default change can't silently spill the briefing. */
-const CONTEXT_LIMIT_TOKENS = 2500;
 
 /** Canonical PostToolUse route (client-neutral, contract revision 1). */
 export const POST_TOOL_ROUTE = 'post-tool';
@@ -81,20 +76,20 @@ export function postToolRouteFor(
 export function codexHooks(relayCmd: string, postToolRoute: PostToolRoute = POST_TOOL_ROUTE): CodexHooksFile {
   const cmd = (sub: string): string => `${relayCmd} --client ${CLIENT_CODEX} ${sub}`;
   const sync = (sub: string, extra: Partial<CodexHookCommand> = {}): CodexMatcherGroup[] =>
-    [{ hooks: [{ type: 'command', command: cmd(sub), timeout: SYNC_TIMEOUT_S, ...extra }] }];
+    [{ hooks: [{ type: 'command', command: cmd(sub), timeout: CODEX.HOOK_TIMEOUT_S.SYNC, ...extra }] }];
   return {
     description: 'Waykeep memory hooks — passive briefing, ambient recall, pitfall warnings, auto-capture (same experience as Claude Code). Requires one interactive trust review at next Codex start.',
     hooks: {
-      SessionStart: sync('session-start', { statusMessage: 'Waykeep briefing', additionalContextLimit: CONTEXT_LIMIT_TOKENS }),
-      UserPromptSubmit: sync('prompt-check', { additionalContextLimit: CONTEXT_LIMIT_TOKENS }),
-      PreToolUse: [{ matcher: 'Bash|apply_patch', hooks: [{ type: 'command', command: cmd('pitfall-check'), timeout: SYNC_TIMEOUT_S }] }],
-      PostToolUse: [{ matcher: 'Bash|apply_patch', hooks: [{ type: 'command', command: cmd(postToolRoute), timeout: ASYNC_TIMEOUT_S, async: true }] }],
-      Stop: [{ hooks: [{ type: 'command', command: cmd('stop'), timeout: ASYNC_TIMEOUT_S, async: true }] }],
+      SessionStart: sync('session-start', { statusMessage: 'Waykeep briefing', additionalContextLimit: CODEX.CONTEXT_LIMIT_TOKENS }),
+      UserPromptSubmit: sync('prompt-check', { additionalContextLimit: CODEX.CONTEXT_LIMIT_TOKENS }),
+      PreToolUse: [{ matcher: 'Bash|apply_patch', hooks: [{ type: 'command', command: cmd('pitfall-check'), timeout: CODEX.HOOK_TIMEOUT_S.SYNC }] }],
+      PostToolUse: [{ matcher: 'Bash|apply_patch', hooks: [{ type: 'command', command: cmd(postToolRoute), timeout: CODEX.HOOK_TIMEOUT_S.ASYNC, async: true }] }],
+      Stop: [{ hooks: [{ type: 'command', command: cmd('stop'), timeout: CODEX.HOOK_TIMEOUT_S.ASYNC, async: true }] }],
       SubagentStart: sync('subagent-context'),
-      SubagentStop: [{ hooks: [{ type: 'command', command: cmd('subagent-stop'), timeout: ASYNC_TIMEOUT_S, async: true }] }],
+      SubagentStop: [{ hooks: [{ type: 'command', command: cmd('subagent-stop'), timeout: CODEX.HOOK_TIMEOUT_S.ASYNC, async: true }] }],
       PreCompact: sync('precompact'),
       PostCompact: sync('postcompact'),
-      SessionEnd: sync('session-end', { timeout: SESSION_END_TIMEOUT_S }),
+      SessionEnd: sync('session-end', { timeout: CODEX.HOOK_TIMEOUT_S.SESSION_END }),
     },
   };
 }

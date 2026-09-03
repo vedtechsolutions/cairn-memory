@@ -32,8 +32,8 @@ import {
   CONFIDENCE, DECAY, LIMITS, NON_DECAYING_KINDS, STABILITY_BY_KIND, SOURCE_WEIGHT,
 } from '../constants/index.js';
 import { log } from '../utils/log.js';
+import { MS_PER_DAY } from '../constants/time.js';
 
-const MS_PER_DAY = 86_400_000;
 const NON_DECAYING_PLACEHOLDERS = NON_DECAYING_KINDS.map(() => '?').join(',');
 
 export interface DecayResult {

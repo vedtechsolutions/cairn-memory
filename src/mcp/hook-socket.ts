@@ -35,9 +35,8 @@ import { handleSessionStart } from '../hooks/handlers/session-start-handler.js';
 import { recordTelemetry } from '../hooks/shared/hook-telemetry.js';
 import { evaluateGovernanceWarnStop } from '../governance/warn-stop.js';
 import { log } from '../utils/log.js';
+import { HOOK_SOCKET, SOCKET_ROUTES } from '../constants/mcp.js';
 
-// --- Constants ---
-const REQUEST_TIMEOUT_MS = 5000;
 
 /** Who may serve the socket: an agent client's MCP server (embedded) or the
  *  standalone waykeep-daemon service. Reported via /health for diagnostics. */
@@ -57,7 +56,7 @@ function readBody(req: IncomingMessage): Promise<string> {
       cleanup();
       req.destroy();
       reject(new Error('Request body timeout'));
-    }, REQUEST_TIMEOUT_MS);
+    }, HOOK_SOCKET.REQUEST_TIMEOUT_MS);
     function cleanup(): void {
       clearTimeout(timeout);
       req.off('data', onData);
@@ -135,7 +134,7 @@ const routes: Record<string, {
       const r = await handleStop(input, c);
       // M2: flush dirty trackers at end of every turn. session-end is a
       // standalone hook that reads the tracker from disk; without this its
-      // resume cursor could be up to TRACKER_FLUSH_INTERVAL_MS (60s) stale.
+      // resume cursor could be up to SESSION_CACHE.TRACKER_FLUSH_INTERVAL_MS (60s) stale.
       // Stop bounds the staleness to one turn.
       c.cache?.flushDirtyTrackers();
       return {
@@ -333,7 +332,7 @@ export async function startHookSocket(
     const startTime = Date.now();
 
     // StatusLine — high-frequency, no telemetry, plain text response
-    if (req.method === 'POST' && req.url === '/statusline') {
+    if (req.method === 'POST' && req.url === SOCKET_ROUTES.STATUSLINE) {
       let body: string;
       try { body = await readBody(req); } catch { res.writeHead(400); res.end(''); return; }
       try {
@@ -357,7 +356,7 @@ export async function startHookSocket(
     }
 
     // Health check
-    if (req.method === 'GET' && req.url === '/health') {
+    if (req.method === 'GET' && req.url === SOCKET_ROUTES.HEALTH) {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
         status: 'ok',

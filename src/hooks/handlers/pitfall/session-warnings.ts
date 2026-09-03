@@ -33,7 +33,7 @@ export function applySessionWarnings(
   if (warnings.length < PROACTIVE.MAX_WARNINGS_PER_CALL
     && filePath && shouldFireWarning('A1', filePath)) {
     const recentFailures = tracker.toolChain.filter(
-      e => e.file === filePath && e.success === false && (nowMs - e.timestamp) < 300_000,
+      e => e.file === filePath && e.success === false && (nowMs - e.timestamp) < PROACTIVE.RECENT_FAILURE_WINDOW_MS,
     );
     if (recentFailures.length > 0) {
       const lastError = recentFailures[recentFailures.length - 1].output ?? 'unknown error';

@@ -10,7 +10,7 @@ import { projectId } from '../utils/project-id.js';
 import { generateId, now } from '../utils/index.js';
 import { recordTelemetry } from './shared/hook-telemetry.js';
 import { loadTracker, deleteTracker } from './shared/edit-tracker.js';
-import { LIMITS, CONFIDENCE, CONSOLIDATION } from '../constants/index.js';
+import { LIMITS, CONFIDENCE, CONSOLIDATION, TRUNCATE } from '../constants/index.js';
 import { extractWinningPattern } from './shared/transcript-parser.js';
 import { originClientOf, readTranscriptSnapshotFor } from './shared/client-adapter.js';
 import { resolveInitialGoal, resolveProjectGoal } from './shared/goal-resolver.js';
@@ -82,8 +82,8 @@ try {
     let decisionsForSnapshot = snapshot.recentDecisions;
     if (activePlan && activePlan.decisions.length > 0) {
       decisionsForSnapshot = activePlan.decisions.slice(-5).map(d => ({
-        chose: d.chose.slice(0, 150),
-        why: d.why.slice(0, 150),
+        chose: d.chose.slice(0, TRUNCATE.DECISION_FIELD_CHARS),
+        why: d.why.slice(0, TRUNCATE.DECISION_FIELD_CHARS),
       }));
     }
 

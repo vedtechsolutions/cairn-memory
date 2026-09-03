@@ -30,6 +30,8 @@ import { CLIENT_CODEX } from '../constants/clients.js';
 import { ROLLOUT_LOOKUP, ROLLOUT_TAILER } from '../constants/index.js';
 import { ENV } from '../constants/env.js';
 import { log } from '../utils/log.js';
+import { MS_PER_DAY } from '../constants/time.js';
+import { CODEX } from '../constants/codex.js';
 
 interface FileState {
   offset: number;
@@ -48,7 +50,7 @@ interface FileState {
 interface TailerHandle { stop(): void; tick(): Promise<number>; }
 
 function sessionsRoot(): string {
-  return process.env[ENV.CODEX_SESSIONS_DIR] ?? join(homedir(), '.codex', 'sessions');
+  return process.env[ENV.CODEX_SESSIONS_DIR] ?? join(homedir(), CODEX.CONFIG_DIR, CODEX.SESSIONS_SUBDIR);
 }
 
 /** Today's and yesterday's date dirs — covers the midnight straddle without
@@ -57,7 +59,7 @@ function sessionsRoot(): string {
 function recentDateDirs(root: string): string[] {
   const dirs: string[] = [];
   for (const daysAgo of [0, 1]) {
-    const d = new Date(Date.now() - daysAgo * 86_400_000);
+    const d = new Date(Date.now() - daysAgo * MS_PER_DAY);
     const y = String(d.getFullYear());
     const m = String(d.getMonth() + 1).padStart(2, '0');
     const day = String(d.getDate()).padStart(2, '0');

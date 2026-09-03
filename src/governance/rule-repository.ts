@@ -1,5 +1,6 @@
 import type Database from 'better-sqlite3';
 import { generateId, now, sanitize } from '../utils/index.js';
+import { GOVERNANCE_RULE } from '../constants/index.js';
 
 export const RULE_PHASES = ['create', 'pre_implement', 'during', 'pre_exit'] as const;
 export const RULE_LEVELS = ['advise', 'warn', 'block'] as const;
@@ -9,11 +10,6 @@ export type RuleLevel = (typeof RULE_LEVELS)[number];
 export type RuleStatus = (typeof RULE_STATUSES)[number];
 
 const RULE_ID = /^[a-z][a-z0-9_-]{0,63}$/;
-const MAX_PROJECT_CHARS = 512;
-const MAX_RULE_CONTENT_CHARS = 2_000;
-const MAX_PATHS = 64;
-const MAX_PATH_CHARS = 512;
-const MAX_GATES = 32;
 
 export interface RuleContext {
   schema: 1;
@@ -73,12 +69,12 @@ function unique<T>(values: readonly T[]): T[] {
 function validate(input: CreateRuleInput): void {
   if (input.confirmation?.userConfirmed !== true) throw new Error('rule creation requires explicit user confirmation');
   if (!RULE_ID.test(input.ruleId)) throw new Error('invalid rule id');
-  if (!input.project || input.project.length > MAX_PROJECT_CHARS || input.project.includes('\0')) {
+  if (!input.project || input.project.length > GOVERNANCE_RULE.MAX_PROJECT_CHARS || input.project.includes('\0')) {
     throw new Error('invalid rule project');
   }
   if (typeof input.content !== 'string') throw new Error('rule content must be text');
   const content = sanitize(input.content);
-  if (!content || content.length > MAX_RULE_CONTENT_CHARS) throw new Error('invalid rule content length');
+  if (!content || content.length > GOVERNANCE_RULE.MAX_CONTENT_CHARS) throw new Error('invalid rule content length');
   if (!(RULE_LEVELS as readonly string[]).includes(input.level)) throw new Error('invalid rule level');
   const phases = unique(input.phases);
   if (phases.length === 0 || phases.length !== input.phases.length ||
@@ -86,13 +82,13 @@ function validate(input: CreateRuleInput): void {
     throw new Error('invalid rule phases');
   }
   const gateIds = unique(input.gateIds ?? []);
-  if (gateIds.length > MAX_GATES || gateIds.length !== (input.gateIds ?? []).length ||
+  if (gateIds.length > GOVERNANCE_RULE.MAX_GATES || gateIds.length !== (input.gateIds ?? []).length ||
       gateIds.some(id => !RULE_ID.test(id))) {
     throw new Error('invalid rule gate ids');
   }
   const paths = unique(input.paths ?? []);
-  if (paths.length > MAX_PATHS || paths.length !== (input.paths ?? []).length || paths.some(path =>
-    !path || path.length > MAX_PATH_CHARS || path.startsWith('/') || path.includes('\0') ||
+  if (paths.length > GOVERNANCE_RULE.MAX_PATHS || paths.length !== (input.paths ?? []).length || paths.some(path =>
+    !path || path.length > GOVERNANCE_RULE.MAX_PATH_CHARS || path.startsWith('/') || path.includes('\0') ||
     path.split('/').includes('..'))) {
     throw new Error('invalid rule paths');
   }

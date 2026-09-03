@@ -14,7 +14,8 @@
  */
 
 import { TOOL } from '../constants/mcp.js';
-import { FREE_FORM_LIMITS, MAX_FILE_LINES, formatLimit, formatBytes } from './limits.js';
+import { FREE_FORM_LIMITS, MAX_FILE_LINES } from '../constants/memory-tool.js';
+import { formatLimit, formatBytes } from './limit-format.js';
 
 export const ERR = {
   // block-parser

@@ -15,7 +15,7 @@
  */
 import type Database from 'better-sqlite3';
 import { loadWaykeepConfig } from '../config/waykeep-config.js';
-import { ROLLUP, ROLLUP_METRICS } from '../constants/index.js';
+import { ROLLUP, ROLLUP_METRICS, DB } from '../constants/index.js';
 import { ENV } from '../constants/env.js';
 
 export type RollupMetric = (typeof ROLLUP_METRICS)[keyof typeof ROLLUP_METRICS];
@@ -27,13 +27,6 @@ export function rollupEnabled(): boolean {
   if (env === '0' || env === 'false') return false;
   return loadWaykeepConfig().report.rollup !== false;
 }
-
-/** Contention budget for a rollup write, ms. The connection's global
- *  busy_timeout is 5s — longer than both relays' 3s deadlines, so a
- *  contended ROLLUP insert on a sync path could starve a ready briefing
- *  out of its delivery window (review P1). A bookkeeping row is never
- *  worth that: give it a near-zero budget and drop it on contention. */
-const ROLLUP_BUSY_TIMEOUT_MS = 50;
 
 /** Best-effort insert; skips zero/negative token counts (an empty
  *  injection costs nothing and a zero row is pure noise). `events`
@@ -52,7 +45,7 @@ export function recordRollup(
   let restoreTimeout: number | null = null;
   try {
     restoreTimeout = db.pragma('busy_timeout', { simple: true }) as number;
-    db.pragma(`busy_timeout = ${ROLLUP_BUSY_TIMEOUT_MS}`);
+    db.pragma(`busy_timeout = ${DB.ROLLUP_BUSY_TIMEOUT_MS}`);
     db.prepare(`
       INSERT INTO telemetry_rollup (session_id, day, metric, surface, tokens, events)
       VALUES (?, date('now'), ?, ?, ?, ?)

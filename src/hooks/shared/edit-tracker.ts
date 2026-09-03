@@ -19,6 +19,7 @@ import {
 } from '../../constants/index.js';
 import type { ToolEvent, SuccessDedup } from '../../utils/success-classifier.js';
 import { dataDir } from '../../constants/paths.js';
+import { MS_PER_DAY } from '../../constants/time.js';
 
 const TRACKER_BASE = TRACKER_FILENAME.replace('.json', '');
 
@@ -97,7 +98,7 @@ export interface EditTracker {
    * Layer 1c (Socratic Stop reflection) — nudge flag.
    *
    * Set by the Stop handler when the last turn contained decision markers
-   * (countDecisionMarkers >= REFLECTION_MIN_MARKERS) but no sigils were
+   * (countDecisionMarkers >= REFLECTION.MIN_MARKERS) but no sigils were
    * emitted AND reflectOnTurn returned an empty array (either sampling
    * unavailable or the LLM returned no decisions). The next
    * UserPromptSubmit reads this field, emits a single-line nudge, and
@@ -261,7 +262,7 @@ export function cleanupOrphanTrackers(): number {
   try {
     const dir = waykeepDir();
     const files = readdirSync(dir);
-    const maxAgeMs = TRACKER_ORPHAN_MAX_AGE_DAYS * 86_400_000;
+    const maxAgeMs = TRACKER_ORPHAN_MAX_AGE_DAYS * MS_PER_DAY;
     const now = Date.now();
     for (const file of files) {
       if (!file.startsWith(prefix) || !file.endsWith('.json')) continue;

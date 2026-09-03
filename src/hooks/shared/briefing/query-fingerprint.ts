@@ -6,6 +6,7 @@ import { isMetaGoal } from '../transcript-parser.js';
 import { basename, dirname, extname } from 'node:path';
 import type { BriefingContext } from './types.js';
 import { ENV } from '../../../constants/env.js';
+import { CLAUDE_CODE } from '../../../constants/claude-code.js';
 
 /** Generic path segments the fingerprint path already ignores; mirror it here.
  *  The `opt|usr|var|home|root|tmp|etc` roots and `.claude|worktrees` segments
@@ -19,7 +20,7 @@ const BRIEFING_GENERIC_SEGMENTS = new Set([
   'public', 'static', 'assets', 'resources',
   'tests', 'test', '__tests__', 'spec', 'specs',
   'opt', 'usr', 'var', 'home', 'root', 'tmp', 'etc',
-  '.claude', 'worktrees',
+  CLAUDE_CODE.CONFIG_DIR, 'worktrees',
   '.', '..', '',
 ]);
 

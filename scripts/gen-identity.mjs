@@ -30,6 +30,7 @@ const { NAMESPACE, DATA_DIR_NAME, DB_FILENAME, ENV_PREFIX, MCP_SERVER_NAME, LEGA
 const { CLIENT_HEADER, CLIENT_ENV_VAR } =
   await import(join(REPO, 'packages', 'contract', 'dist', 'clients.js'));
 const { ENV } = await import(join(REPO, 'dist', 'src', 'constants', 'env.js'));
+const { SOCKET_ROUTES } = await import(join(REPO, 'dist', 'src', 'constants', 'mcp.js'));
 const { FILES } = await import(join(REPO, 'dist', 'src', 'constants', 'paths.js'));
 
 /** Everything a non-TypeScript artifact may need, in one flat table. */
@@ -64,6 +65,8 @@ const IDENTITY = {
   MIGRATION_MARKER: `${NAMESPACE}-migrated.json`,
   /** Legacy database filename, for the relays' un-migrated fallback test. */
   LEGACY_DB_FILE: LEGACY_NAMESPACES.length ? `${LEGACY_NAMESPACES[0]}.db` : DB_FILENAME,
+  /** The aux socket route the StatusLine shell relay posts to (not a contract hook route). */
+  ROUTE_STATUSLINE: SOCKET_ROUTES.STATUSLINE,
   ENV: { ...ENV, CLIENT: CLIENT_ENV_VAR },
 };
 
@@ -132,6 +135,7 @@ const shLines = [
   `WK_TMP_PREFIX='${shEscape(IDENTITY.TMP_PREFIX)}'`,
   `WK_PROBE_FLAG='${shEscape(IDENTITY.PROBE_FLAG)}'`,
   `WK_PROBE_SENTINEL='${shEscape(IDENTITY.PROBE_SENTINEL)}'`,
+  `WK_ROUTE_STATUSLINE='${shEscape(IDENTITY.ROUTE_STATUSLINE)}'`,
   '',
 ].join('\n');
 

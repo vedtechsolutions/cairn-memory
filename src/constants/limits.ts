@@ -1,3 +1,5 @@
+import { MS_PER_MINUTE } from './time.js';
+
 // ============================================================================
 // Hard limits, rollup, import, sync-apply and owner RPC
 // ============================================================================
@@ -143,6 +145,49 @@ export const LIMITS = {
   /** SNR v3 Commit 4: cross-tier goal dedup threshold. When Now ≈ Feature
    *  or Feature ≈ Project by Jaccard token overlap, the less-specific tier
    *  is dropped so the briefing never shows the same goal twice under two
-   *  different labels. Mirrors DECISION_DEDUP_JACCARD in briefing-compiler. */
+   *  different labels. Same value as DECISION_DEDUP_JACCARD, deliberately. */
   GOAL_TIER_DEDUP_JACCARD: 0.55,
+  /** T1↔T2 decision dedup Jaccard threshold (GAP F). Slightly looser than staleness. */
+  DECISION_DEDUP_JACCARD: 0.55,
+  /** Goal staleness Jaccard threshold (GAP E): ≥60% token overlap flags stale. */
+  GOAL_STALE_JACCARD: 0.6,
+  /** Goal ship-detection coverage: when the goal's meaningful tokens are
+   *  covered by recent commit subjects at this ratio, the goal is treated as
+   *  shipped and suppressed. Below 1.0 so commit subjects need not repeat
+   *  every goal word verbatim. */
+  GOAL_SHIPPED_COVERAGE: 0.6,
+} as const;
+
+// --- Governance worktree digest --------------------------------------------
+
+/** Caps that keep a digest of a pathological worktree bounded in time and memory. */
+export const WORKTREE_DIGEST = {
+  MAX_ENTRIES: 50_000,
+  MAX_FILE_BYTES: 64 * 1024 * 1024,
+  MAX_TOTAL_BYTES: 512 * 1024 * 1024,
+  MAX_GIT_OUTPUT_BYTES: 32 * 1024 * 1024,
+  GIT_TIMEOUT_MS: 10_000,
+} as const;
+
+/** Shape limits on a governance rule record. */
+export const GOVERNANCE_RULE = {
+  MAX_PROJECT_CHARS: 512,
+  MAX_CONTENT_CHARS: 2_000,
+  MAX_PATHS: 64,
+  MAX_PATH_CHARS: 512,
+  MAX_GATES: 32,
+} as const;
+
+/** How old a capability heartbeat may be before it stops counting, and how far
+ *  in the future one may sit (clock skew) before it is treated as forged. */
+export const CAPABILITY_HEARTBEAT = {
+  MAX_AGE_MS: 30 * MS_PER_MINUTE,
+  FUTURE_SKEW_MS: MS_PER_MINUTE,
+} as const;
+
+/** Bounds on the project scanner's git subprocesses and its upward walk. */
+export const GIT_SUBPROCESS = {
+  TIMEOUT_MS: 5_000,
+  /** Ancestor directories examined when looking for a repository root. */
+  MAX_ANCESTOR_DEPTH: 64,
 } as const;

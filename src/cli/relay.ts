@@ -12,11 +12,8 @@ import { existsSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { RELAY_PROBE_FLAG, RELAY_PROBE_SENTINEL } from 'waykeep-contract';
+import { RELAY } from '../constants/mcp.js';
 
-/** Bounds the execability probe below; the relay answers the probe flag
- *  immediately (before reading stdin or touching the socket), so this is only
- *  a scheduling safety net. */
-const PROBE_TIMEOUT_MS = 2000;
 const PROBE_ARG: string = RELAY_PROBE_FLAG;
 /** Sentinel the real relay writes to stdout for the probe flag. */
 const PROBE_SENTINEL: string = RELAY_PROBE_SENTINEL;
@@ -53,7 +50,7 @@ export function binaryUsable(hookDir: string): boolean {
   // report a spawn-layer EPERM even though the child ran and exited 0,
   // and rejecting there would flip a working install to the shell relay,
   // changing every hook command string and invalidating Codex hook trust.
-  const probe = spawnSync(bin, [PROBE_ARG], { timeout: PROBE_TIMEOUT_MS, encoding: 'utf8' });
+  const probe = spawnSync(bin, [PROBE_ARG], { timeout: RELAY.PROBE_TIMEOUT_MS, encoding: 'utf8' });
   return probe.status === 0 && (probe.stdout ?? '').includes(PROBE_SENTINEL);
 }
 

@@ -34,9 +34,8 @@ import {
   countDecisionMarkers,
   reflectOnTurn,
   renderReflectedDecision,
-  REFLECTION_MIN_MARKERS,
 } from '../shared/decision-reflector.js';
-import { CONFIDENCE } from '../../constants/index.js';
+import { CONFIDENCE, REFLECTION } from '../../constants/index.js';
 import { isSystemContent } from '../../utils/validation.js';
 import { loadTracker, saveTracker } from '../shared/edit-tracker.js';
 import {
@@ -134,10 +133,10 @@ export async function handleStop(
 
   // --- Layer 1c: Socratic reflection + tier-3 nudge flag ---------------
   // Cheap pre-gate: count decision markers. Single-marker turns are too
-  // noisy — we need ≥REFLECTION_MIN_MARKERS before we consider the turn
+  // noisy — we need ≥REFLECTION.MIN_MARKERS before we consider the turn
   // worth an inference call.
   const markerCount = countDecisionMarkers(message);
-  if (markerCount < REFLECTION_MIN_MARKERS) {
+  if (markerCount < REFLECTION.MIN_MARKERS) {
     return { action: 'no-decision' };
   }
 

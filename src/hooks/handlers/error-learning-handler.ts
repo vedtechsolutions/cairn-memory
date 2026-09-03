@@ -17,7 +17,7 @@
 import type { PostToolUseFailureInput } from '../shared/hook-io.js';
 import { formatMemoryContent } from '../../utils/memory-injection.js';
 import { recordRollup } from '../../db/telemetry-rollup.js';
-import { ROLLUP, ROLLUP_METRICS } from '../../constants/index.js';
+import { ROLLUP, ROLLUP_METRICS, TRUNCATE } from '../../constants/index.js';
 import type { CachedHookContext } from '../shared/db-client.js';
 import { capabilitiesOf, originClientOf } from '../shared/client-adapter.js';
 import { extractPatchFilePaths, patchTextOf } from '../shared/patch-paths.js';
@@ -103,7 +103,7 @@ function handleErrorLearningBusiness(input: PostToolUseFailureInput, client: Cac
       // Record failure in toolChain so pitfall-check can detect file-specific failures
       const failFilePaths = extractFilePaths(input);
       const failTimestamp = Date.now();
-      const failOutput = errorText.split('\n')[0]?.slice(0, 200);
+      const failOutput = errorText.split('\n')[0]?.slice(0, TRUNCATE.ERROR_FAIL_OUTPUT_CHARS);
       for (const fp of failFilePaths.length > 0 ? failFilePaths : [undefined]) {
         const failEvent: ToolEvent = {
           tool: input.tool_name,
@@ -137,7 +137,7 @@ function handleErrorLearningBusiness(input: PostToolUseFailureInput, client: Cac
       const errorFile = extractFilePaths(input)[0] ?? null;
       const fileLabel = errorFile ? basename(errorFile) : input.tool_name;
       const approach = errorFile ? `${input.tool_name} on ${fileLabel}` : input.tool_name;
-      const outcome = errorText.split('\n')[0]?.slice(0, 150) ?? 'error';
+      const outcome = errorText.split('\n')[0]?.slice(0, TRUNCATE.ERROR_OUTCOME_CHARS) ?? 'error';
       const attempt = { approach, outcome, timestamp: now() };
 
       const activeChain = client.investigationRepo.getActiveChain(chainProject, input.session_id);
@@ -375,7 +375,7 @@ function buildOutputJson(hookEventName: string, context: string): string {
 function buildEscalationMessage(
   count: number, toolName: string, tags: string[], errorText: string,
 ): string {
-  const firstLine = errorText.split('\n')[0]?.trim().slice(0, 100) ?? 'unknown error';
+  const firstLine = errorText.split('\n')[0]?.trim().slice(0, TRUNCATE.ERROR_FIRST_LINE_CHARS) ?? 'unknown error';
   const alternative = getAlternative(toolName, tags);
   return [
     `[WAYKEEP ESCALATION] This error has occurred ${count} times this session: "${firstLine}"`,
@@ -384,7 +384,7 @@ function buildEscalationMessage(
 }
 
 function buildWarningMessage(errorText: string, filePath?: string): string {
-  const firstLine = errorText.split('\n')[0]?.trim().slice(0, 100) ?? 'unknown error';
+  const firstLine = errorText.split('\n')[0]?.trim().slice(0, TRUNCATE.ERROR_FIRST_LINE_CHARS) ?? 'unknown error';
   const context = filePath ? ` (${basename(filePath)})` : '';
   return `[WAYKEEP] This error occurred before this session${context}: "${firstLine}"`;
 }

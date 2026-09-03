@@ -6,18 +6,6 @@ import type { BriefingContext } from './types.js';
 import { tokeniseForOverlap, jaccardOverlap } from './query-fingerprint.js';
 import { truncate } from './render-helpers.js';
 
-/** Goal staleness Jaccard threshold (GAP E). 0.6 → ≥60% token overlap flags stale. */
-const GOAL_STALE_JACCARD = 0.6;
-
-/** Goal ship-detection coverage threshold. When the goal's meaningful tokens
- *  (length ≥3, non-stopword) are covered by recent commit subjects at this
- *  ratio, the goal is treated as shipped and suppressed. 0.6 is deliberately
- *  below 1.0 so the gate tolerates commit subjects that don't repeat every
- *  goal word verbatim (e.g. goal "Primary memory integration — North-Star
- *  Phases 3+4+5" matches commits "North-Star Phases 3+4+5: …" even though
- *  "primary" and "memory" might appear in separate earlier commits). */
-const GOAL_SHIPPED_COVERAGE = 0.6;
-
 /** Result of evaluating a carried goal against staleness gates. */
 interface GoalStalenessResult {
   /** The goal text to render, or null if the goal should be suppressed entirely. */
@@ -35,7 +23,7 @@ interface GoalStalenessResult {
  *   3. carryCount — inherited too many times without reinforcement
  *   4. completedStepMatch (GAP E) — goal paraphrases a done plan step
  *   5. shippedByCommit (Fix D) — goal tokens are covered by recent commit
- *      subjects above GOAL_SHIPPED_COVERAGE, i.e. the goal has already been
+ *      subjects above LIMITS.GOAL_SHIPPED_COVERAGE, i.e. the goal has already been
  *      committed to the branch and is now historical.
  * Returns `{ text: null }` when the goal should be omitted.
  */
@@ -57,7 +45,7 @@ function evaluateCarriedGoal(
   const completedStepMatch = plan?.steps.some(s => {
     if (s.status !== 'done') return false;
     const stepTokens = tokeniseForOverlap(s.description);
-    return jaccardOverlap(goalTokens, stepTokens) >= GOAL_STALE_JACCARD;
+    return jaccardOverlap(goalTokens, stepTokens) >= LIMITS.GOAL_STALE_JACCARD;
   }) ?? false;
 
   const shippedByCommit = isGoalShippedByCommits(goalTokens, gitState?.recentCommits);
@@ -74,7 +62,7 @@ function evaluateCarriedGoal(
 /** Fix D: ship-detection via recent commit subjects.
  *
  *  When the goal's meaningful tokens (length ≥3, non-stopword) are covered
- *  by the union of recent commit-subject tokens at GOAL_SHIPPED_COVERAGE or
+ *  by the union of recent commit-subject tokens at LIMITS.GOAL_SHIPPED_COVERAGE or
  *  above, the goal is treated as shipped. This catches sticky goals that
  *  survived a phase/feature landing but describe work now in git history
  *  rather than current WIP.
@@ -82,7 +70,7 @@ function evaluateCarriedGoal(
  *  Conservative by design:
  *   - Requires ≥3 goal tokens (coverage of a single-token goal is noisy).
  *   - Requires ≥1 recent commit subject to compute coverage at all.
- *   - Only flags when coverage ≥ GOAL_SHIPPED_COVERAGE (0.6).
+ *   - Only flags when coverage ≥ LIMITS.GOAL_SHIPPED_COVERAGE (0.6).
  */
 function isGoalShippedByCommits(
   goalTokens: Set<string>,
@@ -102,7 +90,7 @@ function isGoalShippedByCommits(
     if (commitTokens.has(t)) matched++;
   }
   const coverage = matched / goalTokens.size;
-  return coverage >= GOAL_SHIPPED_COVERAGE;
+  return coverage >= LIMITS.GOAL_SHIPPED_COVERAGE;
 }
 
 // ---------------------------------------------------------------------------
@@ -151,7 +139,7 @@ function evaluateFeatureGoal(
   const completedStepMatch = plan?.steps.some(s => {
     if (s.status !== 'done') return false;
     const stepTokens = tokeniseForOverlap(s.description);
-    return jaccardOverlap(goalTokens, stepTokens) >= GOAL_STALE_JACCARD;
+    return jaccardOverlap(goalTokens, stepTokens) >= LIMITS.GOAL_STALE_JACCARD;
   }) ?? false;
   if (completedStepMatch) return null;
 

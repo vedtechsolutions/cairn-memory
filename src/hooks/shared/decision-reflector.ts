@@ -32,26 +32,9 @@
  * caller's perspective so Stop latency is unaffected by the LLM call.
  */
 import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import { REFLECTION } from '../../constants/index.js';
 
 // --- Tunables --------------------------------------------------------
-
-/** Minimum marker count required to trigger reflection. Single-marker
- *  turns are too noisy — casual phrasing often includes one "recommend"
- *  or "going with" without a real architectural choice behind it. */
-export const REFLECTION_MIN_MARKERS = 2;
-
-/** Max decisions the reflector extracts per turn. The prompt caps at 3
- *  to avoid splitting related thoughts into multiple shallow entries. */
-export const REFLECTION_MAX_DECISIONS = 3;
-
-/** Max assistant text length passed to the reflector. Above this, the
- *  message is truncated to keep inference cost bounded. 2000 chars is
- *  ~500 tokens on Haiku — cheap even at high fire rates. */
-export const REFLECTION_INPUT_MAX_CHARS = 2000;
-
-/** Timeout for the sampling call, ms. If exceeded, reflection returns
- *  empty and the caller routes to the nudge path. */
-export const REFLECTION_TIMEOUT_MS = 10_000;
 
 // --- Marker patterns -------------------------------------------------
 //
@@ -171,7 +154,7 @@ function parseReflectionResponse(raw: string): ReflectedDecision[] {
     const chose = typeof (d as ReflectedDecision).chose === 'string' ? (d as ReflectedDecision).chose : '';
     const why = typeof (d as ReflectedDecision).why === 'string' ? (d as ReflectedDecision).why : '';
     if (chose.length >= 3) clean.push({ chose, why });
-    if (clean.length >= REFLECTION_MAX_DECISIONS) break;
+    if (clean.length >= REFLECTION.MAX_DECISIONS) break;
   }
   return clean;
 }
@@ -190,8 +173,8 @@ const REFLECTION_SYSTEM_PROMPT =
 
 /** User prompt builder. Includes the truncated turn text. */
 function buildUserPrompt(message: string): string {
-  const truncated = message.length > REFLECTION_INPUT_MAX_CHARS
-    ? message.slice(0, REFLECTION_INPUT_MAX_CHARS) + '\n[...truncated]'
+  const truncated = message.length > REFLECTION.INPUT_MAX_CHARS
+    ? message.slice(0, REFLECTION.INPUT_MAX_CHARS) + '\n[...truncated]'
     : message;
   return `Extract decisions from this assistant turn as strict JSON:\n\n${truncated}`;
 }
@@ -253,7 +236,7 @@ export async function reflectOnTurn(
   // otherwise every Stop event pins a 10s timer that delays GC of the chain.
   let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
   const timeoutPromise = new Promise<null>(resolve => {
-    timeoutHandle = setTimeout(() => resolve(null), REFLECTION_TIMEOUT_MS);
+    timeoutHandle = setTimeout(() => resolve(null), REFLECTION.TIMEOUT_MS);
   });
 
   let result: Awaited<typeof samplingPromise> | null;

@@ -1,9 +1,9 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  CAPABILITY_HEARTBEAT_FUTURE_SKEW_MS, CAPABILITY_HEARTBEAT_MAX_AGE_MS,
   resolveCapabilityStatus, type GovernanceClientCapabilityRow,
 } from '../src/governance/capability-status.js';
+import { CAPABILITY_HEARTBEAT } from '../src/constants/index.js';
 
 const NOW = Date.UTC(2026, 7, 26, 12);
 
@@ -21,18 +21,18 @@ function row(overrides: Partial<GovernanceClientCapabilityRow> = {}): Governance
 describe('governance capability heartbeat policy', () => {
   it('accepts the exact 30-minute boundary and bounded clock skew', () => {
     const exact = resolveCapabilityStatus({
-      row: row({ lastHeartbeatAt: new Date(NOW - CAPABILITY_HEARTBEAT_MAX_AGE_MS).toISOString() }),
+      row: row({ lastHeartbeatAt: new Date(NOW - CAPABILITY_HEARTBEAT.MAX_AGE_MS).toISOString() }),
       clientName: 'claude-code', sessionId: 'session-a', nowMs: NOW,
     });
     assert.equal(exact.observations.heartbeat, 'current');
     assert.equal(exact.degraded, false);
     const skew = resolveCapabilityStatus({
-      row: row({ lastHeartbeatAt: new Date(NOW + CAPABILITY_HEARTBEAT_FUTURE_SKEW_MS).toISOString() }),
+      row: row({ lastHeartbeatAt: new Date(NOW + CAPABILITY_HEARTBEAT.FUTURE_SKEW_MS).toISOString() }),
       clientName: 'claude-code', sessionId: 'session-a', nowMs: NOW,
     });
     assert.equal(skew.observations.heartbeat, 'current');
     const excessiveSkew = resolveCapabilityStatus({
-      row: row({ lastHeartbeatAt: new Date(NOW + CAPABILITY_HEARTBEAT_FUTURE_SKEW_MS + 1).toISOString() }),
+      row: row({ lastHeartbeatAt: new Date(NOW + CAPABILITY_HEARTBEAT.FUTURE_SKEW_MS + 1).toISOString() }),
       clientName: 'claude-code', sessionId: 'session-a', nowMs: NOW,
     });
     assert.equal(excessiveSkew.observations.heartbeat, 'stale');

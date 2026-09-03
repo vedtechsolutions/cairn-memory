@@ -7,6 +7,7 @@
 import type { Memory } from '../db/memory-repository.js';
 import { tokenOverlap } from './similarity.js';
 import { CONSOLIDATION } from '../constants/index.js';
+import { MS_PER_DAY } from '../constants/time.js';
 
 export interface MemoryCluster {
   /** The memory with the highest confidence / longest content */
@@ -30,7 +31,7 @@ export function computeAffinity(a: Memory, b: Memory, embeddingSimilarity?: numb
 
   // Temporal proximity — memories created close together are more related
   const daysBetween = Math.abs(
-    (new Date(a.created_at).getTime() - new Date(b.created_at).getTime()) / 86_400_000,
+    (new Date(a.created_at).getTime() - new Date(b.created_at).getTime()) / MS_PER_DAY,
   );
   const temporal = Math.exp(-LAMBDA * daysBetween);
 

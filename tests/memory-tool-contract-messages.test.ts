@@ -13,7 +13,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { ERR } from '../src/memory-tool/errors.js';
-import { FREE_FORM_LIMITS, MAX_FILE_LINES, MAX_VIEW_CHARS } from '../src/memory-tool/limits.js';
+import { FREE_FORM_LIMITS, MAX_FILE_LINES, MAX_VIEW_CHARS } from '../src/constants/memory-tool.js';
 
 describe('memory-tool contract messages render exactly', () => {
   it('free-form store limits', () => {

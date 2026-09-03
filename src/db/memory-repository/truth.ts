@@ -16,6 +16,7 @@ import { rowToMemory } from './reads.js';
 import { buildFtsQuery, now } from '../../utils/index.js';
 import { SOURCE_AUTHORITY, TRUTH, type MemorySource } from '../../constants/index.js';
 import { journalMutation, JOURNAL_CAUSE_SUPERSEDED_PREFIX, type JournalOptions } from './journal.js';
+import { MS_PER_DAY } from '../../constants/time.js';
 
 // --- Claim classification + staleness ---------------------------------------
 
@@ -58,7 +59,7 @@ export function classifyClaimStaleness(memory: Memory, nowMs: number = Date.now(
   if (!claimType) return null;
   const createdMs = Date.parse(memory.created_at);
   if (Number.isNaN(createdMs)) return null;
-  const ageDays = (nowMs - createdMs) / 86_400_000;
+  const ageDays = (nowMs - createdMs) / MS_PER_DAY;
   const halflife = TRUTH.HALFLIFE_DAYS[claimType];
   const stale = ageDays > halflife;
   return {

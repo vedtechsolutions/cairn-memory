@@ -2,7 +2,7 @@
  * Per-entry scanners for the parseTranscript passes: user-text collection
  * (first pass) and tool_use / tool_result extraction (tail pass).
  */
-import { TOKEN_BUDGET } from '../../../constants/index.js';
+import { TOKEN_BUDGET, TRUNCATE } from '../../../constants/index.js';
 import { type RawEntry, type ContentBlock, type CommandBucket, type TranscriptSnapshot, truncate } from './snapshot.js';
 import { looksLikeFilePath, classifyCommandBucket } from './classify.js';
 import { isHumanMessage } from './goal-extraction.js';
@@ -63,12 +63,12 @@ export function collectUserContext(allLines: string[], snapshot: TranscriptSnaps
 
     if (typeof content === 'string' && content.trim()) {
       if (isHumanMessage(content)) {
-        snapshot.userContext.push(truncate(content, 300));
+        snapshot.userContext.push(truncate(content, TRUNCATE.USER_CONTEXT_CHARS));
       }
     } else if (Array.isArray(content)) {
       for (const block of content) {
         if (block.type === 'text' && block.text?.trim() && isHumanMessage(block.text)) {
-          snapshot.userContext.push(truncate(block.text, 300));
+          snapshot.userContext.push(truncate(block.text, TRUNCATE.USER_CONTEXT_CHARS));
         }
       }
     }
@@ -113,7 +113,7 @@ export function scanAssistantEntry(content: ContentBlock[], snapshot: Transcript
         if (action === 'create') {
           const planName = input.name as string | undefined;
           if (planName && planName.length >= 10) {
-            snapshot.projectGoal = truncate(planName, 200);
+            snapshot.projectGoal = truncate(planName, TRUNCATE.PROJECT_GOAL_CHARS);
           }
         }
       }
@@ -126,8 +126,8 @@ export function scanAssistantEntry(content: ContentBlock[], snapshot: Transcript
           const why = input.why as string | undefined;
           if (chose && why) {
             snapshot.recentDecisions.push({
-              chose: truncate(chose, 150),
-              why: truncate(why, 150),
+              chose: truncate(chose, TRUNCATE.DECISION_FIELD_CHARS),
+              why: truncate(why, TRUNCATE.DECISION_FIELD_CHARS),
             });
           }
         }
@@ -140,7 +140,7 @@ export function scanAssistantEntry(content: ContentBlock[], snapshot: Transcript
           const content = input.content as string | undefined;
           if (content) {
             snapshot.recentDecisions.push({
-              chose: truncate(content, 150),
+              chose: truncate(content, TRUNCATE.DECISION_FIELD_CHARS),
               why: `(via ${TOOL.LEARN})`,
             });
           }
@@ -188,9 +188,9 @@ export function scanUserToolResults(content: ContentBlock[], snapshot: Transcrip
 
     if (command && !state.seenCommands.has(command)) {
       state.seenCommands.add(command);
-      const outputSummary = truncate(block.content ?? '', 100);
+      const outputSummary = truncate(block.content ?? '', TRUNCATE.TOOL_OUTPUT_SUMMARY_CHARS);
       snapshot.recentCommands.push({
-        command: truncate(command, 200),
+        command: truncate(command, TRUNCATE.COMMAND_CHARS),
         outputSummary,
       });
     }

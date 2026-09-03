@@ -1,4 +1,5 @@
 import { ENV } from '../constants/env.js';
+import { MS_PER_DAY } from '../constants/time.js';
 
 /** Current ISO 8601 timestamp (UTC — the stable form for storage and sync). */
 export function now(): string {
@@ -33,7 +34,7 @@ export function formatTimestamp(iso: string | null | undefined): string {
 export function daysSince(isoDate: string): number {
   const then = new Date(isoDate).getTime();
   const diff = Date.now() - then;
-  return Math.floor(diff / (1000 * 60 * 60 * 24));
+  return Math.floor(diff / MS_PER_DAY);
 }
 
 /** Whether the ISO date is within the last N days */

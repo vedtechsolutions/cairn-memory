@@ -56,3 +56,31 @@ export const RESOURCE_URI = {
   ACTIVE_PLAN: `${MCP_URI_SCHEME}://plan/{project}/active`,
   FULL_BRIEFING: `${MCP_URI_SCHEME}://briefing/{project}`,
 } as const;
+
+/** Hook-socket timings. Two files once each defined a different
+ *  PROBE_TIMEOUT_MS (audit); the names here say which probe is which. */
+export const HOOK_SOCKET = {
+  /** Deadline for reading one hook request body. */
+  REQUEST_TIMEOUT_MS: 5_000,
+  /** Startup-path liveness probe; generous because it runs once per process start. */
+  PROBE_TIMEOUT_MS: 250,
+  /** Fire-and-forget invalidation post; the daemon-side skip-gate TTL is the
+   *  backstop for a lost notification. */
+  BUMP_TIMEOUT_MS: 1_000,
+} as const;
+
+/** The relay self-identification probe (`waykeep init`/`doctor`): the relay
+ *  answers the probe flag before reading stdin or touching the socket, so this
+ *  is only a scheduling safety net. */
+export const RELAY = {
+  PROBE_TIMEOUT_MS: 2_000,
+} as const;
+
+/** Socket routes served beside the contract's hook routes: liveness, and the
+ *  StatusLine's context-pressure post. Not hook events, so not in the
+ *  contract's route table — spelled here so the server and the shell relay
+ *  (through the identity generator) cannot drift. */
+export const SOCKET_ROUTES = {
+  HEALTH: '/health',
+  STATUSLINE: '/statusline',
+} as const;

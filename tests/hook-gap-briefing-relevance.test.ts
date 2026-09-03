@@ -452,7 +452,7 @@ describe('goal staleness — ship-detection via recent commits (Fix D)', () => {
     // Goal tokens (length ≥3, non-stopword): {primary, memory, integration,
     // north, star, phases, compounding, learning, loop}
     // Commit subjects between them cover all of those tokens → coverage 1.0
-    // ≥ GOAL_SHIPPED_COVERAGE (0.6) → suppressed.
+    // ≥ LIMITS.GOAL_SHIPPED_COVERAGE (0.6) → suppressed.
     const ctx = baseCtx({
       sessionType: 'compact',
       gitState: {

@@ -10,6 +10,9 @@
 // accessors are functions rather than constants).
 export { ENV, ALL_ENV_NAMES } from './env.js';
 export * from './paths.js';
+export * from './time.js';
+export * from './codex.js';
+export * from './memory-tool.js';
 // NOTE: mcp.js is deliberately NOT re-exported here. Its consumers import
 // it directly, and adding it would widen this barrel's public surface —
 // an API change, which this split is explicitly not.

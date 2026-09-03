@@ -8,6 +8,7 @@ import {
 import { isAbsolute, posix, relative, resolve, sep } from 'node:path';
 import { execFile, spawnSync, type ExecFileException } from 'node:child_process';
 import { performance } from 'node:perf_hooks';
+import { WORKTREE_DIGEST } from '../constants/index.js';
 
 export const WORKTREE_DIGEST_V1_VERSION = 1;
 /** Compatibility name for the retained synchronous v1 reader. */
@@ -52,12 +53,6 @@ export interface WorktreeDigestV2Result {
   reason: string | null;
   attempts: number;
 }
-
-const MAX_ENTRIES = 50_000;
-const MAX_FILE_BYTES = 64 * 1024 * 1024;
-const MAX_TOTAL_BYTES = 512 * 1024 * 1024;
-const MAX_GIT_OUTPUT = 32 * 1024 * 1024;
-const GIT_TIMEOUT_MS = 10_000;
 
 interface FileFact {
   path: string;
@@ -163,7 +158,7 @@ function fileFact(root: string, relativePath: string): FileFact {
   if (!stat.isFile()) {
     return { path: relativePath, type: 'other', mode, sha256: null, target: null };
   }
-  if (stat.size > MAX_FILE_BYTES) throw new DigestIncomplete('relevant file exceeds digest size bound');
+  if (stat.size > WORKTREE_DIGEST.MAX_FILE_BYTES) throw new DigestIncomplete('relevant file exceeds digest size bound');
   return {
     path: relativePath, type: 'file', mode,
     sha256: sha256(readFileSync(absolute)), target: null,
@@ -172,7 +167,7 @@ function fileFact(root: string, relativePath: string): FileFact {
 
 function git(root: string, args: readonly string[], allowFailure = false): Buffer | null {
   const result = spawnSync('git', [...args], {
-    cwd: root, encoding: 'buffer', maxBuffer: MAX_GIT_OUTPUT, timeout: GIT_TIMEOUT_MS,
+    cwd: root, encoding: 'buffer', maxBuffer: WORKTREE_DIGEST.MAX_GIT_OUTPUT_BYTES, timeout: WORKTREE_DIGEST.GIT_TIMEOUT_MS,
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   if (result.error || result.signal !== null || result.status !== 0) {
@@ -252,12 +247,12 @@ function gitSnapshot(root: string, patterns: readonly string[]): Snapshot {
   const relevantTracked = trackedPaths(indexRaw).filter(matches);
   const relevantUntracked = nulFields(untrackedRaw).filter(matches);
   const paths = [...new Set([...relevantTracked, ...relevantUntracked])].sort();
-  if (paths.length > MAX_ENTRIES) throw new DigestIncomplete('relevant file count exceeds digest bound');
+  if (paths.length > WORKTREE_DIGEST.MAX_ENTRIES) throw new DigestIncomplete('relevant file count exceeds digest bound');
   let totalBytes = 0;
   const files = paths.map(path => {
     const fact = fileFact(root, path);
     if (fact.type === 'file') totalBytes += lstatSync(resolve(root, path)).size;
-    if (totalBytes > MAX_TOTAL_BYTES) throw new DigestIncomplete('relevant content exceeds digest bound');
+    if (totalBytes > WORKTREE_DIGEST.MAX_TOTAL_BYTES) throw new DigestIncomplete('relevant content exceeds digest bound');
     return fact;
   });
   const relevantIndex = nulFields(indexRaw).filter(entry => {
@@ -293,7 +288,7 @@ function manifestSnapshot(root: string, patterns: readonly string[]): Snapshot {
     try {
       for (let entry = directory.readSync(); entry !== null; entry = directory.readSync()) {
         visited += 1;
-        if (visited > MAX_ENTRIES) throw new DigestIncomplete('manifest entry count exceeds digest bound');
+        if (visited > WORKTREE_DIGEST.MAX_ENTRIES) throw new DigestIncomplete('manifest entry count exceeds digest bound');
         const path = relativeDir === '.' ? entry.name : `${relativeDir}/${entry.name}`;
         if (path === '.git') continue;
         if (entry.isDirectory()) pending.push(path);
@@ -308,7 +303,7 @@ function manifestSnapshot(root: string, patterns: readonly string[]): Snapshot {
   const files = paths.map(path => {
     const fact = fileFact(root, path);
     if (fact.type === 'file') totalBytes += lstatSync(resolve(root, path)).size;
-    if (totalBytes > MAX_TOTAL_BYTES) throw new DigestIncomplete('manifest content exceeds digest bound');
+    if (totalBytes > WORKTREE_DIGEST.MAX_TOTAL_BYTES) throw new DigestIncomplete('manifest content exceeds digest bound');
     return fact;
   });
   return {
@@ -402,10 +397,10 @@ function gitAsync(
   deadlineMs: number,
   allowFailure = false,
 ): Promise<Buffer | null> {
-  const timeout = Math.min(GIT_TIMEOUT_MS, checkDeadline(deadlineMs));
+  const timeout = Math.min(WORKTREE_DIGEST.GIT_TIMEOUT_MS, checkDeadline(deadlineMs));
   return new Promise((resolvePromise, rejectPromise) => {
     execFile('git', [...args], {
-      cwd: root, encoding: 'buffer', maxBuffer: MAX_GIT_OUTPUT, timeout,
+      cwd: root, encoding: 'buffer', maxBuffer: WORKTREE_DIGEST.MAX_GIT_OUTPUT_BYTES, timeout,
       env: { ...process.env, GIT_OPTIONAL_LOCKS: '0' },
     }, (error: ExecFileException | null, stdout: Buffer) => {
       if (error === null) {
@@ -522,7 +517,7 @@ async function fileFactV2(
       fact: { path: relativePath, type: 'other', mode, sha256: null, target: null }, bytes: 0,
     };
   }
-  if (stat.size > MAX_FILE_BYTES) throw new DigestIncomplete('relevant file exceeds digest size bound');
+  if (stat.size > WORKTREE_DIGEST.MAX_FILE_BYTES) throw new DigestIncomplete('relevant file exceeds digest size bound');
   const content = await readFile(absolute);
   checkDeadline(deadlineMs);
   return {
@@ -541,7 +536,7 @@ async function selectedFileFactsV2(
   for (const path of [...new Set(paths)].sort()) {
     const result = await fileFactV2(root, path, deadlineMs);
     totalBytes += result.bytes;
-    if (totalBytes > MAX_TOTAL_BYTES) throw new DigestIncomplete('relevant content exceeds digest bound');
+    if (totalBytes > WORKTREE_DIGEST.MAX_TOTAL_BYTES) throw new DigestIncomplete('relevant content exceeds digest bound');
     facts.push(result.fact);
   }
   return facts;
@@ -587,7 +582,7 @@ async function gitSnapshotV2(
     .flatMap(fact => fact.paths)
     .filter(path => !gitlinkSet.has(path));
   const contentPaths = [...new Set([...dirtyWorktree, ...untracked, ...trackedSymlinks])];
-  if (indexes.length + untracked.length > MAX_ENTRIES) {
+  if (indexes.length + untracked.length > WORKTREE_DIGEST.MAX_ENTRIES) {
     throw new DigestIncomplete('relevant file count exceeds digest bound');
   }
   const filesPromise = selectedFileFactsV2(root, contentPaths, deadlineMs);
@@ -628,7 +623,7 @@ async function manifestSnapshotV2(
     const directory = await opendir(resolve(root, relativeDir));
     for await (const entry of directory) {
       visited += 1;
-      if (visited > MAX_ENTRIES) throw new DigestIncomplete('manifest entry count exceeds digest bound');
+      if (visited > WORKTREE_DIGEST.MAX_ENTRIES) throw new DigestIncomplete('manifest entry count exceeds digest bound');
       const path = relativeDir === '.' ? entry.name : `${relativeDir}/${entry.name}`;
       if (path === '.git') continue;
       if (entry.isDirectory()) pending.push(path);

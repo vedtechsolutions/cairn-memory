@@ -7,10 +7,11 @@
  */
 import type { PlanRepository } from '../db/plan-repository.js';
 import { ERR } from './errors.js';
-import { MAX_VIEW_CHARS, MAX_FILE_LINES, formatLimit } from './limits.js';
+import { MAX_VIEW_CHARS, MAX_FILE_LINES } from '../constants/memory-tool.js';
+import { formatLimit } from './limit-format.js';
 import { TOOL } from '../constants/mcp.js';
 
-export { MAX_VIEW_CHARS, MAX_FILE_LINES } from './limits.js';
+export { MAX_VIEW_CHARS, MAX_FILE_LINES } from '../constants/memory-tool.js';
 
 export function humanSize(bytes: number): string {
   if (bytes < 1024) return `${Math.max(bytes, 0)}B`;

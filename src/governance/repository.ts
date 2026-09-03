@@ -14,6 +14,7 @@ import {
   type CapabilityDegradationReason, type GateEvidenceState, type GovernanceIntent,
   type ShadowFaultCode, type ShadowResult, type ShadowVerdictReason,
 } from './verdict-types.js';
+import { MS_PER_DAY } from '../constants/time.js';
 
 export interface GovernanceToolEventInsert {
   project: string;
@@ -1110,7 +1111,7 @@ export class GovernanceRepository {
         if (evidenceDaysOutOfRange(days)) {
           throw new Error(`invalid evidence retention for project ${project}`);
         }
-        const cutoff = new Date(nowMs - days * 86_400_000).toISOString();
+        const cutoff = new Date(nowMs - days * MS_PER_DAY).toISOString();
         const runs = this.db.prepare(`
           DELETE FROM governance_gate_runs WHERE project = ? AND created_at < ?
         `).run(project, cutoff).changes;
@@ -1168,9 +1169,9 @@ export class GovernanceRepository {
       }
     }
     const nowMs = options.nowMs ?? Date.now();
-    const auditCutoff = new Date(nowMs - options.auditDays * 86_400_000).toISOString();
+    const auditCutoff = new Date(nowMs - options.auditDays * MS_PER_DAY).toISOString();
     const jointCutoff = new Date(
-      nowMs - Math.max(options.auditDays, options.ruleDays) * 86_400_000,
+      nowMs - Math.max(options.auditDays, options.ruleDays) * MS_PER_DAY,
     ).toISOString();
     let rulesDeleted = 0;
     let auditRowsDeleted = 0;

@@ -77,3 +77,38 @@ export type SessionEndReason = (typeof SESSION_END_REASONS)[number];
 
 export const SESSION_START_MATCHERS = ['startup', 'compact', 'resume', 'clear'] as const;
 export type SessionStartMatcher = (typeof SESSION_START_MATCHERS)[number];
+
+// --- Session cache (every hook invocation passes through it) ----------------
+
+export const SESSION_CACHE = {
+  /** FTS candidate cache lifetime. */
+  FTS_TTL_MS: 30_000,
+  /** Fallback lifetime for cached git facts (hash, remote) in a long-lived process. */
+  GIT_TTL_MS: 300_000,
+  /** Bounds the FTS cache so a long session cannot grow it without limit. */
+  MAX_FTS_ENTRIES: 50,
+  /** Dirty edit trackers are flushed to disk on this cadence. */
+  TRACKER_FLUSH_INTERVAL_MS: 60_000,
+  /** Hard TTL on skip-gate entries — the staleness bound for a lost invalidation. */
+  SKIP_GATE_TTL_MS: 60_000,
+  /** Per-process cap on skip-gate entries (FIFO eviction). */
+  MAX_SKIP_GATE_ENTRIES: 200,
+} as const;
+
+// --- Decision reflector (Stop hook, layer 1c) ------------------------------
+
+export const REFLECTION = {
+  /** Minimum decision-marker count before reflection fires. Single-marker
+   *  turns are too noisy — casual phrasing often includes one "recommend"
+   *  or "going with" without a real architectural choice behind it. */
+  MIN_MARKERS: 2,
+  /** Max decisions extracted per turn; the prompt caps at 3 to avoid
+   *  splitting related thoughts into shallow entries. */
+  MAX_DECISIONS: 3,
+  /** Max assistant text passed to the reflector (~500 Haiku tokens —
+   *  cheap even at high fire rates). */
+  INPUT_MAX_CHARS: 2000,
+  /** Sampling deadline; on expiry reflection returns empty and the caller
+   *  routes to the nudge path. */
+  TIMEOUT_MS: 10_000,
+} as const;

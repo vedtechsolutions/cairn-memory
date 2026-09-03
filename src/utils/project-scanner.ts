@@ -6,7 +6,7 @@
 import { readdirSync, readFileSync, existsSync, statSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join, basename, dirname, resolve } from 'node:path';
-import { PROJECT_SCAN } from '../constants/index.js';
+import { PROJECT_SCAN, GIT_SUBPROCESS } from '../constants/index.js';
 import { now } from './time.js';
 
 // --- Types ------------------------------------------------------------------
@@ -29,7 +29,7 @@ export function getGitHash(cwd: string): string | null {
     const result = execFileSync('git', ['rev-parse', 'HEAD'], {
       cwd,
       encoding: 'utf-8',
-      timeout: 5000,
+      timeout: GIT_SUBPROCESS.TIMEOUT_MS,
       stdio: ['pipe', 'pipe', 'pipe'],
     });
     return result.trim() || null;
@@ -44,7 +44,7 @@ export function getGitHash(cwd: string): string | null {
  *  contexts like the governance inspector. */
 function findGitConfigPath(cwd: string): string | null {
   let dir = resolve(cwd);
-  for (let depth = 0; depth < 64; depth++) {
+  for (let depth = 0; depth < GIT_SUBPROCESS.MAX_ANCESTOR_DEPTH; depth++) {
     const dotGit = join(dir, '.git');
     if (existsSync(dotGit)) {
       if (statSync(dotGit).isDirectory()) return join(dotGit, 'config');
@@ -103,7 +103,7 @@ export function getLatestCommitSubject(cwd: string): string | null {
     const result = execFileSync('git', ['log', '-1', '--pretty=%s'], {
       cwd,
       encoding: 'utf-8',
-      timeout: 5000,
+      timeout: GIT_SUBPROCESS.TIMEOUT_MS,
       stdio: ['pipe', 'pipe', 'pipe'],
     });
     const subject = result.trim();
@@ -205,7 +205,7 @@ export function getProjectModuleTerms(cwd: string): Set<string> {
 
 /** Get files deleted between two git commits. Returns file paths relative to cwd.
  *  Returns empty array on error (non-fatal). */
-export function getDeletedFiles(cwd: string, fromHash: string, toHash: string, timeoutMs = 5000): string[] {
+export function getDeletedFiles(cwd: string, fromHash: string, toHash: string, timeoutMs = GIT_SUBPROCESS.TIMEOUT_MS): string[] {
   try {
     const result = execFileSync(
       'git',
@@ -220,7 +220,7 @@ export function getDeletedFiles(cwd: string, fromHash: string, toHash: string, t
 
 /** Get files renamed between two git commits. Returns old→new path pairs.
  *  Uses git's rename detection (-M). Returns empty array on error (non-fatal). */
-export function getGitRenames(cwd: string, fromHash: string, toHash: string, timeoutMs = 5000): Array<{ oldPath: string; newPath: string }> {
+export function getGitRenames(cwd: string, fromHash: string, toHash: string, timeoutMs = GIT_SUBPROCESS.TIMEOUT_MS): Array<{ oldPath: string; newPath: string }> {
   try {
     const result = execFileSync(
       'git',
@@ -254,7 +254,7 @@ export interface GitWorkingState {
  *  and the last `recentCommitLimit` commit subjects on HEAD for ship-detection. */
 export function getGitWorkingState(
   cwd: string,
-  timeoutMs = 5000,
+  timeoutMs = GIT_SUBPROCESS.TIMEOUT_MS,
   recentCommitLimit = 8,
 ): GitWorkingState | null {
   try {

@@ -18,7 +18,6 @@ import {
 } from './query-fingerprint.js';
 import { computeEffectiveness } from './recovery.js';
 import {
-  DECISION_DEDUP_JACCARD,
   truncate,
   isCompletedDecision,
   isCorrectionQuality,
@@ -91,7 +90,7 @@ export function renderTier2(
       const tokens = tokeniseForOverlap(d.content);
       for (const sig of t1Sigs) {
         if (sig.prefix === prefix) return false;
-        if (jaccardOverlap(tokens, sig.tokens) >= DECISION_DEDUP_JACCARD) return false;
+        if (jaccardOverlap(tokens, sig.tokens) >= LIMITS.DECISION_DEDUP_JACCARD) return false;
       }
       return true;
     });

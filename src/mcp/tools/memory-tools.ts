@@ -6,7 +6,7 @@ import type { MemoryRepository } from '../../db/memory-repository.js';
 import type { EdgeRepository } from '../../db/edge-repository.js';
 import type { SessionCache } from '../../hooks/shared/session-cache.js';
 import { deriveOriginClient } from '../../hooks/shared/client-adapter.js';
-import { LEARNABLE_KINDS, LIMITS, BRIEFING_MODE, RELEVANCE, FINGERPRINT, CONFIDENCE, RETRIEVAL_PATHS, RERANK_FALLBACK_LABEL, type RetrievalPathKind, type ContextMode } from '../../constants/index.js';
+import { LEARNABLE_KINDS, LIMITS, BRIEFING_MODE, RELEVANCE, FINGERPRINT, CONFIDENCE, RETRIEVAL_PATHS, RERANK_FALLBACK_LABEL, type RetrievalPathKind, type ContextMode, CLEANUP_ACTIONS } from '../../constants/index.js';
 import { RERANK } from '../../constants/reranker-models.js';
 import { generateFingerprint } from '../../utils/fingerprint.js';
 import { surfacesInScopedRecall } from '../../utils/cross-project-guard.js';
@@ -610,7 +610,7 @@ export function registerMemoryTools(
       description: 'Bulk delete memories by filter. Use "preview" first to see what would be deleted, then "execute" to delete.',
       annotations: { readOnlyHint: false, destructiveHint: true },
       inputSchema: z.object({
-        action: z.enum(['preview', 'execute']).describe('"preview" to see matches, "execute" to delete'),
+        action: z.enum(CLEANUP_ACTIONS).describe('"preview" to see matches, "execute" to delete'),
         filter: z.object({
           project: z.string().optional().describe('Filter by project ID'),
           kind: z.enum(LEARNABLE_KINDS).optional().describe('Filter by memory kind'),

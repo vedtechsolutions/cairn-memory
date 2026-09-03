@@ -30,6 +30,8 @@ export const PROACTIVE = {
   MIN_DECISION_CONFIDENCE: 0.7,
   /** Cooldown: don't re-surface the same pitfall within this window */
   SURFACE_COOLDOWN_MS: 300_000, // 5 minutes
+  /** A1: a tool failure on the same file within this window counts as recent. */
+  RECENT_FAILURE_WINDOW_MS: 300_000,
   /**
    * Cooldown for session-aware warnings (A1 recent-failure, A2 edit-fail
    * loop, A3 rapid re-edit). Without this, A3 fires on every consecutive

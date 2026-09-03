@@ -25,14 +25,7 @@ import { get, request } from 'node:http';
 import { join } from 'node:path';
 import { FS_PERMS } from '../constants/index.js';
 import { dataDir, FILES } from '../constants/paths.js';
-
-// --- Constants ---
-
-/** Startup-path probe; generous because it runs once per process start. */
-const PROBE_TIMEOUT_MS = 250;
-/** Fire-and-forget invalidation post; the daemon-side 60s skip-gate TTL is
- *  the backstop for a lost notification. */
-const BUMP_TIMEOUT_MS = 1000;
+import { HOOK_SOCKET, SOCKET_ROUTES } from '../constants/mcp.js';
 
 // --- Paths ---
 
@@ -116,7 +109,7 @@ export function probeHookSocket(): Promise<SocketProbeResult | null> {
   if (!existsSync(socketPath())) return Promise.resolve(null);
   return new Promise((resolve) => {
     const req = get(
-      { socketPath: socketPath(), path: '/health', timeout: PROBE_TIMEOUT_MS },
+      { socketPath: socketPath(), path: SOCKET_ROUTES.HEALTH, timeout: HOOK_SOCKET.PROBE_TIMEOUT_MS },
       (res) => {
         const chunks: Buffer[] = [];
         res.on('data', (c: Buffer) => chunks.push(c));
@@ -217,7 +210,7 @@ export function releaseSocketClaim(): void {
  */
 export function postMemoryBumpToOwner(): void {
   const req = request(
-    { socketPath: socketPath(), path: '/bump-memory-version', method: 'POST', timeout: BUMP_TIMEOUT_MS },
+    { socketPath: socketPath(), path: '/bump-memory-version', method: 'POST', timeout: HOOK_SOCKET.BUMP_TIMEOUT_MS },
     (res) => { res.resume(); },
   );
   req.on('timeout', () => req.destroy());

@@ -1,7 +1,6 @@
 import type { CapabilityDegradationReason } from './verdict-types.js';
+import { CAPABILITY_HEARTBEAT } from '../constants/index.js';
 
-export const CAPABILITY_HEARTBEAT_MAX_AGE_MS = 30 * 60 * 1_000;
-export const CAPABILITY_HEARTBEAT_FUTURE_SKEW_MS = 60 * 1_000;
 
 export type CapabilityObservation =
   | 'observed'
@@ -73,8 +72,8 @@ function currentHeartbeat(options: {
   const heartbeatMs = Date.parse(options.row.lastHeartbeatAt);
   if (!Number.isFinite(heartbeatMs)) return false;
   const age = options.nowMs - heartbeatMs;
-  return age >= -CAPABILITY_HEARTBEAT_FUTURE_SKEW_MS &&
-    age <= CAPABILITY_HEARTBEAT_MAX_AGE_MS;
+  return age >= -CAPABILITY_HEARTBEAT.FUTURE_SKEW_MS &&
+    age <= CAPABILITY_HEARTBEAT.MAX_AGE_MS;
 }
 
 /** Pure capability/degradation resolver. It never reads hook settings or infers unknown support. */

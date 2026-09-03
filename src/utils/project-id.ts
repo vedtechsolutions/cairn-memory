@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { getGitRemote } from './project-scanner.js';
+import { SESSION_CACHE } from '../constants/index.js';
 
 /**
  * Project identity.
@@ -13,16 +14,15 @@ import { getGitRemote } from './project-scanner.js';
  * call site and the bare-name resolver stay uniform.
  */
 
-/** Mirror SessionCache's GIT_CACHE_TTL_MS: resolve `origin` at most once per
- *  cwd per 5 minutes in a long-lived process, so this never runs a subprocess
- *  on the hot hook path more than the existing getGitHash cache does. */
-const REMOTE_CACHE_TTL_MS = 300_000;
+// Same lifetime as SessionCache's git facts: resolve `origin` at most once per
+// cwd per window in a long-lived process, so this never runs a subprocess on
+// the hot hook path more than the existing getGitHash cache does.
 interface RemoteCacheEntry { canonical: string | null; cachedAt: number }
 const remoteCache = new Map<string, RemoteCacheEntry>();
 
 function resolveCanonicalRemote(dirPath: string): string | null {
   const hit = remoteCache.get(dirPath);
-  if (hit && Date.now() - hit.cachedAt <= REMOTE_CACHE_TTL_MS) return hit.canonical;
+  if (hit && Date.now() - hit.cachedAt <= SESSION_CACHE.GIT_TTL_MS) return hit.canonical;
   const raw = getGitRemote(dirPath);
   const canonical = raw ? normalizeGitRemote(raw) : null;
   remoteCache.set(dirPath, { canonical, cachedAt: Date.now() });

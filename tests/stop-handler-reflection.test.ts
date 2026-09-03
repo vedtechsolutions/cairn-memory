@@ -223,7 +223,7 @@ describe('Stop handler — layer precedence', () => {
     const server = mockInnerServer({ samplingCapable: true });
     client = makeClient(server);
 
-    // Single marker — below REFLECTION_MIN_MARKERS (2). Reflection skipped.
+    // Single marker — below REFLECTION.MIN_MARKERS (2). Reflection skipped.
     const message = '## Header\n\nJust a status update with one **recommendation** mentioned offhand, no real decision.';
     const result = await handleStop(makeInput(message), client);
 

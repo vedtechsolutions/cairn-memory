@@ -44,8 +44,12 @@ else
 fi
 INPUT=$(cat)
 
-if [ -S "$SOCK" ]; then
-  RESULT=$(printf '%s' "$INPUT" | curl -sf --max-time 1 --unix-socket "$SOCK" "http://localhost/statusline" -H "Content-Type: application/json" -d @- 2>/dev/null)
+# The route comes from identity.sh (one spelling shared with the server). A
+# stale identity.sh — a partial rebuild that copied this relay beside an old
+# one — would post to the bare root and be 404'd every refresh; take the
+# minimal fallback outright instead (Codex review).
+if [ -S "$SOCK" ] && [ -n "${WK_ROUTE_STATUSLINE:-}" ]; then
+  RESULT=$(printf '%s' "$INPUT" | curl -sf --max-time 1 --unix-socket "$SOCK" "http://localhost$WK_ROUTE_STATUSLINE" -H "Content-Type: application/json" -d @- 2>/dev/null)
   if [ $? -eq 0 ] && [ -n "$RESULT" ]; then
     printf '%s' "$RESULT"
     exit 0

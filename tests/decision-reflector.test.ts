@@ -13,8 +13,8 @@ import {
   countDecisionMarkers,
   reflectOnTurn,
   renderReflectedDecision,
-  REFLECTION_MIN_MARKERS,
 } from '../src/hooks/shared/decision-reflector.js';
+import { REFLECTION } from '../src/constants/index.js';
 
 // --- countDecisionMarkers -------------------------------------------
 
@@ -76,7 +76,7 @@ describe('countDecisionMarkers', () => {
       'The cost is minimal and the payoff is explicit-authorship capture.',
       'I would push back on building a full graph — the maintenance tax is too high.',
     ].join(' ');
-    assert.ok(countDecisionMarkers(text) >= REFLECTION_MIN_MARKERS);
+    assert.ok(countDecisionMarkers(text) >= REFLECTION.MIN_MARKERS);
   });
 });
 
@@ -212,7 +212,7 @@ describe('reflectOnTurn', () => {
     assert.deepEqual(result, []);
   });
 
-  it('caps extracted decisions at REFLECTION_MAX_DECISIONS', async () => {
+  it('caps extracted decisions at REFLECTION.MAX_DECISIONS', async () => {
     const many = '{"decisions":[' +
       '{"chose":"A","why":"a"},' +
       '{"chose":"B","why":"b"},' +

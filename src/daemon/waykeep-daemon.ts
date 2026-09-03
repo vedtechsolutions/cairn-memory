@@ -25,14 +25,10 @@ import { warmupEmbeddings, getEmbeddingModelConfig } from '../utils/embeddings.j
 import { isRerankEnabled, resolveRerankerModel, warmupReranker } from '../utils/reranker.js';
 import { ENV } from '../constants/env.js';
 import { log } from '../utils/log.js';
+import { DAEMON } from '../constants/index.js';
 const daemonLog = log.child('daemon');
 
 const DB_PATH = process.env[ENV.DB_PATH] ?? undefined;
-/** Retry cadence while a legacy embedded owner still holds the socket; the
- *  daemon waits for it to exit rather than displacing it. */
-const CLAIM_RETRY_INTERVAL_MS = 10_000;
-/** Grace period for in-flight hook requests after a shutdown signal. */
-const SHUTDOWN_GRACE_MS = 3_000;
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -65,8 +61,8 @@ async function main(): Promise<void> {
   while (server === null) {
     server = await startHookSocket(client, cache, undefined, { mode: 'standalone' });
     if (server === null) {
-      daemonLog.info(`Socket owned by another process — retrying in ${CLAIM_RETRY_INTERVAL_MS / 1000}s`);
-      await delay(CLAIM_RETRY_INTERVAL_MS);
+      daemonLog.info(`Socket owned by another process — retrying in ${DAEMON.CLAIM_RETRY_INTERVAL_MS / 1000}s`);
+      await delay(DAEMON.CLAIM_RETRY_INTERVAL_MS);
     }
   }
   const httpServer = server;
@@ -91,7 +87,7 @@ async function main(): Promise<void> {
     daemonLog.info(`${signal} received — shutting down`);
     for (const worker of workers) worker.handle.stop();
     httpServer.close(() => process.exit(0));
-    setTimeout(() => process.exit(0), SHUTDOWN_GRACE_MS).unref();
+    setTimeout(() => process.exit(0), DAEMON.SHUTDOWN_GRACE_MS).unref();
   };
   process.on('SIGTERM', () => shutdown('SIGTERM'));
   process.on('SIGINT', () => shutdown('SIGINT'));

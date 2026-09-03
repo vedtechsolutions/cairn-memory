@@ -8,9 +8,6 @@ import { existsSync as fsExistsSync } from 'node:fs';
 import type { BriefingContext } from './types.js';
 import { TOOL } from '../../../constants/mcp.js';
 
-/** T1↔T2 decision dedup Jaccard threshold (GAP F). Slightly looser than staleness. */
-export const DECISION_DEDUP_JACCARD = 0.55;
-
 /** Truncate text to maxChars, adding ellipsis if cut */
 export function truncate(text: string, maxChars: number): string {
   if (text.length <= maxChars) return text;
