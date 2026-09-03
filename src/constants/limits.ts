@@ -191,3 +191,13 @@ export const GIT_SUBPROCESS = {
   /** Ancestor directories examined when looking for a repository root. */
   MAX_ANCESTOR_DEPTH: 64,
 } as const;
+
+// --- Source hygiene (enforced by tests/source-ratchets.test.ts) --------------
+
+export const SOURCE_HYGIENE = {
+  /** Files above this are split; the ratchet holds today's offenders at their
+   *  current size and refuses new ones. */
+  MAX_FILE_LINES: 300,
+  /** Numeric literals that never need a name: indices, parity, off-by-one. */
+  TRIVIAL_NUMERIC_LITERALS: [0, 1, 2],
+} as const;

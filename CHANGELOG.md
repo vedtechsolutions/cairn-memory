@@ -13,6 +13,7 @@
 
 ### Added
 
+- Added two source-hygiene ratchets: no file may gain un-named numeric literals or grow past the line limit (`tests/source-ratchets.test.ts` against pinned baselines; `scripts/source-ratchets.mjs --write` re-pins after a cleanup and refuses to pin growth unless `--force` is passed deliberately).
 - Added `WAYKEEP_LOG_LEVEL` support (`silent`, `error`, `warn`, `info`, `debug`; `WAYKEEP_VERBOSE=1` selects debug) for the stderr diagnostics of the MCP server, daemon, hook socket, hooks and data layer — the variable `waykeep init` had always set in the MCP server env but nothing read — with one `[waykeep]` / `[waykeep:<scope>]` prefix replacing five hand-spelled variants. CLI output is unaffected.
 - Added validated structural-scan primitives with a three-gate harness (known-positive, cross-file, mutation): the namespace-centralization audits run on scanners proven able to find planted violations — including across files and inside comment-marker-bearing strings — and a deliberately defective scanner demonstrably fails the committed gates.
 - Added retrieval-path legibility to `cairn_recall`: normal-mode responses name their retrieval path (hybrid or a typed FTS-only degradation notice) with per-result rank ordinals and scores, and minimal mode keeps a compact marker for the degraded case, so a silent embedding fallback is visible instead of inferred.

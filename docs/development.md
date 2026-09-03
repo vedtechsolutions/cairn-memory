@@ -195,6 +195,7 @@ node scripts/longmemeval/run.mjs \
   --variant hybrid --embed \
   --out docs/benchmarks/longmemeval-s-hybrid.json --md docs/benchmarks/longmemeval-s-hybrid.md
 node scripts/repair-confidence.mjs                  # dry-run confidence repair (see --execute)
+node scripts/source-ratchets.mjs                    # un-named numeric literals + oversized files vs the pinned baselines (--write re-pins; --force accepts a raise)
 ```
 
 Environment overrides (`tests/hermetic-env.cjs` sets the hermetic ones automatically; the rest are operator knobs, honored in production):
