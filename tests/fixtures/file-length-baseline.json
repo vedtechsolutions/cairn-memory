@@ -18,7 +18,6 @@
   "src/governance/inspector.ts": 394,
   "src/governance/recorder.ts": 318,
   "src/governance/shadow-evaluator.ts": 354,
-  "src/governance/worktree-digest.ts": 711,
   "src/hooks/handlers/error-learning-handler.ts": 415,
   "src/hooks/handlers/session-start-handler.ts": 496,
   "src/hooks/session-end.ts": 599,
