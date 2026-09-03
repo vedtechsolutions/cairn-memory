@@ -6,11 +6,11 @@
 import type { PostToolUseInput } from '../shared/hook-io.js';
 import { recordRollup } from '../../db/telemetry-rollup.js';
 import { ROLLUP, ROLLUP_METRICS, CURSOR_READ_MAX_BYTES } from '../../constants/index.js';
-import type { CachedHookContext } from '../shared/db-client.js';
+import type { CachedHookContext, HookDbClient } from '../shared/db-client.js';
 import { basename } from 'node:path';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { CONFIDENCE, LIMITS, TOKEN_BUDGET, isEditToolName } from '../../constants/index.js';
-import { loadTracker, saveTracker, type ResumeCursor } from '../shared/edit-tracker.js';
+import { loadTracker, saveTracker, type EditTracker, type ResumeCursor } from '../shared/edit-tracker.js';
 import { classifySuccess, type ToolEvent } from '../../utils/success-classifier.js';
 import { extractPatchFilePaths, patchTextOf } from '../shared/patch-paths.js';
 import { projectId } from '../../utils/project-id.js';
@@ -24,26 +24,49 @@ export interface SuccessTrackerResult {
   recorder?: RecorderDiagnostic;
 }
 
+/** The Claude tools whose successes the governance recorder observes. */
+const GOVERNANCE_OBSERVED_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'Bash']);
+
+export function isGovernanceObservedTool(toolName: string): boolean {
+  return GOVERNANCE_OBSERVED_TOOLS.has(toolName);
+}
+
+/** Business tracking covers every edit-type tool plus Bash. */
+export function isSuccessTrackedTool(toolName: string): boolean {
+  return toolName === 'Bash' || isEditToolName(toolName);
+}
+
 export async function handleSuccessTracker(
   input: PostToolUseInput,
   client: CachedHookContext,
 ): Promise<SuccessTrackerResult> {
-  const result = handleSuccessTrackerBusiness(input, client);
-  if (!['Write', 'Edit', 'MultiEdit', 'Bash'].includes(input.tool_name)) return result;
+  if (!isSuccessTrackedTool(input.tool_name)) return { tracked: false };
+  const tracker = client.cache?.getTracker(input.session_id) ?? loadTracker(input.session_id);
+  const result = trackSuccess(input, client, tracker);
+  if (client.cache) {
+    client.cache.setTracker(input.session_id, tracker);
+  } else {
+    saveTracker(tracker, input.session_id);
+  }
+  // Governance recording stays Claude-scoped.
+  if (!isGovernanceObservedTool(input.tool_name)) return result;
   return { ...result, recorder: await recordGovernanceEventFailOpen(client.db, input) };
 }
 
-function handleSuccessTrackerBusiness(input: PostToolUseInput, client: CachedHookContext): SuccessTrackerResult {
-  // Governance recording above stays Claude-scoped; business tracking
-  // covers every edit-type tool plus Bash.
-  if (input.tool_name !== 'Bash' && !isEditToolName(input.tool_name)) {
-    return { tracked: false };
-  }
+/**
+ * The tracking itself, on a caller-owned tracker: the daemon hands over its
+ * cached tracker (above); the direct-node entry point hands over the one it
+ * holds under the tracker file lock (success-tracker.ts). Mutates `tracker`.
+ * With no client (the direct path could not open the database) the tracker
+ * bookkeeping still happens and every database-dependent step is skipped;
+ * surfaced pitfalls stay recorded for a later run to credit.
+ */
+export function trackSuccess(input: PostToolUseInput, client: HookDbClient | null, tracker: EditTracker): SuccessTrackerResult {
+  if (!isSuccessTrackedTool(input.tool_name)) return { tracked: false };
 
   const filePaths = extractFilePaths(input);
   const filePath = filePaths[0] ?? undefined;
   const currentTime = Date.now();
-  const tracker = client.cache?.getTracker(input.session_id) ?? loadTracker(input.session_id);
 
   // Append to tool chain for success pattern detection
   const toolEvent: ToolEvent = {
@@ -64,8 +87,8 @@ function handleSuccessTrackerBusiness(input: PostToolUseInput, client: CachedHoo
       // Auto-checkpoint on active plan step
       try {
         const project = projectId(input.cwd);
-        const activePlan = client.planRepo.getActive(project);
-        if (activePlan) {
+        const activePlan = client?.planRepo.getActive(project);
+        if (client && activePlan) {
           const inProgress = activePlan.steps.find(s => s.status === 'in_progress');
           if (inProgress) {
             const editedFiles = tracker.toolChain
@@ -93,8 +116,8 @@ function handleSuccessTrackerBusiness(input: PostToolUseInput, client: CachedHoo
       // Resolve active investigation chain on success
       try {
         const project = projectId(input.cwd);
-        const activeChain = client.investigationRepo.getActiveChain(project, input.session_id);
-        if (activeChain) {
+        const activeChain = client?.investigationRepo.getActiveChain(project, input.session_id);
+        if (client && activeChain) {
           const editedFiles = tracker.toolChain
             .filter(t => t.file && t.success && isEditToolName(t.tool))
             .map(t => basename(t.file!))
@@ -125,7 +148,7 @@ function handleSuccessTrackerBusiness(input: PostToolUseInput, client: CachedHoo
       if (tracker.surfacedPitfalls[fp]?.length > 0) { needsBoost = true; break; }
     }
 
-    if (needsBoost) {
+    if (needsBoost && client) {
       let verifiedImpacts = 0;
       for (const fp of filePaths) {
         const surfacedForFile = tracker.surfacedPitfalls[fp];
@@ -175,11 +198,6 @@ function handleSuccessTrackerBusiness(input: PostToolUseInput, client: CachedHoo
     }
   }
 
-  if (client.cache) {
-    client.cache.setTracker(input.session_id, tracker);
-  } else {
-    saveTracker(tracker, input.session_id);
-  }
   return { tracked: true };
 }
 

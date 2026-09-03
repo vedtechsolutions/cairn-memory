@@ -66,6 +66,8 @@ export const CONTEXT_THRESHOLDS = {
 
 /** Autocompact buffer in tokens (~5% of 1M — triggers compaction with room to spare) */
 export const AUTOCOMPACT_BUFFER_TOKENS = 50_000;
+/** Percent scale for the context-window arithmetic. */
+export const PERCENT_TOTAL = 100;
 export const DEFAULT_CONTEXT_WINDOW_SIZE = 1_000_000;
 
 // --- Session End Reasons ----------------------------------------------------

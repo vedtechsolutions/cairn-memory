@@ -203,7 +203,7 @@ Environment overrides (`tests/hermetic-env.cjs` sets the hermetic ones automatic
 | Env var | Effect |
 |---------|--------|
 | `WAYKEEP_DB_PATH` | Database location (also honored in production) |
-| `WAYKEEP_DIR` | State directory (default `~/.waykeep`; un-migrated installs use `~/.cairn`) |
+| `WAYKEEP_DIR` | State directory for the edit trackers, the daemon socket and the error-dedup file (default `~/.waykeep`; un-migrated installs use `~/.cairn`). The database and the config file are not relocated with it: `WAYKEEP_DB_PATH` and `WAYKEEP_CONFIG_PATH` do that |
 | `WAYKEEP_STATE_PATH` | `waykeep-state.json` location (default `~/.claude/waykeep-state.json`) |
 | `WAYKEEP_QUERY_CWD` | Pins the briefing query-fingerprint cwd signal (A1 checkout-name neutrality) |
 | `WAYKEEP_ALLOW_TMP_TRANSCRIPTS` | Admits the OS tmpdir into the transcript-path allowlist (tests only) |

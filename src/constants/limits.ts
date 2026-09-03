@@ -158,6 +158,12 @@ export const LIMITS = {
   GOAL_SHIPPED_COVERAGE: 0.6,
   /** Provenance tag slugs (`type:…`, `topic:…`, `group:…`) are capped here. */
   SLUG_MAX_CHARS: 40,
+  /** SubagentStop: a last message shorter than this carries no outcome. */
+  SUBAGENT_MESSAGE_MIN_CHARS: 30,
+  /** SubagentStop: sentences shorter than this are not summary candidates. */
+  SUBAGENT_SENTENCE_MIN_CHARS: 20,
+  /** SubagentStop: the summary kept from the chosen sentence. */
+  SUBAGENT_SUMMARY_MAX_CHARS: 140,
   /** Shortest userContext message that may stand in as a fallback goal. */
   FALLBACK_GOAL_MIN_CHARS: 20,
   /** Branch-name-derived goals shorter or longer than this are not goals. */

@@ -198,7 +198,11 @@ export function realHomeDataDir(): string {
   return resolve(robustHomedir(), DATA_DIR_NAME);
 }
 
-/** Default database path under the COHERENT state root (Phase B). */
+/** Default database path under the COHERENT state root (Phase B). Deliberately
+ *  independent of the `DIR` override: the database has its own per-item
+ *  override (`DB_PATH`), and relocating it implicitly with the directory
+ *  would hand an existing install an empty store. Anything that must run
+ *  hermetically sets `DB_PATH` explicitly (the test preload does). */
 export function defaultDbPath(): string {
   const root = resolveStateRoot();
   return join(root.dir, root.dbFilename);

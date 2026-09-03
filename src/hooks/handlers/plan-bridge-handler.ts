@@ -19,6 +19,7 @@ export interface PlanBridgeResult {
   output: string | null;
   action: 'skip' | 'created' | 'no-plan-found';
   steps?: number;
+  planId?: string;
 }
 
 const SOURCE_EXTENSIONS = new Set([
@@ -81,9 +82,9 @@ function createWaykeepPlan(
     .slice(0, LIMITS.MAX_STEPS_PER_PLAN)
     .map(desc => ({ description: desc }));
 
-  client.planRepo.create({ project, name: planContent.name, steps });
+  const created = client.planRepo.create({ project, name: planContent.name, steps });
 
   const msg = `[WAYKEEP] Plan auto-persisted: "${planContent.name}" (${steps.length} steps). Survives compaction. Use ${TOOL.PLAN}(step) to track progress.`;
   recordRollup(client.db, input.session_id, ROLLUP_METRICS.INJECTED, 'plan-bridge', estimateTokensFast(msg));
-  return { output: msg, action: 'created', steps: steps.length };
+  return { output: msg, action: 'created', steps: steps.length, planId: created.plan.id };
 }

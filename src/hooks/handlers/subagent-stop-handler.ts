@@ -5,15 +5,21 @@
 import type { SubagentStopInput } from '../shared/hook-io.js';
 import type { HookDbClient } from '../shared/db-client.js';
 import { projectId } from '../../utils/project-id.js';
-import { TOKEN_BUDGET } from '../../constants/index.js';
+import { LIMITS, TOKEN_BUDGET } from '../../constants/index.js';
 
 export interface SubagentStopResult {
   noted: boolean;
 }
 
+/** A last message long enough to carry an outcome worth noting. */
+export function hasSubagentSummary(input: SubagentStopInput): boolean {
+  const message = input.last_assistant_message;
+  return typeof message === 'string' && message.length >= LIMITS.SUBAGENT_MESSAGE_MIN_CHARS;
+}
+
 export function handleSubagentStop(input: SubagentStopInput, client: HookDbClient): SubagentStopResult {
   const message = input.last_assistant_message;
-  if (!message || message.length < 30) {
+  if (!message || !hasSubagentSummary(input)) {
     return { noted: false };
   }
 
@@ -57,11 +63,11 @@ function normaliseNote(n: string): string {
 }
 
 function extractSummary(text: string): string | null {
-  const sentences = text.split(/[.!?\n]/).map(s => s.trim()).filter(s => s.length >= 20);
+  const sentences = text.split(/[.!?\n]/).map(s => s.trim()).filter(s => s.length >= LIMITS.SUBAGENT_SENTENCE_MIN_CHARS);
   if (sentences.length === 0) return null;
 
   const actionSentence = sentences.find(s =>
     /\b(found|created|fixed|updated|resolved|implemented|completed|added|removed|changed)\b/i.test(s)
   );
-  return (actionSentence ?? sentences[0]).slice(0, 140);
+  return (actionSentence ?? sentences[0]).slice(0, LIMITS.SUBAGENT_SUMMARY_MAX_CHARS);
 }

@@ -8,8 +8,8 @@
  * required for sandboxed/read-only-home environments (EROFS) and to keep live
  * Cairn state from changing test behavior.
  *
- * The DB is not redirected here: tests open ':memory:' explicitly, and
- * the DB_PATH override is only read by hook entrypoints, which tests don't spawn.
+ * The DB_PATH override is pinned under the hermetic state dir unconditionally:
+ * tests spawn hook entry points, and an exported live-store path must never win.
  */
 'use strict';
 const { mkdtempSync, rmSync, readFileSync } = require('node:fs');
@@ -41,7 +41,7 @@ const E = ID.ENV || {};
 // then be undefined, `process.env[undefined]` would set the literal key
 // "undefined", the real override would stay unset, and the suite would run
 // against the real home while passing. Validate before using any of them.
-for (const key of ['DIR', 'STATE_PATH', 'QUERY_CWD', 'CODEX_DIR', 'CONFIG_PATH', 'ALLOW_TMP_TRANSCRIPTS',
+for (const key of ['DIR', 'DB_PATH', 'STATE_PATH', 'QUERY_CWD', 'CODEX_DIR', 'CONFIG_PATH', 'ALLOW_TMP_TRANSCRIPTS',
   'CLAUDE_SETTINGS', 'CLAUDE_CONFIG', 'CLAUDE_BIN']) {
   if (typeof E[key] !== 'string' || !E[key]) {
     throw new Error(
@@ -50,7 +50,8 @@ for (const key of ['DIR', 'STATE_PATH', 'QUERY_CWD', 'CODEX_DIR', 'CONFIG_PATH',
     );
   }
 }
-for (const key of ['NAMESPACE', 'DATA_DIR', 'CLIENT_STATE_FILE']) {
+for (const key of ['NAMESPACE', 'DATA_DIR', 'DB_FILE', 'CLIENT_STATE_FILE']) {
+  // (LEGACY_DATA_DIRS is array-checked with LEGACY_ENV_PREFIXES below.)
   if (typeof ID[key] !== 'string' || !ID[key]) {
     throw new Error(`hermetic preload: ${IDENTITY_PATH} is missing ${key} — run \`npm run build\`.`);
   }
@@ -58,9 +59,9 @@ for (const key of ['NAMESPACE', 'DATA_DIR', 'CLIENT_STATE_FILE']) {
 // The legacy-env scrub below depends on this list; a stale artifact that
 // lacks it would silently disable the scrub and let a developer's real
 // CAIRN_* leak into hermetic runs. Fail loud instead.
-if (!Array.isArray(ID.LEGACY_ENV_PREFIXES)) {
+if (!Array.isArray(ID.LEGACY_ENV_PREFIXES) || !Array.isArray(ID.LEGACY_DATA_DIRS)) {
   throw new Error(
-    `hermetic preload: ${IDENTITY_PATH} is missing LEGACY_ENV_PREFIXES — stale generator output. ` +
+    `hermetic preload: ${IDENTITY_PATH} is missing LEGACY_ENV_PREFIXES or LEGACY_DATA_DIRS — stale generator output. ` +
     'Run `npm run build`; without it the legacy-env scrub is disabled and the suite could inherit a real CAIRN_* env.',
   );
 }
@@ -77,12 +78,38 @@ for (const prefix of ID.LEGACY_ENV_PREFIXES || []) {
   }
 }
 
+// Canary, on the INHERITED values before any temp dir exists (so a refusal
+// leaks nothing): the pins below keep a developer's DIR/STATE_PATH, and those
+// must not point into the real home store.
+{
+  const { homedir, userInfo } = require('node:os');
+  const { resolve, sep, isAbsolute } = require('node:path');
+  // An empty HOME makes homedir() return '' (a CWD-relative store); fall back
+  // to the passwd entry exactly as production's robustHomedir does.
+  const home = isAbsolute(homedir()) ? homedir() : userInfo().homedir;
+  const realStores = [ID.DATA_DIR, ...(ID.LEGACY_DATA_DIRS || [])].map(d => resolve(home, d));
+  for (const key of [E.DIR, E.STATE_PATH]) {
+    if (!process.env[key]) continue;
+    const value = resolve(process.env[key]);
+    for (const store of realStores) {
+      if (value === store || value.startsWith(store + sep)) {
+        throw new Error(`hermetic preload: ${key}=${process.env[key]} points into the real store ${store}; unset it to run the suite.`);
+      }
+    }
+  }
+}
+
 const dir = mkdtempSync(join(tmpdir(), `${ID.NAMESPACE}-hermetic-`));
 
 if (!process.env[E.DIR]) process.env[E.DIR] = join(dir, ID.DATA_DIR);
 if (!process.env[E.STATE_PATH]) {
   process.env[E.STATE_PATH] = join(dir, ID.CLIENT_STATE_FILE);
 }
+// The database too — UNCONDITIONALLY: hook entry points spawned by tests
+// read the DB_PATH override, tests open the default database through it,
+// and a developer's exported DB_PATH is by definition a live store. Unlike
+// the directory pins above it is never inherited (codex P1, phase 3b).
+process.env[E.DB_PATH] = join(process.env[E.DIR], ID.DB_FILE);
 // A1: pin the briefing query-fp cwd signal to a token-free basename ('x' is
 // under the 3-char token floor) so test behavior can't depend on what the
 // checkout directory happens to be called.
