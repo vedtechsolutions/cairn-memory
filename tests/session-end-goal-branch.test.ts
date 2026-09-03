@@ -17,7 +17,9 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 describe('session-end.ts goal_branch + goal_carry_count regression', () => {
-  const source = readFileSync(resolve('src/hooks/session-end.ts'), 'utf-8');
+  // The snapshot stage of the SessionEnd hook (phase 4 split) holds the INSERT
+  // and the goal resolution the hook used to carry inline.
+  const source = readFileSync(resolve('src/hooks/shared/session-end/final-snapshot.ts'), 'utf-8');
   // Goal-continuity resolution was extracted into the shared goal-resolver
   // (audit refactor) — the inheritance invariants now live there, and
   // session-end must delegate to it.

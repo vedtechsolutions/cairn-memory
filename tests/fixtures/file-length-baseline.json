@@ -19,7 +19,6 @@
   "src/governance/shadow-evaluator.ts": 354,
   "src/hooks/handlers/error-learning-handler.ts": 415,
   "src/hooks/handlers/session-start-handler.ts": 496,
-  "src/hooks/session-end.ts": 599,
   "src/hooks/shared/session-cache.ts": 352,
   "src/mcp/hook-socket.ts": 512,
   "src/mcp/owner-rpc.ts": 303,

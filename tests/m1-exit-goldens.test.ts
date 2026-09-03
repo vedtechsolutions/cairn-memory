@@ -135,7 +135,7 @@ describe('M1-exit: the render-wiring guard (AST)', () => {
       why: 'Dedup KEY (normalized prefix) used only in a Set membership test; the rendered line on the adjacent path goes through formatMemoryContent.',
     },
     {
-      file: 'src/hooks/session-end.ts',
+      file: 'src/hooks/shared/session-end/session-consolidation.ts',
       snippet: 'content: row.content,',
       why: 'Consolidation-candidate assembly (row → Memory shape) consumed by scoring + repository writes (scrub-on-write); not a render path.',
     },

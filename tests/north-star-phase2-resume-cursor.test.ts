@@ -267,7 +267,8 @@ describe('Cursor persistence through snapshot (v21 reassessment fix)', () => {
     // Resolve against process cwd so both ts-source runs and dist runs
     // read the same authoritative source files.
     const precompactSrc = readFileSync(resolve('src/hooks/precompact.ts'), 'utf-8');
-    const sessionEndSrc = readFileSync(resolve('src/hooks/session-end.ts'), 'utf-8');
+    // The SessionEnd INSERT lives in the final-snapshot stage module (phase 4 split).
+    const sessionEndSrc = readFileSync(resolve('src/hooks/shared/session-end/final-snapshot.ts'), 'utf-8');
     const countInserts = (src: string): number => {
       const match = src.match(/INSERT INTO compaction_snapshots[\s\S]+?VALUES \(([^)]+)\)/);
       return match ? (match[1].match(/\?/g) ?? []).length : 0;
