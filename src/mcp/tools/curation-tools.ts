@@ -131,5 +131,5 @@ export function registerCurationTools(deps: MemoryToolDeps): void {
       bumpCache(sessionCache);
       return { content: [{ type: 'text', text: result.invalidated ? 'invalidated' : 'ok' }] };
     },
-  )
+    );
 }

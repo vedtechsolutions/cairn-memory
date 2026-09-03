@@ -111,5 +111,5 @@ export function registerCleanupTool(deps: MemoryToolDeps): void {
         ? ` (${skippedPrivate} in private project(s) skipped — run from a session inside the project)` : '';
       return { content: [{ type: 'text', text: `deleted ${deleted}${note}` }] };
     },
-  )
+    );
 }
