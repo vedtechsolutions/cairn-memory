@@ -19,6 +19,7 @@ import {
   captureWorktreeDigestV2, type WorktreeDigestV2Result,
 } from '../../src/governance/worktree-digest.js';
 import { projectId } from '../../src/utils/project-id.js';
+import { GENEROUS_DIGEST_BUDGET_MS } from './test-budgets.js';
 
 export type CorpusTreeState =
   | 'clean' | 'dirty' | 'staged' | 'mixed' | 'untracked' | 'rename' | 'deletion'
@@ -166,6 +167,16 @@ function mutateAfterEvidence(root: string, mutation: CorpusScenario['mutation'])
   appendFileSync(join(root, 'src/a.ts'), `// ${mutation}\n`);
 }
 
+/** Real git on temporary worktrees under a loaded host can exceed the 1 s
+ *  production digest ceiling. The corpora test verdict logic, not timing
+ *  (the fault-injection and digest tests own that), so every corpus digest
+ *  runs under this generous deadline and the evaluator reads a deterministic
+ *  clock that advances one millisecond per reading — monotone, never near
+ *  its budget. That was the recorded full-suite flake ("digest deadline
+ *  exceeded" / deadline_exceeded verdicts) on a busy box. */
+export function corpusDigestDeadline(): number { return performance.now() + GENEROUS_DIGEST_BUDGET_MS; }
+export function corpusClock(): () => number { let now = 0; return () => (now += 1); }
+
 export async function runCorpusScenario(
   db: Database.Database, root: string, scenario: CorpusScenario, auxiliaries: string[],
 ): Promise<CorpusRun> {
@@ -173,7 +184,7 @@ export async function runCorpusScenario(
   const hasConfig = scenario.tree !== 'clean-no-config';
   const loaded = hasConfig ? loadGateConfig(root) : null;
   const baseline = hasConfig ? await captureWorktreeDigestV2({
-    projectRoot: root, relevantPaths: ['**'], configSha256: loaded!.sha256,
+    projectRoot: root, relevantPaths: ['**'], configSha256: loaded!.sha256, deadlineMs: corpusDigestDeadline(),
   }) : null;
   if (baseline !== null && baseline.status !== 'complete') throw new Error(baseline.reason ?? 'baseline');
   mutateAfterEvidence(root, scenario.mutation);
@@ -212,20 +223,21 @@ export async function runCorpusScenario(
     },
   };
   let raceMutation = 0;
-  const captureDigest = scenario.mutation === 'hash-race'
-    ? (options: Parameters<typeof captureWorktreeDigestV2>[0]) => captureWorktreeDigestV2({
-        ...options,
-        onSnapshot: () => {
-          raceMutation += 1;
-          writeFileSync(join(root, 'src/a.ts'), `export const race = ${raceMutation};\n`);
-        },
-      })
-    : captureWorktreeDigestV2;
+  const captureDigest = (options: Parameters<typeof captureWorktreeDigestV2>[0]) => captureWorktreeDigestV2({
+    ...options,
+    deadlineMs: corpusDigestDeadline(),
+    ...(scenario.mutation === 'hash-race' ? {
+      onSnapshot: () => {
+        raceMutation += 1;
+        writeFileSync(join(root, 'src/a.ts'), `export const race = ${raceMutation};\n`);
+      },
+    } : {}),
+  });
   const diagnostic = await evaluateShadowStop(db, {
     sessionId: 'corpus-session', projectRoot: root,
     clientName: scenario.clientName ?? 'claude-code',
     clientInstallationId: 'corpus-install', stopHookActive: false,
-  }, { repository, captureDigest });
+  }, { repository, captureDigest, monotonicNow: corpusClock() });
   return { diagnostic, persisted };
 }
 

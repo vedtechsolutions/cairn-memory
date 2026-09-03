@@ -150,6 +150,25 @@ describe('shadow evaluator orchestration', () => {
     }
   });
 
+  it('hands the digest an absolute deadline of started-at plus the budget', async () => {
+    // The corpora override this handoff with their own generous deadline, so
+    // this is the one place that pins it (de-flake review).
+    const db = openDatabase({ dbPath: ':memory:' });
+    try {
+      const projectRoot = root();
+      const repository = mockRepository([snapshot()]);
+      let received: number | undefined;
+      const result = await evaluateShadowStop(db, input(projectRoot), {
+        repository, loadConfig: () => config(projectRoot), budgetMs: 400, monotonicNow: () => 10,
+        captureDigest: async options => { received = options.deadlineMs; return completeDigest(); },
+      });
+      assert.equal(result.status, 'persisted');
+      assert.equal(received, 10 + 400);
+    } finally {
+      db.close();
+    }
+  });
+
   it('refreshes the snapshot exactly once when a watermark is created', async () => {
     const db = openDatabase({ dbPath: ':memory:' });
     try {

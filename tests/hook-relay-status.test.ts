@@ -20,7 +20,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer, type Server } from 'node:http';
 
-import { prepareRelayDir, runRelay, TEST_GENEROUS_TIMEOUT_MS } from './relay-harness.js';
+import { afterBody, prepareRelayDir, runRelay, TEST_GENEROUS_TIMEOUT_MS } from './relay-harness.js';
 import { ENV } from '../src/constants/env.js';
 import { DATA_DIR_NAME } from 'waykeep-contract';
 
@@ -84,10 +84,10 @@ describe('hook-relay HTTP status + body integrity (H1/H2/M12)', () => {
       join(tmpBinDir, 'unrouted-hook.js'),
       `const data = require('fs').readFileSync(0, 'utf8');\nprocess.stdout.write('FALLBACK:' + data.trim());\n`,
     );
-    const fakeHome = await listen((_req, res) => {
+    const fakeHome = await listen((req, res) => afterBody(req, () => {
       res.writeHead(404);
       res.end('Unknown route: /unrouted-hook');
-    });
+    }));
 
     const result = await runRelay(join(tmpBinDir, 'hook-relay'), 'unrouted-hook', '{"session_id":"s1"}', fakeHome);
 
@@ -117,10 +117,10 @@ describe('hook-relay HTTP status + body integrity (H1/H2/M12)', () => {
 
   it('prints the response body unchanged on 200', async (t) => {
     if (skipReason) return t.skip(skipReason);
-    const fakeHome = await listen((_req, res) => {
+    const fakeHome = await listen((req, res) => afterBody(req, () => {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end('{"decision":"allow","note":"ok"}');
-    });
+    }));
 
     const result = await runRelay(join(tmpBinDir, 'hook-relay'), 'ok-hook', '{}', fakeHome, GENEROUS_DAEMON_ENV);
 

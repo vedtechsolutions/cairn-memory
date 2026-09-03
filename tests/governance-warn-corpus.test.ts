@@ -16,7 +16,7 @@ import type { GateEvidenceState, ShadowFaultCode, ShadowResult, ShadowVerdictRea
 import { captureWorktreeDigestV2 } from '../src/governance/worktree-digest.js';
 import { projectId } from '../src/utils/project-id.js';
 import {
-  cleanupCorpusAuxiliaries, runCorpusScenario, type CorpusScenario,
+  cleanupCorpusAuxiliaries, corpusDigestDeadline, runCorpusScenario, type CorpusScenario,
 } from './helpers/shadow-corpus.js';
 
 const NOW = Date.parse('2026-08-26T12:00:00.000Z');
@@ -81,7 +81,7 @@ async function evaluation(
   const healthy = scenario.capability !== 'degraded';
   const config = loadGateConfig(root);
   const digest = await captureWorktreeDigestV2({
-    projectRoot: root, configSha256: config.sha256, relevantPaths: ['**'],
+    projectRoot: root, configSha256: config.sha256, relevantPaths: ['**'], deadlineMs: corpusDigestDeadline(),
   });
   assert.equal(digest.status, 'complete', `${scenario.id} current digest`);
   assert.ok(diagnostic.verdict, `${scenario.id} source verdict`);

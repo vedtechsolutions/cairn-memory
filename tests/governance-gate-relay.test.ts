@@ -6,7 +6,7 @@ import {
 } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { prepareRelayDir, runRelay, TEST_GENEROUS_TIMEOUT_MS } from './relay-harness.js';
+import { afterBody, prepareRelayDir, runRelay, TEST_GENEROUS_TIMEOUT_MS } from './relay-harness.js';
 import { ENV } from '../src/constants/env.js';
 import { DATA_DIR_NAME } from 'waykeep-contract';
 
@@ -56,10 +56,10 @@ describe('governance-gate compiled relay', () => {
   it('passes only a complete non-controlling systemMessage response', async (t) => {
     const homePath = home();
     try {
-      await listen(homePath, (_request, response) => {
+      await listen(homePath, (request, response) => afterBody(request, () => {
         response.writeHead(200, { 'Content-Type': 'text/plain' });
         response.end(JSON.stringify({ systemMessage: 'Governance warning: rerun tests.' }));
-      });
+      }));
     } catch (error) {
       return t.skip(`unix sockets unavailable: ${String(error)}`);
     }
@@ -85,7 +85,7 @@ describe('governance-gate compiled relay', () => {
     ]) {
       const homePath = home();
       try {
-        await listen(homePath, (_request, response) => { response.writeHead(200); response.end(body); });
+        await listen(homePath, (request, response) => afterBody(request, () => { response.writeHead(200); response.end(body); }));
       } catch (error) {
         return t.skip(`unix sockets unavailable: ${String(error)}`);
       }
@@ -104,12 +104,23 @@ describe('governance-gate compiled relay', () => {
     } catch (error) {
       return t.skip(`unix sockets unavailable: ${String(error)}`);
     }
+    // A hung governance daemon costs the governance timer (the SIGALRM
+    // watchdog and the response poll both use it) and nothing more. Set it
+    // explicitly, require the relay to have waited for it, and bound above
+    // only against a hang: a fixed 1 s ceiling also measured host scheduling
+    // (it failed at a load average near 60 with the timer firing at ~400 ms).
+    const governanceTimerMs = 400;
+    // Below the relay's 3 s daemon wait, so a governance route that fell back
+    // to the daemon timer fails decisively rather than by spawn overhead.
+    const hangBoundMs = 2_000;
     const started = performance.now();
-    const result = await runRelay(join(relayDir(), 'hook-relay'), 'governance-gate', '{}', homePath);
+    const result = await runRelay(join(relayDir(), 'hook-relay'), 'governance-gate', '{}', homePath, {
+      [ENV.GOVERNANCE_TIMEOUT_MS]: String(governanceTimerMs),
+    });
     const elapsed = performance.now() - started;
     assert.equal(result.status, 0);
     assert.equal(result.stdout, '');
-    assert.ok(elapsed >= 300 && elapsed < 1_000, `watchdog elapsed ${elapsed.toFixed(2)} ms`);
+    assert.ok(elapsed >= governanceTimerMs - 100 && elapsed < hangBoundMs, `watchdog elapsed ${elapsed.toFixed(2)} ms`);
   });
 
   it('emits no partial warning when the daemon drops the connection', async (t) => {

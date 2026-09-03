@@ -8,9 +8,11 @@
  * times out even though the binary itself is fine.
  */
 import { spawn, spawnSync } from 'node:child_process';
+import type { IncomingMessage } from 'node:http';
 import { existsSync, mkdtempSync, cpSync, chmodSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { GENEROUS_RELAY_TIMEOUT_MS } from './helpers/test-budgets.js';
 
 export const RELAY_SOURCE = join(process.cwd(), 'src/hooks/hook-relay.c');
 /** hook-relay.c #includes the generated identity.h — a fresh compile needs it. */
@@ -26,7 +28,7 @@ export const SPAWN_TIMEOUT_MS = 10_000;
  *  correctness tests. They exercise response handling, not the production SLA,
  *  so they must not race a wall-clock deadline against a CPU-starved mock
  *  socket under full-suite load. Timing-specific tests keep the tight default. */
-export const TEST_GENEROUS_TIMEOUT_MS = '30000';
+export const TEST_GENEROUS_TIMEOUT_MS = String(GENEROUS_RELAY_TIMEOUT_MS);
 
 /** Copy the compiled relay (or compile a fresh one) into a new temp dir so
  *  the binary's sibling `<hook-type>.js` lookup resolves to test-controlled
@@ -105,4 +107,16 @@ export function runRelay(
     child.stdin.write(input);
     child.stdin.end();
   });
+}
+
+/** Answer a mock-daemon request only after its body is consumed, as the real
+ *  daemon does. The relay sends headers and body in two writes; a mock that
+ *  answers on the request event closes the HTTP/1.0 connection under the
+ *  second write, and the relay reads that EPIPE as "daemon dropped the
+ *  connection" — a silent direct-node fallback with empty stdout. That was
+ *  the recorded full-suite flake in the status, socket-resolution and
+ *  governance-gate relay tests. */
+export function afterBody(req: IncomingMessage, respond: () => void): void {
+  req.resume();
+  req.on('end', respond);
 }

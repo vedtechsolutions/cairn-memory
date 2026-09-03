@@ -18,7 +18,7 @@ import { join } from 'node:path';
 import { createServer, type Server } from 'node:http';
 import { existsSync } from 'node:fs';
 import { DATA_DIR_NAME } from 'waykeep-contract';
-import { prepareRelayDir, runRelay, TEST_GENEROUS_TIMEOUT_MS } from './relay-harness.js';
+import { afterBody, prepareRelayDir, runRelay, TEST_GENEROUS_TIMEOUT_MS } from './relay-harness.js';
 import { ENV } from '../src/constants/env.js';
 
 const LEGACY_DIR = '.cairn';
@@ -34,10 +34,10 @@ const servers: Server[] = [];
  *  WHICH candidate socket the relay actually reached. */
 async function daemonAt(dir: string, label: string): Promise<void> {
   mkdirSync(dir, { recursive: true });
-  const server = createServer((_req, res) => {
+  const server = createServer((req, res) => afterBody(req, () => {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ reached: label }));
-  });
+  }));
   servers.push(server);
   await new Promise<void>((ok, bad) => {
     server.once('error', bad);
