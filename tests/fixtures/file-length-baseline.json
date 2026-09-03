@@ -25,7 +25,6 @@
   "src/hooks/shared/session-cache.ts": 352,
   "src/mcp/hook-socket.ts": 512,
   "src/mcp/owner-rpc.ts": 303,
-  "src/mcp/tools/memory-tools.ts": 759,
   "src/mcp/tools/plan-tool.ts": 379,
   "src/mcp/tools/portability-tools.ts": 333,
   "src/memory-tool/command-handlers.ts": 314,
