@@ -15,7 +15,6 @@ import {
 } from './repository.js';
 import {
   configEntryPresent, preparedShadowSnapshot, selectShadowRequirements, ShadowDeadline,
-  SHADOW_EVALUATOR_DEFAULT_BUDGET_MS,
   type ShadowEvaluatorRepository, type ShadowEvaluatorStage,
 } from './shadow-evaluator-runtime.js';
 import {
@@ -30,10 +29,10 @@ import {
 import {
   captureWorktreeDigestV2, WORKTREE_DIGEST_V2_VERSION, type WorktreeDigestV2Result,
 } from './worktree-digest.js';
+import { GOVERNANCE_BOUNDS } from '../constants/index.js';
 
 export const SHADOW_EVALUATOR_VERSION = 1;
-export {
-  SHADOW_EVALUATOR_DEFAULT_BUDGET_MS, SHADOW_EVALUATOR_HARD_CEILING_MS,
+export { SHADOW_EVALUATOR_HARD_CEILING_MS,
   type ShadowEvaluatorStage,
 } from './shadow-evaluator-runtime.js';
 
@@ -232,7 +231,7 @@ export async function evaluateShadowStop(
   const monotonicNow = options.monotonicNow ?? (() => performance.now());
   const startedAt = monotonicNow();
   const deadline = new ShadowDeadline(
-    startedAt, monotonicNow, options.budgetMs ?? SHADOW_EVALUATOR_DEFAULT_BUDGET_MS, options.onStage,
+    startedAt, monotonicNow, options.budgetMs ?? GOVERNANCE_BOUNDS.SHADOW_EVALUATOR_DEFAULT_BUDGET_MS, options.onStage,
   );
   const repository = options.repository ?? new GovernanceRepository(db);
   const loadConfig = options.loadConfig ?? loadGateConfig;

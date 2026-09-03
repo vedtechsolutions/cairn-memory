@@ -10,7 +10,6 @@ import { passesCrossProjectGuard, passesSameProjectRelevance, deriveProjectIdent
 import type { BriefingContext } from './types.js';
 import { isMemoryEligibleForInjection , formatMemoryContent } from '../../../utils/memory-injection.js';
 import {
-  NARROW_OVERLAP_MIN_MEANINGFUL_TOKENS,
   narrowPolicyExclusions,
   broadRelevanceFp,
   tokeniseForOverlap,
@@ -53,7 +52,7 @@ export function renderTier2(
   // the broad variant when meaningful token count is below threshold, so
   // same-project memories still surface via the broad-query short-circuit.
   const identityTokens = deriveProjectIdentityTokens(ctx.project);
-  const useNarrow = meaningfulTokenCount(queryFp, narrowPolicyExclusions(ctx.project)) >= NARROW_OVERLAP_MIN_MEANINGFUL_TOKENS;
+  const useNarrow = meaningfulTokenCount(queryFp, narrowPolicyExclusions(ctx.project)) >= LIMITS.NARROW_OVERLAP_MIN_MEANINGFUL_TOKENS;
   const relevanceFp = useNarrow ? queryFp : broadRelevanceFp(queryFp);
   const guardedDecisions = rawDecisions
     .filter(d => passesCrossProjectGuard(d, ctx.project, queryFp))
@@ -171,7 +170,7 @@ export function renderTier3(
   // (topPitfalls(..., undefined)) and run the cross-project guard against
   // the thin fp, with the broad variant for same-project relevance.
   const identityTokens = deriveProjectIdentityTokens(ctx.project);
-  const useNarrow = meaningfulTokenCount(queryFp, narrowPolicyExclusions(ctx.project)) >= NARROW_OVERLAP_MIN_MEANINGFUL_TOKENS;
+  const useNarrow = meaningfulTokenCount(queryFp, narrowPolicyExclusions(ctx.project)) >= LIMITS.NARROW_OVERLAP_MIN_MEANINGFUL_TOKENS;
   const relevanceFp = useNarrow ? queryFp : broadRelevanceFp(queryFp);
 
   // Over-fetch so the guard pipeline can drop leaks without starving T3.
@@ -226,7 +225,7 @@ export function renderTier4(
   // SNR v3 Commit 3: cold-start policy — broad variant for same-project
   // relevance when meaningful token count is below threshold.
   const identityTokens = deriveProjectIdentityTokens(ctx.project);
-  const useNarrow = meaningfulTokenCount(queryFp, narrowPolicyExclusions(ctx.project)) >= NARROW_OVERLAP_MIN_MEANINGFUL_TOKENS;
+  const useNarrow = meaningfulTokenCount(queryFp, narrowPolicyExclusions(ctx.project)) >= LIMITS.NARROW_OVERLAP_MIN_MEANINGFUL_TOKENS;
   const relevanceFp = useNarrow ? queryFp : broadRelevanceFp(queryFp);
   // M9 (step 6): filter for eligibility BEFORE the display limit. The old
   // confidence-only LIMIT 6 pool filled with structurally ineligible rows

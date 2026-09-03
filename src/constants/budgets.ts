@@ -33,6 +33,8 @@ export const BRIEFING_BUDGET = {
   MINIMAL_MAX: 1200,
   /** Bare essentials for critically low context (<10% free) */
   CRITICAL_MAX: 600,
+  /** Token cap for the governance tier of the briefing. */
+  GOVERNANCE_TIER_MAX: 180,
 } as const;
 
 /**
@@ -66,6 +68,12 @@ export const BRIEFING_MODE = {
 
 export const TRANSCRIPT_TAIL_BYTES = 512 * 1024; // 512KB
 export const TRANSCRIPT_FULL_READ_THRESHOLD = 512 * 1024;
+/** Bytes read from the head of a large transcript for initial goal extraction
+ *  — enough to capture the first few user messages. */
+export const TRANSCRIPT_HEAD_READ_BYTES = 32 * 1024;
+/** Size gate on the resume-cursor line search, so a huge generated file is
+ *  never slurped on the hot path. */
+export const CURSOR_READ_MAX_BYTES = 1024 * 1024;
 
 // --- Success Pattern Detection ----------------------------------------------
 

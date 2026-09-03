@@ -18,6 +18,7 @@
 import { readFileSync, statSync } from 'node:fs';
 import { configPath as sharedConfigPath } from '../constants/paths.js';
 import { log } from '../utils/log.js';
+import { CONFIG_CACHE } from '../constants/index.js';
 
 export interface WaykeepScopeConfig {
   /** Projects whose memories never surface OUTSIDE the project — on any
@@ -53,7 +54,6 @@ export function waykeepConfigPath(): string {
  *  of now) is additionally never cached, so back-to-back edits re-read. */
 interface ConfigCache { path: string; mtimeMs: number; size: number; ino: number; config: WaykeepConfig }
 let cache: ConfigCache | null = null;
-const MTIME_GRANULARITY_MS = 2;
 /** One warning per problem per file VERSION (mtime+size+ino — mtime alone
  *  can collide across versions), so a broken privacy config is loud once
  *  rather than silent or spammy. */
@@ -168,7 +168,7 @@ export function loadWaykeepConfig(): WaykeepConfig {
     log.warn(`config at ${path} ${problem}`);
     warnedIdentity = identity;
   }
-  if (Date.now() - st.mtimeMs >= MTIME_GRANULARITY_MS) {
+  if (Date.now() - st.mtimeMs >= CONFIG_CACHE.MTIME_GRANULARITY_MS) {
     cache = { path, mtimeMs: st.mtimeMs, size: st.size, ino: st.ino, config };
   } else {
     cache = null; // too fresh to fingerprint reliably — re-read next time

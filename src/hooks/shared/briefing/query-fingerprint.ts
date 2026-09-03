@@ -34,22 +34,6 @@ const GOAL_STOP_WORDS = new Set([
   'test', 'tests', 'code',
 ]);
 
-/** SNR v3 Commit 3: cold-start policy threshold. Narrow-overlap re-ranking
- *  (`topPitfalls(..., queryFp)`) AND the same-project relevance gate both
- *  require the query fingerprint to carry at least this many meaningful
- *  tokens after stripping project-identity and generic area labels.
- *
- *  Below the threshold the compiler uses:
- *    - `topPitfalls(..., undefined)` — pure effectiveness+recency ranking,
- *    - `passesSameProjectRelevance(m, broadFp(queryFp), ...)` — empty-module
- *      variant that triggers the broad-query short-circuit so same-project
- *      memories still surface.
- *  The cross-project guard still runs against the full synthesised fp
- *  (overlap=0 still blocks unfingerprinted globals). Replaces the cold-boot
- *  kludge (`queryFp ?? BRIEFING_BROAD_FP`) from Commit 2 with a modelable
- *  policy based on actual fp content. */
-export const NARROW_OVERLAP_MIN_MEANINGFUL_TOKENS = 2;
-
 /** Tokenise content for set-overlap comparisons — lowercase, drop punctuation,
  *  drop stop-words, require tokens ≥3 chars. Shared by GAP E + GAP F. */
 export function tokeniseForOverlap(text: string): Set<string> {
@@ -77,10 +61,11 @@ export function jaccardOverlap(a: Set<string>, b: Set<string>): number {
  * The previous `hasAnySignal → undefined` short-circuit was the reason the
  * guards had to be wrapped in `queryFp ? ... : raw` bypass ternaries, which
  * was the primary 50% SNR regression path. Now every briefing gets a fp so
- * the cross-project guard can always run; the cold-start policy elsewhere
- * in this file (`meaningfulTokenCount` + NARROW_OVERLAP_MIN_MEANINGFUL_TOKENS)
- * decides whether the fp is rich enough for narrow-overlap re-ranking or
- * whether to fall back to effectiveness+recency.
+ * the cross-project guard can always run; the cold-start policy — the tier
+ * renderers comparing `meaningfulTokenCount` (utils/cross-project-guard.ts)
+ * against LIMITS.NARROW_OVERLAP_MIN_MEANINGFUL_TOKENS — decides whether the
+ * fp is rich enough for narrow-overlap re-ranking or whether to fall back to
+ * effectiveness+recency.
  *
  * Sources, in order:
  *   1. projectContext → base `buildQueryFingerprint` (lang/framework/modules).

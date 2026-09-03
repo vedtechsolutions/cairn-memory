@@ -112,3 +112,9 @@ export const REFLECTION = {
    *  routes to the nudge path. */
   TIMEOUT_MS: 10_000,
 } as const;
+
+/** Bounds for freeUntilCompact — a percentage of remaining context. */
+export const CONTEXT_FREE_PCT = {
+  MIN: 0,
+  MAX: 100,
+} as const;

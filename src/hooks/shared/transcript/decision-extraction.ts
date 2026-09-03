@@ -3,6 +3,7 @@
  * and explicit `[dec: …]` sigil parsing (Layer 1a).
  */
 import { isPastedShape, isRejectedSentence, splitSentences, stripPrependedContext } from '../capture-shapes.js';
+import { SIGIL } from '../../../constants/index.js';
 
 /**
  * Extract decision-like statements from assistant text (Layer 1b).
@@ -59,12 +60,6 @@ export function extractAssistantDecision(text: string): string | null {
   return null;
 }
 
-/** Max content length for a single sigil decision (matches legacy extractor cap). */
-const SIGIL_MAX_LENGTH = 200;
-
-/** Max distinct sigils returned per turn. Guards against pathological input. */
-const SIGIL_MAX_PER_TURN = 8;
-
 /** Matches `[dec: content]` anywhere in text. Content capped via post-match
  *  truncation, not the regex itself, so pathological inputs can't cause
  *  catastrophic backtracking. */
@@ -81,7 +76,7 @@ const SIGIL_PATTERN = /\[dec:\s*([^\]\n]{1,400})\]/gi;
  * Code fences and inline backticks are stripped first so documentation
  * examples of the sigil syntax don't self-capture.
  *
- * Returns an array of distilled sigil contents (up to SIGIL_MAX_PER_TURN).
+ * Returns an array of distilled sigil contents (up to SIGIL.MAX_PER_TURN).
  */
 export function extractDecisionSigils(text: string): string[] {
   if (!text || text.length < 6) return [];
@@ -98,7 +93,7 @@ export function extractDecisionSigils(text: string): string[] {
   let match: RegExpExecArray | null;
   SIGIL_PATTERN.lastIndex = 0;
   while ((match = SIGIL_PATTERN.exec(cleaned)) !== null) {
-    if (results.length >= SIGIL_MAX_PER_TURN) break;
+    if (results.length >= SIGIL.MAX_PER_TURN) break;
     const content = match[1].replace(/\s+/g, ' ').trim();
     if (content.length === 0) continue;
     // Step-4 review finding: over-long sigils were TRUNCATED to the exact
@@ -106,7 +101,7 @@ export function extractDecisionSigils(text: string): string[] {
     // pollution would re-accumulate. Step-1 doctrine applies here too:
     // reject, never slice. A sigil is supposed to be a one-sentence
     // distillation; an over-cap one is misuse, not a lesson.
-    if (content.length > SIGIL_MAX_LENGTH) continue;
+    if (content.length > SIGIL.MAX_LENGTH) continue;
     // Dedup within a single turn — repeated sigils collapse to one store.
     const key = content.toLowerCase();
     if (seen.has(key)) continue;

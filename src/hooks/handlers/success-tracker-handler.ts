@@ -5,7 +5,7 @@
  */
 import type { PostToolUseInput } from '../shared/hook-io.js';
 import { recordRollup } from '../../db/telemetry-rollup.js';
-import { ROLLUP, ROLLUP_METRICS } from '../../constants/index.js';
+import { ROLLUP, ROLLUP_METRICS, CURSOR_READ_MAX_BYTES } from '../../constants/index.js';
 import type { CachedHookContext } from '../shared/db-client.js';
 import { basename } from 'node:path';
 import { existsSync, readFileSync, statSync } from 'node:fs';
@@ -186,8 +186,6 @@ function handleSuccessTrackerBusiness(input: PostToolUseInput, client: CachedHoo
 /** Best-effort line extraction for the resume cursor. Reads the file once
  *  and searches for the Edit anchor; returns null on any failure. Size-
  *  gated at 1 MB so we don't slurp huge generated files on the hot path. */
-const MAX_CURSOR_READ_BYTES = 1024 * 1024;
-
 function extractCursorLine(
   tool: ResumeCursor['tool'],
   filePath: string,
@@ -199,7 +197,7 @@ function extractCursorLine(
   try {
     if (!existsSync(filePath)) return null;
     const size = statSync(filePath).size;
-    if (size === 0 || size > MAX_CURSOR_READ_BYTES) return null;
+    if (size === 0 || size > CURSOR_READ_MAX_BYTES) return null;
 
     let anchor: string | null = null;
     if (tool === 'Edit') {

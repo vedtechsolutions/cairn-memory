@@ -5,10 +5,9 @@ import type { GovernanceEffectiveMode } from './effective-mode.js';
 import type {
   GateEvidenceState, ShadowResult, ShadowVerdictReason,
 } from './verdict-types.js';
+import { GOVERNANCE_BOUNDS } from '../constants/index.js';
 
 export const CLAUDE_HOOK_NON_BLOCKING_MESSAGE_FIELD = 'systemMessage' as const;
-export const GOVERNANCE_WARNING_MAX_PER_SESSION = 5;
-export const GOVERNANCE_WARNING_MAX_CHARS = 4_000;
 
 export interface WarningFingerprintInput {
   project: string;
@@ -71,7 +70,7 @@ export function decideWarningEmission(
   if (emissions.some(row => row.fingerprint === fingerprint)) {
     return { emit: false, auditEventType: 'warning_suppressed', reason: 'duplicate_fingerprint' };
   }
-  if (emissions.length >= GOVERNANCE_WARNING_MAX_PER_SESSION) {
+  if (emissions.length >= GOVERNANCE_BOUNDS.WARNING_MAX_PER_SESSION) {
     return { emit: false, auditEventType: 'warning_suppressed', reason: 'session_ceiling' };
   }
   return { emit: true, auditEventType: 'warning_emitted', reason: 'eligible' };
@@ -133,7 +132,7 @@ export function renderGovernanceWarning(options: {
       `  Rerun from ${safeDisplay(item.gate.cwd)}: ${commandText(item.gate)}`,
     ];
     if ([...lines, ...candidate, ...(options.stopHookActive ? [active] : []), closing]
-      .join('\n').length > GOVERNANCE_WARNING_MAX_CHARS) {
+      .join('\n').length > GOVERNANCE_BOUNDS.WARNING_MAX_CHARS) {
       lines.push('- Additional unresolved checks omitted by the message size limit.');
       break;
     }

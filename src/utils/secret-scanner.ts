@@ -20,18 +20,15 @@
  * marker so the scrub is never silent.
  *
  * Performance: every pattern is linear in input length. The multi-line
- * private-key body is length-bounded (MAX_PRIVATE_KEY_BODY) specifically so an
- * untrusted ingest of many unterminated `-----BEGIN … KEY-----` markers cannot
+ * private-key body is length-bounded (SECRET_SCAN.MAX_PRIVATE_KEY_BODY_BYTES)
+ * specifically so an untrusted ingest of many unterminated
+ * `-----BEGIN … KEY-----` markers cannot
  * drive the lazy match into O(n²) backtracking and stall the single-threaded
  * server. scrubSecrets uses only String.replace on the module-level /g
  * patterns (which resets lastIndex on each call); do NOT add .test()/.exec()
  * on them — that would leak lastIndex state across calls.
  */
-
-/** A real PEM private-key body — an RSA-4096 key with encryption headers is
- *  ~3.4 KB — is well under this. Bounding the lazy body is what keeps the scan
- *  linear when fed many unterminated BEGIN markers. */
-const MAX_PRIVATE_KEY_BODY = 4096;
+import { SECRET_SCAN } from '../constants/index.js';
 
 /** Replacer receives the match and its POSITIONAL capture groups only. Return
  *  the match unchanged to decline — no redaction is then counted. */
@@ -58,10 +55,10 @@ const looksLikeSecretValue = (value: string): boolean => /[0-9]/.test(value);
 const SECRET_PATTERNS: readonly SecretPattern[] = [
   {
     // OpenSSH/RSA/EC/PKCS#8/PGP private-key blocks. The body is length-bounded
-    // (MAX_PRIVATE_KEY_BODY) to stay linear on adversarial unterminated input.
+    // (SECRET_SCAN.MAX_PRIVATE_KEY_BODY_BYTES) to stay linear on adversarial unterminated input.
     name: 'private-key',
     regex: new RegExp(
-      `-----BEGIN[ A-Z0-9]*PRIVATE KEY(?: BLOCK)?-----[\\s\\S]{0,${MAX_PRIVATE_KEY_BODY}}?-----END[ A-Z0-9]*PRIVATE KEY(?: BLOCK)?-----`,
+      `-----BEGIN[ A-Z0-9]*PRIVATE KEY(?: BLOCK)?-----[\\s\\S]{0,${SECRET_SCAN.MAX_PRIVATE_KEY_BODY_BYTES}}?-----END[ A-Z0-9]*PRIVATE KEY(?: BLOCK)?-----`,
       'g',
     ),
   },

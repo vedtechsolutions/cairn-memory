@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 import { SCHEMA_VERSION } from '../db/schema.js';
 import { resolveDbPath } from '../db/db-path.js';
-import { WAYKEEP_HOOK_DIR_MARKER } from '../constants/index.js';
+import { WAYKEEP_HOOK_DIR_MARKER, ENGINE } from '../constants/index.js';
 import { SYNC_ROUTES, ASYNC_ROUTES, CONTRACT_REVISION } from 'waykeep-contract';
 import { getEmbeddingModelConfig } from '../utils/embeddings.js';
 import { verifyModelPackage, ArtifactVerificationError } from '../utils/artifact-verification.js';
@@ -28,7 +28,6 @@ import {
 } from './codex-init.js';
 import { claudeMcpHealth } from './claude-health.js';
 
-const MIN_NODE_MAJOR = 20;
 /** Hook dir relative to this module: dist/src/cli/ → dist/src/hooks. */
 const HOOK_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'hooks');
 /** This install's server.js — the path `waykeep init` registers with Claude Code. */
@@ -40,9 +39,9 @@ interface Check { name: string; run: () => CheckResult | Promise<CheckResult>; }
 
 function checkNode(): CheckResult {
   const major = Number(process.versions.node.split('.')[0]);
-  return major >= MIN_NODE_MAJOR
-    ? { status: 'ok', detail: `Node ${process.versions.node} (>= ${MIN_NODE_MAJOR} required)` }
-    : { status: 'fail', detail: `Node ${process.versions.node} is below the required ${MIN_NODE_MAJOR}` };
+  return major >= ENGINE.MIN_NODE_MAJOR
+    ? { status: 'ok', detail: `Node ${process.versions.node} (>= ${ENGINE.MIN_NODE_MAJOR} required)` }
+    : { status: 'fail', detail: `Node ${process.versions.node} is below the required ${ENGINE.MIN_NODE_MAJOR}` };
 }
 
 async function checkNativeModules(): Promise<CheckResult> {

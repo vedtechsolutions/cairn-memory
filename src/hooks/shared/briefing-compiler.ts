@@ -15,7 +15,7 @@
 import type { MemoryRepository } from '../../db/memory-repository.js';
 import { formatMemoryContent } from '../../utils/memory-injection.js';
 import type { PlanRepository } from '../../db/plan-repository.js';
-import { LIMITS, TOKEN_BUDGET, BRIEFING_ALLOCATION, BRIEFING_MODE } from '../../constants/index.js';
+import { LIMITS, TOKEN_BUDGET, BRIEFING_ALLOCATION, BRIEFING_MODE, BRIEFING_BUDGET } from '../../constants/index.js';
 // NOTE: Briefing compilation runs on the hot path for every session-start. Use
 // estimateTokensFast (~microseconds) for all incremental budget checks and the
 // returned tokenEstimate. Profiling showed the real estimateTokens / countTokens
@@ -28,7 +28,7 @@ import { renderTier1 } from './briefing/tier1-renderer.js';
 import { renderTier2, renderTier3, renderTier4 } from './briefing/memory-tier-renderers.js';
 import { compileIndexBriefing } from './briefing/index-briefing.js';
 import {
-  GOVERNANCE_TIER_MAX_TOKENS, renderGovernanceTier,
+  renderGovernanceTier,
 } from './briefing/governance-tier.js';
 
 // Facade re-exports — every name importable from this module before the
@@ -83,7 +83,7 @@ export function compileBriefing(
   // Remaining budget after T1
   const remainingAfterT1 = maxBudget - tier1.tokens;
 
-  const governanceBudget = Math.min(GOVERNANCE_TIER_MAX_TOKENS, remainingAfterT1);
+  const governanceBudget = Math.min(BRIEFING_BUDGET.GOVERNANCE_TIER_MAX, remainingAfterT1);
   const governance = renderGovernanceTier(ctx.governance, governanceBudget);
   const remainingAfterGovernance = remainingAfterT1 - governance.tokens;
 

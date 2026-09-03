@@ -9,7 +9,6 @@ import {
 import { WORKTREE_DIGEST_HARD_CEILING_MS } from './worktree-digest.js';
 import { gatesPath } from '../constants/paths.js';
 
-export const SHADOW_EVALUATOR_DEFAULT_BUDGET_MS = 250;
 export const SHADOW_EVALUATOR_HARD_CEILING_MS = WORKTREE_DIGEST_HARD_CEILING_MS;
 
 export type ShadowEvaluatorStage =

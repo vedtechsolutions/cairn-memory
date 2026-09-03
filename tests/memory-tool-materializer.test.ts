@@ -15,7 +15,8 @@ import {
   assignTokenPrefixes, compareForCategory, loadActiveRecords,
   materializeView, recordDefect, renderRecords,
 } from '../src/memory-tool/materializer.js';
-import { RENDER_CACHE, RenderCache } from '../src/memory-tool/render-cache.js';
+import { RenderCache } from '../src/memory-tool/render-cache.js';
+import { RENDER_CACHE } from '../src/constants/memory-tool.js';
 
 let db: Database.Database;
 beforeEach(() => { db = openDatabase({ dbPath: ':memory:' }); });

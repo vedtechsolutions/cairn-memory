@@ -14,10 +14,7 @@
  */
 
 import { ERR } from './errors.js';
-
-/** Shortest id prefix a CAS token may carry. The check and the message it
- *  throws must move together, so both read it from here. */
-export const TOKEN_ID_PREFIX_MIN_CHARS = 8;
+import { TOKEN_ID_PREFIX_MIN_CHARS } from '../constants/memory-tool.js';
 
 export interface BlockToken {
   code: string;

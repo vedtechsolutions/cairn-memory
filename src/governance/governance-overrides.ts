@@ -2,8 +2,6 @@ import { createHash } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import { generateId } from '../utils/index.js';
 import {
-  GOVERNANCE_OVERRIDE_MAX_DURATION_MS,
-  GOVERNANCE_OVERRIDE_MAX_DURATION_HOURS,
   GOVERNANCE_OVERRIDE_PAYLOAD_VERSION,
   validateGovernanceOverride,
   type GovernanceOverrideCandidate,
@@ -11,10 +9,11 @@ import {
   type GovernanceOverrideRuleBinding,
   type OverrideValidation,
 } from './override-validator.js';
+import { GOVERNANCE_BOUNDS } from '../constants/index.js';
 
 export const GOVERNANCE_OVERRIDE_EVENT = 'governance_override_created';
 export const GOVERNANCE_OVERRIDE_INCIDENT_EVENT = 'governance_override_incident';
-export const GOVERNANCE_OVERRIDE_DEFAULT_DURATION_MS = GOVERNANCE_OVERRIDE_MAX_DURATION_MS;
+export const GOVERNANCE_OVERRIDE_DEFAULT_DURATION_MS = GOVERNANCE_BOUNDS.OVERRIDE_MAX_DURATION_MS;
 
 export interface CreateGovernanceOverrideInput {
   project: string;
@@ -89,9 +88,9 @@ export class GovernanceOverrideStore {
     }
     const durationMs = input.durationMs ?? GOVERNANCE_OVERRIDE_DEFAULT_DURATION_MS;
     if (!Number.isSafeInteger(durationMs) || durationMs <= 0 ||
-        durationMs > GOVERNANCE_OVERRIDE_MAX_DURATION_MS) {
+        durationMs > GOVERNANCE_BOUNDS.OVERRIDE_MAX_DURATION_MS) {
       throw new Error(
-        `override duration must be 1 ms..${GOVERNANCE_OVERRIDE_MAX_DURATION_HOURS} h`,
+        `override duration must be 1 ms..${GOVERNANCE_BOUNDS.OVERRIDE_MAX_DURATION_HOURS} h`,
       );
     }
     const reason = redactedReason(input.reason);

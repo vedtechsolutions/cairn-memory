@@ -6,6 +6,7 @@
  *   Tier 1 (shorthand): tests_pass, branch:feature/*, file:auth.ts, step_done:3
  *   Tier 2 (composition): tests_pass AND file:auth.ts, branch:main OR branch:dev
  */
+import { LIMITS } from '../constants/index.js';
 
 /** Runtime context assembled from hook inputs + session state */
 export interface ConditionContext {
@@ -24,9 +25,6 @@ export interface ConditionContext {
   plan_complete: boolean;
   step_statuses: Record<number, string>;
 }
-
-/** Max condition length (safety bound) */
-const MAX_CONDITION_LENGTH = 200;
 
 // --- Shorthand evaluators (no parameters) -----------------------------------
 
@@ -86,7 +84,7 @@ function evalAtom(token: string, ctx: ConditionContext): boolean {
  * Returns false for empty, invalid, or too-long expressions.
  */
 export function evaluateCondition(expr: string, ctx: ConditionContext): boolean {
-  if (!expr || expr.length > MAX_CONDITION_LENGTH) return false;
+  if (!expr || expr.length > LIMITS.MAX_CONDITION_CHARS) return false;
 
   // Split on AND/OR while preserving operators
   const parts = expr.split(/\s+(AND|OR)\s+/i);

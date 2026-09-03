@@ -1,4 +1,4 @@
-import { MS_PER_MINUTE } from './time.js';
+import { MS_PER_MINUTE, MS_PER_HOUR } from './time.js';
 
 // ============================================================================
 // Hard limits, rollup, import, sync-apply and owner RPC
@@ -156,6 +156,21 @@ export const LIMITS = {
    *  shipped and suppressed. Below 1.0 so commit subjects need not repeat
    *  every goal word verbatim. */
   GOAL_SHIPPED_COVERAGE: 0.6,
+  /** Shortest userContext message that may stand in as a fallback goal. */
+  FALLBACK_GOAL_MIN_CHARS: 20,
+  /** Branch-name-derived goals shorter or longer than this are not goals. */
+  BRANCH_GOAL_MIN_CHARS: 12,
+  BRANCH_GOAL_MAX_CHARS: 200,
+  /** Safety bound on a reminder condition expression. */
+  MAX_CONDITION_CHARS: 200,
+  /** Attempts recorded per investigation chain before the chain is closed. */
+  MAX_ATTEMPTS_PER_CHAIN: 10,
+  /** A query fingerprint with fewer meaningful tokens than this uses the
+   *  BROAD relevance policy; the cross-project guard still runs against the
+   *  full synthesised fingerprint (overlap 0 still blocks unfingerprinted
+   *  globals). Replaces the cold-boot `queryFp ?? BRIEFING_BROAD_FP` kludge
+   *  with a policy based on actual fingerprint content. */
+  NARROW_OVERLAP_MIN_MEANINGFUL_TOKENS: 2,
 } as const;
 
 // --- Governance worktree digest --------------------------------------------
@@ -200,4 +215,48 @@ export const SOURCE_HYGIENE = {
   MAX_FILE_LINES: 300,
   /** Numeric literals that never need a name: indices, parity, off-by-one. */
   TRIVIAL_NUMERIC_LITERALS: [0, 1, 2],
+} as const;
+
+// --- Governance bounds ----------------------------------------------------
+
+const OVERRIDE_MAX_DURATION_HOURS = 24;
+
+export const GOVERNANCE_BOUNDS = {
+  /** Longest shell command the command matcher will parse. */
+  MAX_SHELL_COMMAND_CHARS: 65_536,
+  /** Argv items considered from an observed command. */
+  MAX_OBSERVED_ARGV_ITEMS: 256,
+  /** Cap on the recorder's internal reason strings. */
+  MAX_INTERNAL_REASON_CHARS: 240,
+  /** Longest a governance override may run; the default duration is the max. */
+  OVERRIDE_MAX_DURATION_HOURS,
+  OVERRIDE_MAX_DURATION_MS: OVERRIDE_MAX_DURATION_HOURS * MS_PER_HOUR,
+  /** Per-session cap on governance warnings, and the size cap on each. */
+  WARNING_MAX_PER_SESSION: 5,
+  WARNING_MAX_CHARS: 4_000,
+  /** Default time budget for the shadow evaluator. */
+  SHADOW_EVALUATOR_DEFAULT_BUDGET_MS: 250,
+  /** Wall-clock budget for assembling override context. The window spans a
+   *  filesystem walk and a git subprocess, so it is load-sensitive: an overrun
+   *  surfaces as an evaluator fault (`self_error`), not a timeout, which makes
+   *  it easy to misread as a logic bug under CI contention. Equal to the
+   *  worktree-digest hard ceiling by coincidence, not by contract — they bound
+   *  different work and should be tunable apart. */
+  OVERRIDE_CONTEXT_DEADLINE_MS: 1_000,
+} as const;
+
+/** Decision sigils (`[dec: …]`) parsed from assistant text. */
+export const SIGIL = {
+  /** Max content length for one sigil decision (matches the legacy extractor cap). */
+  MAX_LENGTH: 200,
+  /** Max distinct sigils returned per turn — guards against pathological input. */
+  MAX_PER_TURN: 8,
+} as const;
+
+/** Secret scanner bounds. */
+export const SECRET_SCAN = {
+  /** Longest private-key body the lazy PEM matcher will consume. A real
+   *  4096-bit RSA key body is ~3.4 KB, well under this; bounding the lazy
+   *  body keeps the scan linear when fed many unterminated BEGIN markers. */
+  MAX_PRIVATE_KEY_BODY_BYTES: 4096,
 } as const;

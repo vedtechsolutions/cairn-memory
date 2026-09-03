@@ -1,10 +1,10 @@
 /** Effectiveness scoring + the Stage 2 recovery pass for dropped pitfalls. */
 import type { MemoryRepository, Memory } from '../../../db/memory-repository.js';
-import { BRIEFING_ALLOCATION } from '../../../constants/index.js';
+import { BRIEFING_ALLOCATION, LIMITS } from '../../../constants/index.js';
 import { estimateTokensFast } from '../../../utils/tokens.js';
 import type { ContextFingerprint } from '../../../utils/fingerprint.js';
 import { passesCrossProjectGuard, passesSameProjectRelevance, deriveProjectIdentityTokens, meaningfulTokenCount } from '../../../utils/cross-project-guard.js';
-import { NARROW_OVERLAP_MIN_MEANINGFUL_TOKENS, narrowPolicyExclusions, broadRelevanceFp } from './query-fingerprint.js';
+import { narrowPolicyExclusions, broadRelevanceFp } from './query-fingerprint.js';
 import { truncate } from './render-helpers.js';
 import { isMemoryEligibleForInjection , formatMemoryContent } from '../../../utils/memory-injection.js';
 import { MS_PER_DAY } from '../../../constants/time.js';
@@ -103,7 +103,7 @@ export function recoverDroppedPitfalls(
   // cold-start path the broad-query semantics.
   const identityTokens = deriveProjectIdentityTokens(project);
   const effectiveFp: ContextFingerprint = queryFp ?? { lang: [], framework: [], module: [] };
-  const useNarrow = meaningfulTokenCount(effectiveFp, narrowPolicyExclusions(project)) >= NARROW_OVERLAP_MIN_MEANINGFUL_TOKENS;
+  const useNarrow = meaningfulTokenCount(effectiveFp, narrowPolicyExclusions(project)) >= LIMITS.NARROW_OVERLAP_MIN_MEANINGFUL_TOKENS;
   const relevanceFp = useNarrow ? effectiveFp : broadRelevanceFp(effectiveFp);
   // SNR v3 Commit 5 audit fix: apply the same effectiveness + confidence
   // floor the main briefing uses, so recovery can't re-admit pitfalls

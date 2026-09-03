@@ -161,7 +161,7 @@ describe('extractDecisionSigils', () => {
     assert.deepEqual(extractDecisionSigils('[dec:'), []);
   });
 
-  it('caps sigils per turn at SIGIL_MAX_PER_TURN', () => {
+  it('caps sigils per turn at SIGIL.MAX_PER_TURN', () => {
     const sigils = Array.from({ length: 15 }, (_, i) => `[dec: decision ${i} because reason ${i}]`).join(' ');
     const result = extractDecisionSigils(sigils);
     assert.ok(result.length <= 8);

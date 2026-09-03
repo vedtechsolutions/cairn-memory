@@ -6,7 +6,7 @@ import { readFileSync, existsSync, mkdirSync, statSync } from 'node:fs';
 import { writeFileAtomic } from '../../utils/atomic-write.js';
 import { join, dirname } from 'node:path';
 import { homedir } from 'node:os';
-import { STATE_STALENESS_MS, CONTEXT_MODES, type ContextMode } from '../../constants/index.js';
+import { STATE_STALENESS_MS, CONTEXT_MODES, type ContextMode, CONTEXT_FREE_PCT } from '../../constants/index.js';
 import { ENV } from '../../constants/env.js';
 import { FILES } from '../../constants/paths.js';
 import { CLAUDE_CODE } from '../../constants/claude-code.js';
@@ -15,10 +15,6 @@ export interface WaykeepState {
   mode: ContextMode;
   freeUntilCompact: number;
 }
-
-/** Bounds for freeUntilCompact — a percentage of remaining context. */
-const FREE_MIN = 0;
-const FREE_MAX = 100;
 
 /** Validate a parsed state object before trusting it (L1). The state file is
  *  writable by anything with local FS access; a forged `mode: "critical"`
@@ -31,8 +27,8 @@ function isValidState(value: unknown): value is WaykeepState {
     && (CONTEXT_MODES as readonly string[]).includes(s.mode)
     && typeof s.freeUntilCompact === 'number'
     && Number.isFinite(s.freeUntilCompact)
-    && s.freeUntilCompact >= FREE_MIN
-    && s.freeUntilCompact <= FREE_MAX;
+    && s.freeUntilCompact >= CONTEXT_FREE_PCT.MIN
+    && s.freeUntilCompact <= CONTEXT_FREE_PCT.MAX;
 }
 
 /** State file location — WAYKEEP_STATE_PATH env override (mirrors WAYKEEP_DIR /

@@ -8,9 +8,6 @@ import { homedir, tmpdir } from 'node:os';
 import { ENV } from '../../../constants/env.js';
 import { CLAUDE_CODE } from '../../../constants/claude-code.js';
 
-/** Bytes to read from head of large files for initial goal extraction */
-export const HEAD_READ_BYTES = 32 * 1024; // 32KB — enough to capture first few user messages
-
 /** Open flags for transcript reads: read-only and refuse to follow a symlink
  *  at the final path component (paired with the realpath check below). Falls
  *  back to plain O_RDONLY where O_NOFOLLOW is unavailable (non-POSIX hosts). */

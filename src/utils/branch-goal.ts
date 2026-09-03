@@ -17,11 +17,13 @@
  *   synthesizeBranchGoal('feat/user-auth', 'Add login flow')
  *     → "User auth — Add login flow"
  *
- * Returns null whenever the result would be too short (<15 chars) to carry
+ * Returns null whenever the result would be too short (under
+ * LIMITS.BRANCH_GOAL_MIN_CHARS) to carry
  * meaningful signal, or when the branch is a chore/base branch that doesn't
  * describe a goal. Callers can rely on a null return to skip the branch
  * fallback without additional checks.
  */
+import { LIMITS } from '../constants/index.js';
 
 /** Branch prefixes stripped during synthesis. These describe kind-of-work,
  *  not the work itself. */
@@ -52,9 +54,6 @@ const SKIP_COMMIT_PATTERNS = [
   /^revert\s/i,
   /^wip\b/i,
 ];
-
-const MIN_GOAL_CHARS = 12;
-const MAX_GOAL_CHARS = 200;
 
 /** Title-case the first word only; lower-case the rest so the output reads
  *  like a natural sentence start rather than Capitalized-Case-Every-Word. */
@@ -124,9 +123,9 @@ export function synthesizeBranchGoal(
     }
   }
 
-  if (enriched.length < MIN_GOAL_CHARS) return null;
-  if (enriched.length > MAX_GOAL_CHARS) {
-    enriched = enriched.slice(0, MAX_GOAL_CHARS - 1) + '…';
+  if (enriched.length < LIMITS.BRANCH_GOAL_MIN_CHARS) return null;
+  if (enriched.length > LIMITS.BRANCH_GOAL_MAX_CHARS) {
+    enriched = enriched.slice(0, LIMITS.BRANCH_GOAL_MAX_CHARS - 1) + '…';
   }
 
   // Mark the goal-bearing prefix status for callers that want to distinguish

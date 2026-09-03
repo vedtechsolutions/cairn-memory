@@ -12,12 +12,7 @@
  * both count and aggregate bounds hold).
  */
 import { createHash } from 'node:crypto';
-
-export const RENDER_CACHE = {
-  MAX_ENTRIES: 8,
-  TTL_MS: 5 * 60_000,
-  MAX_AGGREGATE_BYTES: 4 * 1024 * 1024,
-} as const;
+import { RENDER_CACHE } from '../constants/memory-tool.js';
 
 export interface FrozenRendering {
   readonly lines: readonly string[];

@@ -3,9 +3,9 @@
  * Extracts recent file paths, commands, user messages, and assistant reasoning.
  */
 import { readFileSync, existsSync, statSync } from 'node:fs';
-import { TRANSCRIPT_TAIL_BYTES, TRANSCRIPT_FULL_READ_THRESHOLD } from '../../../constants/index.js';
+import { TRANSCRIPT_TAIL_BYTES, TRANSCRIPT_FULL_READ_THRESHOLD, TRANSCRIPT_HEAD_READ_BYTES } from '../../../constants/index.js';
 import { type RawEntry, type CommandBucket, type TranscriptSnapshot, emptySnapshot } from './snapshot.js';
-import { HEAD_READ_BYTES, isSafeTranscriptPath, readHead, readTail } from './jsonl-io.js';
+import { isSafeTranscriptPath, readHead, readTail } from './jsonl-io.js';
 import { isMetaGoal, distillGoal, mineInitialGoalFromHead } from './goal-extraction.js';
 import { extractErrorContext } from './signal-extraction.js';
 import { extractReasoningState } from './reasoning-state.js';
@@ -28,9 +28,9 @@ export function parseTranscript(transcriptPath: string | null, maxEntries = 200)
       // Large file: read head for goal + tail for recent state
       fullRaw = readTail(transcriptPath, fileSize, TRANSCRIPT_TAIL_BYTES);
       // Bookend: also read head to find the original goal
-      if (fileSize > TRANSCRIPT_TAIL_BYTES + HEAD_READ_BYTES) {
+      if (fileSize > TRANSCRIPT_TAIL_BYTES + TRANSCRIPT_HEAD_READ_BYTES) {
         // Head and tail don't overlap — read head separately
-        const headRaw = readHead(transcriptPath, HEAD_READ_BYTES);
+        const headRaw = readHead(transcriptPath, TRANSCRIPT_HEAD_READ_BYTES);
         headLines = headRaw.split('\n').filter(Boolean);
       }
       // else: tail already covers the head, no need for separate read

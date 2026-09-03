@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import type { NormalizedGate } from '../src/governance/gate-config.js';
 import {
   CLAUDE_HOOK_NON_BLOCKING_MESSAGE_FIELD, decideWarningEmission,
-  GOVERNANCE_WARNING_MAX_CHARS, GOVERNANCE_WARNING_MAX_PER_SESSION,
   renderGovernanceWarning, warningFingerprint,
 } from '../src/governance/warning-policy.js';
+import { GOVERNANCE_BOUNDS } from '../src/constants/index.js';
 
 function fingerprint(overrides: Partial<Parameters<typeof warningFingerprint>[0]> = {}): string {
   return warningFingerprint({
@@ -59,7 +59,7 @@ describe('Slice C warning policy', () => {
     ]), {
       emit: false, auditEventType: 'warning_suppressed', reason: 'duplicate_fingerprint',
     });
-    const full = Array.from({ length: GOVERNANCE_WARNING_MAX_PER_SESSION }, (_, index) => ({
+    const full = Array.from({ length: GOVERNANCE_BOUNDS.WARNING_MAX_PER_SESSION }, (_, index) => ({
       eventType: 'warning_emitted' as const, fingerprint: String(index).padStart(64, '0'),
     }));
     assert.equal(decideWarningEmission(target, full).reason, 'session_ceiling');
@@ -78,6 +78,6 @@ describe('Slice C warning policy', () => {
     assert.match(message, /npm test --token '\[REDACTED\]'/u);
     assert.doesNotMatch(message, /needle-secret|user:pw|assistant-needle/iu);
     assert.doesNotMatch(message, /\b(?:blocked|passed)\b/iu);
-    assert.ok(message.length <= GOVERNANCE_WARNING_MAX_CHARS);
+    assert.ok(message.length <= GOVERNANCE_BOUNDS.WARNING_MAX_CHARS);
   });
 });

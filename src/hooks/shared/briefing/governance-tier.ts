@@ -1,8 +1,6 @@
 import { estimateTokensFast } from '../../../utils/tokens.js';
 import type { GovernanceBriefingSection } from '../../../governance/briefing.js';
 
-export const GOVERNANCE_TIER_MAX_TOKENS = 180;
-
 export interface GovernanceTier {
   lines: string[];
   tokens: number;

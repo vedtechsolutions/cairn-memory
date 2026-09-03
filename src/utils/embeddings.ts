@@ -13,6 +13,7 @@ import { assertManifestPinned, verifyModelPackage } from './artifact-verificatio
 import { createVerifiedLoader, type VerifiedLoader } from './verified-loader.js';
 import { ENV } from '../constants/env.js';
 import { log } from './log.js';
+import { LAYER_NORM_EPS } from '../constants/embedding-models.js';
 
 /** Which side of asymmetric retrieval an input belongs to. Symmetric models
  *  (minilm-l6) ignore the distinction; prefix models (nomic, gemma) require
@@ -51,9 +52,6 @@ export function getEmbeddingModelConfig(): EmbeddingModelConfig {
 export function buildEmbeddingInput(config: EmbeddingModelConfig, role: EmbeddingRole, text: string): string {
   return (role === 'query' ? config.queryPrefix : config.documentPrefix) + text;
 }
-
-/** Matches torch's F.layer_norm default eps. */
-const LAYER_NORM_EPS = 1e-5;
 
 /** MRL truncation per the official Nomic procedure: LAYER-NORMALIZE the
  *  full native vector, THEN truncate, THEN L2-normalize. Plain

@@ -1,5 +1,6 @@
 import { isAbsolute, relative, resolve, sep } from 'node:path';
 import type { NormalizedCommandForm, NormalizedGate } from './gate-config.js';
+import { GOVERNANCE_BOUNDS } from '../constants/index.js';
 
 export type CommandMismatchReason =
   | 'invalid_command'
@@ -33,8 +34,6 @@ export type CommandMatchResult =
     }
   | { matched: false; reason: CommandMismatchReason };
 
-const MAX_SHELL_COMMAND_CHARS = 65_536;
-const MAX_OBSERVED_ARGV_ITEMS = 256;
 const UNSUPPORTED_UNQUOTED = new Set([
   ';', '|', '&', '<', '>', '(', ')', '$', '`', '#', '*', '?', '[', ']', '{', '}', '!', '~',
 ]);
@@ -45,7 +44,7 @@ const UNSUPPORTED_UNQUOTED = new Set([
  * rejected, while quotes and backslash escapes only produce literal argv.
  */
 export function tokenizeSimpleCommand(command: string): TokenizeResult {
-  if (!command || command.length > MAX_SHELL_COMMAND_CHARS || command.includes('\0')) {
+  if (!command || command.length > GOVERNANCE_BOUNDS.MAX_SHELL_COMMAND_CHARS || command.includes('\0')) {
     return { ok: false, reason: 'empty, oversized, or NUL-bearing command' };
   }
   const argv: string[] = [];
@@ -134,7 +133,7 @@ export function tokenizeSimpleCommand(command: string): TokenizeResult {
 
 function observedArgv(observed: ObservedCommand): string[] | null {
   if (observed.argv !== undefined) {
-    if (observed.argv.length === 0 || observed.argv.length > MAX_OBSERVED_ARGV_ITEMS ||
+    if (observed.argv.length === 0 || observed.argv.length > GOVERNANCE_BOUNDS.MAX_OBSERVED_ARGV_ITEMS ||
         observed.argv.some(item => typeof item !== 'string' || item.includes('\0'))) return null;
     return [...observed.argv];
   }

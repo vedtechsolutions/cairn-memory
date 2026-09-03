@@ -22,13 +22,13 @@ import { CATEGORY_KINDS, type Category } from './path-router.js';
 import { RenderCache, type FrozenRendering } from './render-cache.js';
 import { KIND_CODES } from './token-codes.js';
 import { log } from '../utils/log.js';
+import { RECORD_SANITY_LIMIT } from '../constants/memory-tool.js';
 
 /** plan is repo-backed and deferred — the materializer refuses it. */
 export type MaterializableCategory = Exclude<Category, 'plan'>;
 
 export const FRESH_RENDERING_NOTICE =
   '[fresh rendering — line numbers may differ from any earlier view]';
-export const RECORD_SANITY_LIMIT = 10_000;
 
 export type Log = (message: string) => void;
 const materializerLog = log.child('materializer');

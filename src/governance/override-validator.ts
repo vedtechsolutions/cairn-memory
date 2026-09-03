@@ -1,7 +1,6 @@
+import { GOVERNANCE_BOUNDS } from '../constants/index.js';
+
 export const GOVERNANCE_OVERRIDE_PAYLOAD_VERSION = 1;
-export const GOVERNANCE_OVERRIDE_MAX_DURATION_HOURS = 24;
-export const GOVERNANCE_OVERRIDE_MAX_DURATION_MS =
-  GOVERNANCE_OVERRIDE_MAX_DURATION_HOURS * 60 * 60 * 1_000;
 
 export interface GovernanceOverrideRuleBinding {
   ruleId: string;
@@ -98,7 +97,7 @@ export function validateGovernanceOverride(
   if (!exactStrings(candidate.gateIds, context.gateIds)) {
     return { valid: false, reason: 'gate_set_mismatch' };
   }
-  if (expiresMs <= issuedMs || expiresMs - issuedMs > GOVERNANCE_OVERRIDE_MAX_DURATION_MS) {
+  if (expiresMs <= issuedMs || expiresMs - issuedMs > GOVERNANCE_BOUNDS.OVERRIDE_MAX_DURATION_MS) {
     return { valid: false, reason: 'duration_exceeded' };
   }
   if (expiresMs <= context.nowMs) return { valid: false, reason: 'expired' };

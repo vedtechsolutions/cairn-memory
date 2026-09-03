@@ -22,9 +22,6 @@ import { getLatestCommitSubject } from '../../utils/project-scanner.js';
 import { synthesizeBranchGoal } from '../../utils/branch-goal.js';
 import { LIMITS } from '../../constants/index.js';
 
-/** Minimum length for a userContext message to qualify as a fallback goal. */
-const FALLBACK_GOAL_MIN_CHARS = 20;
-
 type GoalRow = {
   initial_goal: string;
   goal_branch: string | null;
@@ -126,7 +123,7 @@ export function resolveInitialGoal(opts: {
     resolution.goalCapturedAt = validGoal.goal_captured_at ?? validGoal.captured_at;
   } else {
     // Last resort: scan userContext for a non-meta message
-    const fallback = userContext.find(m => m.length > FALLBACK_GOAL_MIN_CHARS && !isMetaGoal(m));
+    const fallback = userContext.find(m => m.length > LIMITS.FALLBACK_GOAL_MIN_CHARS && !isMetaGoal(m));
     resolution.goal = fallback ? distillGoal(fallback) : null;
     // Fresh goal from userContext — reset staleness
     resolution.goalBranch = currentBranch;

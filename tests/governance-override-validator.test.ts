@@ -1,10 +1,11 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  GOVERNANCE_OVERRIDE_MAX_DURATION_MS, GOVERNANCE_OVERRIDE_PAYLOAD_VERSION,
+  GOVERNANCE_OVERRIDE_PAYLOAD_VERSION,
   validateGovernanceOverride,
   type GovernanceOverrideCandidate, type GovernanceOverrideContext,
 } from '../src/governance/override-validator.js';
+import { GOVERNANCE_BOUNDS } from '../src/constants/index.js';
 
 const NOW = Date.UTC(2026, 7, 26, 12);
 
@@ -57,7 +58,7 @@ describe('Slice C override binding validation', () => {
       valid: false, reason: 'gate_set_mismatch',
     });
     assert.deepEqual(validateGovernanceOverride(candidate({
-      expiresAt: new Date(NOW - 60_000 + GOVERNANCE_OVERRIDE_MAX_DURATION_MS + 1).toISOString(),
+      expiresAt: new Date(NOW - 60_000 + GOVERNANCE_BOUNDS.OVERRIDE_MAX_DURATION_MS + 1).toISOString(),
     }), context()), { valid: false, reason: 'duration_exceeded' });
   });
 });

@@ -102,3 +102,6 @@ export const EMBEDDING_MODELS: Readonly<Record<string, EmbeddingModelConfig>> = 
     documentPrefix: 'title: none | text: ',
   },
 } as const;
+
+/** Matches torch's F.layer_norm default eps (the pooling normalization). */
+export const LAYER_NORM_EPS = 1e-5;

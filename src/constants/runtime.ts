@@ -64,4 +64,22 @@ export const FS_PERMS = {
   /** Group + other permission bits. A path is "owner-only" when none are set;
    *  the fail-closed socket self-verify asserts `(mode & GROUP_OTHER_BITS) === 0`. */
   GROUP_OTHER_BITS: 0o077,
+  /** Mode for a compiled artifact that must be runnable (the C relay). */
+  EXECUTABLE: 0o755,
+} as const;
+
+// --- Config cache -------------------------------------------------------------
+
+export const CONFIG_CACHE = {
+  /** mtime resolution assumed when deciding a config file is "fresh"; a file
+   *  modified within this many ms of now is re-read rather than served from
+   *  cache, so back-to-back edits are never missed. */
+  MTIME_GRANULARITY_MS: 2,
+} as const;
+
+// --- Engine floor -------------------------------------------------------------
+
+/** Mirrors package.json `engines.node`; `waykeep doctor` fails below it. */
+export const ENGINE = {
+  MIN_NODE_MAJOR: 20,
 } as const;

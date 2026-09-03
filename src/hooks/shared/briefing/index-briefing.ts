@@ -4,12 +4,11 @@
 import type { MemoryRepository } from '../../../db/memory-repository.js';
 import { formatMemoryContent } from '../../../utils/memory-injection.js';
 import type { PlanRepository, Plan } from '../../../db/plan-repository.js';
-import { BRIEFING_ALLOCATION, BRIEFING_MODE } from '../../../constants/index.js';
+import { BRIEFING_ALLOCATION, BRIEFING_MODE, LIMITS, BRIEFING_BUDGET } from '../../../constants/index.js';
 import { estimateTokensFast } from '../../../utils/tokens.js';
 import { passesCrossProjectGuard, passesSameProjectRelevance, deriveProjectIdentityTokens, meaningfulTokenCount } from '../../../utils/cross-project-guard.js';
 import type { BriefingContext, BriefingOutput } from './types.js';
 import {
-  NARROW_OVERLAP_MIN_MEANINGFUL_TOKENS,
   buildBriefingQueryFp,
   narrowPolicyExclusions,
   broadRelevanceFp,
@@ -23,7 +22,7 @@ import {
   isCorrectionQuality,
   formatPlanSummary,
 } from './render-helpers.js';
-import { GOVERNANCE_TIER_MAX_TOKENS, renderGovernanceTier } from './governance-tier.js';
+import { renderGovernanceTier } from './governance-tier.js';
 import { isMemoryEligibleForInjection } from '../../../utils/memory-injection.js';
 import { TOOL } from '../../../constants/mcp.js';
 
@@ -96,10 +95,10 @@ export function compileIndexBriefing(
     lines.push(indexCursorLine);
   }
 
-  const governanceRemaining = (ctx.budgetOverride ?? GOVERNANCE_TIER_MAX_TOKENS) -
+  const governanceRemaining = (ctx.budgetOverride ?? BRIEFING_BUDGET.GOVERNANCE_TIER_MAX) -
     estimateTokensFast(lines.join('\n'));
   const governance = renderGovernanceTier(
-    ctx.governance, Math.min(GOVERNANCE_TIER_MAX_TOKENS, governanceRemaining),
+    ctx.governance, Math.min(BRIEFING_BUDGET.GOVERNANCE_TIER_MAX, governanceRemaining),
   );
   lines.push(...governance.lines);
 
@@ -125,7 +124,7 @@ export function compileIndexBriefing(
   // filters below. indexQueryFp is always defined now, so we can compute
   // the narrow flag once and reuse.
   const identityTokens = deriveProjectIdentityTokens(ctx.project);
-  const indexUseNarrow = meaningfulTokenCount(indexQueryFp, narrowPolicyExclusions(ctx.project)) >= NARROW_OVERLAP_MIN_MEANINGFUL_TOKENS;
+  const indexUseNarrow = meaningfulTokenCount(indexQueryFp, narrowPolicyExclusions(ctx.project)) >= LIMITS.NARROW_OVERLAP_MIN_MEANINGFUL_TOKENS;
   const indexRelevanceFp = indexUseNarrow ? indexQueryFp : broadRelevanceFp(indexQueryFp);
   const decisionsGuarded = decisionCandidates
     .filter(d => passesCrossProjectGuard(d, ctx.project, indexQueryFp))

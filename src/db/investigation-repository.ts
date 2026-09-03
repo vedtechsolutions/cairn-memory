@@ -5,8 +5,7 @@
  */
 import type Database from 'better-sqlite3';
 import { generateId, now } from '../utils/index.js';
-
-const MAX_ATTEMPTS_PER_CHAIN = 10;
+import { LIMITS } from '../constants/index.js';
 
 export interface ChainAttempt {
   approach: string;
@@ -88,14 +87,14 @@ export class InvestigationRepository {
     return rows.map(r => this.rowToChain(r));
   }
 
-  /** Append an attempt to an existing chain. Capped at MAX_ATTEMPTS_PER_CHAIN. */
+  /** Append an attempt to an existing chain. Capped at LIMITS.MAX_ATTEMPTS_PER_CHAIN. */
   appendAttempt(chainId: string, attempt: ChainAttempt): boolean {
     const row = this.db.prepare('SELECT attempts FROM investigation_chains WHERE id = ?')
       .get(chainId) as { attempts: string } | undefined;
     if (!row) return false;
 
     const attempts = JSON.parse(row.attempts) as ChainAttempt[];
-    if (attempts.length >= MAX_ATTEMPTS_PER_CHAIN) return false;
+    if (attempts.length >= LIMITS.MAX_ATTEMPTS_PER_CHAIN) return false;
 
     attempts.push(attempt);
     this.db.prepare('UPDATE investigation_chains SET attempts = ? WHERE id = ?')

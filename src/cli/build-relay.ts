@@ -10,6 +10,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, copyFileSync, chmodSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { FS_PERMS } from '../constants/index.js';
 
 const PKG_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const SRC = join(PKG_ROOT, 'src', 'hooks', 'hook-relay.c');
@@ -18,7 +19,6 @@ const GENERATED_INCLUDE = join(PKG_ROOT, 'dist', 'generated');
 const SHELL_SRC = join(PKG_ROOT, 'src', 'hooks', 'hook-relay.sh');
 const OUT = join(PKG_ROOT, 'dist', 'src', 'hooks', 'hook-relay');
 const SHELL_OUT = join(PKG_ROOT, 'dist', 'src', 'hooks', 'hook-relay.sh');
-const EXEC_MODE = 0o755;
 const CC_FLAGS = [
   '-O2', '-D_FORTIFY_SOURCE=2', '-fstack-protector-strong', '-fPIE', '-pie',
   '-Wall', '-Wextra', '-Wformat', '-Werror=format-security',
@@ -54,11 +54,11 @@ export function runBuildRelay(): number {
       return 1;
     }
   }
-  chmodSync(OUT, EXEC_MODE);
+  chmodSync(OUT, FS_PERMS.EXECUTABLE);
   // Keep the shell fallback beside it, matching the build script.
   if (existsSync(SHELL_SRC)) {
     copyFileSync(SHELL_SRC, SHELL_OUT);
-    chmodSync(SHELL_OUT, EXEC_MODE);
+    chmodSync(SHELL_OUT, FS_PERMS.EXECUTABLE);
   }
   console.log(`waykeep build-relay: compiled ${OUT}`);
   return 0;

@@ -17,7 +17,7 @@ import {
   type WorktreeDigestV2Result,
 } from './worktree-digest.js';
 import { projectId } from '../utils/project-id.js';
-import { GOVERNANCE } from '../constants/index.js';
+import { GOVERNANCE, GOVERNANCE_BOUNDS } from '../constants/index.js';
 import type {
   AdaptedClaudeEvent, NormalizedToolEvent, RecorderDiagnostic,
 } from './types.js';
@@ -29,8 +29,6 @@ export interface RecordGovernanceOptions {
   /** Test-only transaction fault point. */
   failAfterEventInsert?: boolean;
 }
-
-const MAX_INTERNAL_REASON_CHARS = 240;
 
 /**
  * Whether to persist the full, unredacted shell command line. Default OFF —
@@ -49,7 +47,7 @@ function sha256(value: string): string {
 }
 
 function safeReason(reason: string): string {
-  return reason.replace(/[\r\n\t]+/gu, ' ').slice(0, MAX_INTERNAL_REASON_CHARS);
+  return reason.replace(/[\r\n\t]+/gu, ' ').slice(0, GOVERNANCE_BOUNDS.MAX_INTERNAL_REASON_CHARS);
 }
 
 function findProjectRoot(cwd: string): string {
