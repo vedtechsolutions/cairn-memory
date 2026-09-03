@@ -16,7 +16,7 @@ import { basename, dirname, join } from 'node:path';
 import { IMPORT, LIMITS } from '../constants/index.js';
 import { scrubSecrets } from '../utils/secret-scanner.js';
 import type { LearnSection } from './learn-pipeline.js';
-import { inferKind, slugTag } from './shared.js';
+import { inferKind, slugTag, slugOf } from './shared.js';
 
 export interface MemoryMdImport {
   sections: LearnSection[];
@@ -125,7 +125,7 @@ export function sectionsFromFreeformMarkdown(rawMarkdown: string, baseTags: stri
     const newline = part.indexOf('\n');
     const heading = (newline === -1 ? part : part.slice(0, newline)).trim();
     const body = newline === -1 ? '' : part.slice(newline + 1).trim();
-    const headingSlug = heading.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
+    const headingSlug = slugOf(heading);
     const tags = headingSlug ? [`topic:${headingSlug}`] : [];
     const bullets = [...body.matchAll(/^[-*] +(.+(?:\n {2,}.+)*)/gm)];
     if (bullets.length >= IMPORT.MIN_BULLETS_FOR_SPLIT) {
@@ -171,7 +171,7 @@ export function transformMemoryMd(path: string, opts: { includeSiblings?: boolea
         excluded.push({ name, reason: 'no auto-memory frontmatter (use --include-notes to import siblings)' });
         continue;
       }
-      const topicSlug = name.replace(/\.md$/, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40);
+      const topicSlug = slugOf(name.replace(/\.md$/, ''));
       const sibNotes: string[] = [];
       const fileSections = sectionsFromFreeformMarkdown(raw, [...baseTags, `topic:${topicSlug}`], sibNotes);
       sections.push(...fileSections);

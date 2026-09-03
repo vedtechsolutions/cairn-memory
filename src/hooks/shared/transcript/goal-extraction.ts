@@ -3,7 +3,9 @@
  * from session-management noise (compaction blurbs, resume prose, stop
  * notices) and distills raw user messages into goal statements.
  */
-import { type RawEntry, truncate } from './snapshot.js';
+import { type RawEntry } from './snapshot.js';
+import { truncateAscii } from '../../../utils/text.js';
+import { TRUNCATE } from '../../../constants/budgets.js';
 
 /**
  * Filter out system-generated messages that masquerade as user entries.
@@ -148,7 +150,7 @@ export function distillGoal(raw: string): string {
     goal = goal[0].toUpperCase() + goal.slice(1);
   }
 
-  return goal.slice(0, 500);
+  return goal.slice(0, TRUNCATE.INITIAL_GOAL_CHARS);
 }
 
 /** Mine the original session goal from head-of-file lines — the fallback
@@ -169,7 +171,7 @@ export function mineInitialGoalFromHead(headLines: string[]): string | null {
     }
     for (const t of texts) {
       if (t.length > 20 && isHumanMessage(t) && !isMetaGoal(t)) {
-        return truncate(t, 500);
+        return truncateAscii(t, TRUNCATE.INITIAL_GOAL_CHARS);
       }
     }
   }

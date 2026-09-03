@@ -5,10 +5,9 @@
 import { readFileSync, existsSync, mkdirSync, statSync } from 'node:fs';
 import { writeFileAtomic } from '../../utils/atomic-write.js';
 import { join, dirname } from 'node:path';
-import { homedir } from 'node:os';
 import { STATE_STALENESS_MS, CONTEXT_MODES, type ContextMode, CONTEXT_FREE_PCT } from '../../constants/index.js';
 import { ENV } from '../../constants/env.js';
-import { FILES } from '../../constants/paths.js';
+import { FILES, robustHomedir } from '../../constants/paths.js';
 import { CLAUDE_CODE } from '../../constants/claude-code.js';
 
 export interface WaykeepState {
@@ -35,13 +34,15 @@ function isValidState(value: unknown): value is WaykeepState {
  *  WAYKEEP_DB_PATH) keeps tests and sandboxed environments off the real
  *  ~/.claude. Resolved lazily so the override works regardless of import order. */
 function statePath(): string {
-  return process.env[ENV.STATE_PATH] ?? join(homedir(), CLAUDE_CODE.CONFIG_DIR, FILES.CLIENT_STATE);
+  return process.env[ENV.STATE_PATH] ?? join(robustHomedir(), CLAUDE_CODE.CONFIG_DIR, FILES.CLIENT_STATE);
 }
 
 export function readState(): WaykeepState {
   const defaults: WaykeepState = { mode: 'normal', freeUntilCompact: 100 };
-  const path = statePath();
   try {
+    // Inside the guard: resolving the home can throw on a host with no
+    // absolute home, and this reader is fail-open by contract.
+    const path = statePath();
     if (!existsSync(path)) return defaults;
 
     // If the state file is too old, the context may have changed — default to normal (fail-open)

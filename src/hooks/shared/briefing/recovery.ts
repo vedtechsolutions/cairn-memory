@@ -5,9 +5,9 @@ import { estimateTokensFast } from '../../../utils/tokens.js';
 import type { ContextFingerprint } from '../../../utils/fingerprint.js';
 import { passesCrossProjectGuard, passesSameProjectRelevance, deriveProjectIdentityTokens, meaningfulTokenCount } from '../../../utils/cross-project-guard.js';
 import { narrowPolicyExclusions, broadRelevanceFp } from './query-fingerprint.js';
-import { truncate } from './render-helpers.js';
 import { isMemoryEligibleForInjection , formatMemoryContent } from '../../../utils/memory-injection.js';
 import { MS_PER_DAY } from '../../../constants/time.js';
+import { truncate } from '../../../utils/text.js';
 
 /** Compute effectiveness score (0–1) for a memory.
  *  High surface count with low impact = noise. High impact/surface ratio = valuable.

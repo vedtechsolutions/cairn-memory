@@ -17,6 +17,7 @@ import { buildFtsQuery, now } from '../../utils/index.js';
 import { SOURCE_AUTHORITY, TRUTH, type MemorySource } from '../../constants/index.js';
 import { journalMutation, JOURNAL_CAUSE_SUPERSEDED_PREFIX, type JournalOptions } from './journal.js';
 import { MS_PER_DAY } from '../../constants/time.js';
+import { jaccardOverlap } from '../../utils/similarity.js';
 
 // --- Claim classification + staleness ---------------------------------------
 
@@ -92,13 +93,6 @@ export function subjectTokens(content: string): Set<string> {
   const withoutValues = content.replace(VERSION_RE, ' ').replace(METRIC_RE, ' ');
   const words = withoutValues.toLowerCase().match(/[a-z][a-z0-9_-]{2,}/g) ?? [];
   return new Set(words.filter(w => !STOPWORDS.has(w)));
-}
-
-function jaccard(a: Set<string>, b: Set<string>): number {
-  if (a.size === 0 || b.size === 0) return 0;
-  let inter = 0;
-  for (const x of a) if (b.has(x)) inter++;
-  return inter / (a.size + b.size - inter);
 }
 
 /** The scope object after a scope cue (e.g. "for X", "when Y"), lowercased.
@@ -238,7 +232,7 @@ export function detectConflict(existing: Memory, incoming: Memory): ConflictResu
   let shared = 0;
   for (const t of aSubj) if (bSubj.has(t)) shared++;
   if (shared < TRUTH.SUBJECT_MIN_SHARED_TOKENS) return null;
-  if (jaccard(aSubj, bSubj) < TRUTH.SUBJECT_MIN_JACCARD) return null;
+  if (jaccardOverlap(aSubj, bSubj) < TRUTH.SUBJECT_MIN_JACCARD) return null;
 
   // Gate 2: scope guard — differing scope objects mean different scope, not conflict.
   const aScope = scopeObjects(existing.content);

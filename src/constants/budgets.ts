@@ -96,4 +96,23 @@ export const TRUNCATE = {
   ERROR_FAIL_OUTPUT_CHARS: 200,
   ERROR_OUTCOME_CHARS: 150,
   ERROR_FIRST_LINE_CHARS: 100,
+  /** The goal extracted from a transcript (distilled or first human turn);
+   *  equals the briefing's goal line cap so the briefing renders it whole. */
+  INITIAL_GOAL_CHARS: 500,
+  /** Plan-mode plans bridged into the store: step and name caps. */
+  PLAN_STEP_CHARS: 200,
+  PLAN_NAME_CHARS: 100,
+  /** A normalized error pattern (signal extraction). */
+  SIGNAL_PATTERN_CHARS: 200,
+  /** A rendered "chose because why" decision line. */
+  DECISION_FULL_CHARS: 200,
+  /** Contradiction pair labels in the briefing. */
+  BRIEFING_CLIP_CHARS: 70,
+} as const;
+
+/** Truncation markers: the single glyph for rendered briefings, ASCII where
+ *  consumers (and their tests) expect three dots. */
+export const ELLIPSIS = {
+  UNICODE: '…',
+  ASCII: '...',
 } as const;

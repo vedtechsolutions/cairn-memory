@@ -7,6 +7,8 @@ import { basename, dirname, extname } from 'node:path';
 import type { BriefingContext } from './types.js';
 import { ENV } from '../../../constants/env.js';
 import { CLAUDE_CODE } from '../../../constants/claude-code.js';
+// Re-exported so the briefing renderers keep one import site for overlap helpers.
+export { jaccardOverlap } from '../../../utils/similarity.js';
 
 /** Generic path segments the fingerprint path already ignores; mirror it here.
  *  The `opt|usr|var|home|root|tmp|etc` roots and `.claude|worktrees` segments
@@ -43,15 +45,6 @@ export function tokeniseForOverlap(text: string): Set<string> {
     if (t.length >= 3 && !GOAL_STOP_WORDS.has(t)) out.add(t);
   }
   return out;
-}
-
-/** Jaccard similarity between two token sets. Empty sets return 0 (not 1). */
-export function jaccardOverlap(a: Set<string>, b: Set<string>): number {
-  if (a.size === 0 || b.size === 0) return 0;
-  let intersection = 0;
-  for (const t of a) if (b.has(t)) intersection++;
-  const union = a.size + b.size - intersection;
-  return union === 0 ? 0 : intersection / union;
 }
 
 /**

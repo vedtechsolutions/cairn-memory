@@ -9,9 +9,9 @@
  * creates or migrates the database.
  */
 import { NAMESPACE } from 'waykeep-contract';
-import { existsSync, readFileSync , realpathSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join } from 'node:path';
 import { SCHEMA_VERSION } from '../db/schema.js';
 import { resolveDbPath } from '../db/db-path.js';
 import { WAYKEEP_HOOK_DIR_MARKER, ENGINE } from '../constants/index.js';
@@ -27,6 +27,7 @@ import {
   LEGACY_POST_TOOL_ROUTE, type CodexHooksFile,
 } from './codex-init.js';
 import { claudeMcpHealth } from './claude-health.js';
+import { canonicalPath } from '../utils/fs-paths.js';
 
 /** Hook dir relative to this module: dist/src/cli/ → dist/src/hooks. */
 const HOOK_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'hooks');
@@ -258,8 +259,7 @@ export function checkCodexParity(): CheckResult {
   }
   // realpath BOTH sides: the same install reached through a symlink must
   // not read as different (review) — that prompted needless re-trust.
-  const canonical = (d: string): string => { try { return realpathSync(d); } catch { return resolve(d); } };
-  if (wiredDir !== undefined && canonical(wiredDir) !== canonical(HOOK_DIR)) {
+  if (wiredDir !== undefined && canonicalPath(wiredDir) !== canonicalPath(HOOK_DIR)) {
     return { status: 'warn', detail: `Codex hooks run a DIFFERENT install (${wiredDir}) than this one (${HOOK_DIR}) — re-run \`waykeep init\` from the install you want (one re-trust)` };
   }
   const config = existsSync(codexConfigPath()) ? readFileSync(codexConfigPath(), 'utf-8') : '';

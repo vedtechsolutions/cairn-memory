@@ -4,9 +4,10 @@
  */
 import { openSync, readSync, closeSync, realpathSync, constants } from 'node:fs';
 import { resolve } from 'node:path';
-import { homedir, tmpdir } from 'node:os';
+import { tmpdir } from 'node:os';
 import { ENV } from '../../../constants/env.js';
 import { CLAUDE_CODE } from '../../../constants/claude-code.js';
+import { robustHomedir } from '../../../constants/paths.js';
 
 /** Open flags for transcript reads: read-only and refuse to follow a symlink
  *  at the final path component (paired with the realpath check below). Falls
@@ -28,7 +29,8 @@ const READ_NOFOLLOW = constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0);
 export function isSafeTranscriptPath(p: string): boolean {
   if (!p || typeof p !== 'string') return false;
   const resolved = resolve(p);
-  const home = homedir();
+  let home: string;
+  try { home = robustHomedir(); } catch { return false; } // no resolvable home root → nothing is contained
   const roots = [`${home}/${CLAUDE_CODE.CONFIG_DIR}`];
   if (process.env[ENV.ALLOW_TMP_TRANSCRIPTS]) roots.push(tmpdir());
   // Canonicalize target and each allowed root, then require the target's real

@@ -2,6 +2,7 @@ import type Database from 'better-sqlite3';
 import { SHAREABLE_KINDS, isShareState } from 'waykeep-contract';
 
 import type { WaykeepConfigSnapshot } from '../config/waykeep-config.js';
+import { isPlainObject } from '../utils/plain-object.js';
 
 /**
  * Shared fail-closed sync-eligibility predicate (brief D8 item 6, D10's
@@ -80,7 +81,7 @@ function anchorUnresolvable(anchor: string | null | undefined): boolean {
   if (anchor === null || anchor === undefined) return false;
   try {
     const parsed = JSON.parse(anchor) as { files?: unknown };
-    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return true;
+    if (!isPlainObject(parsed)) return true;
     if (!Array.isArray(parsed.files)) return true;
     return parsed.files.some(fileUnresolvable);
   } catch {

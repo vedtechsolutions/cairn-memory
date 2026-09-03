@@ -15,12 +15,11 @@
  */
 import { existsSync, readFileSync, copyFileSync } from 'node:fs';
 import { writeFileAtomic } from '../utils/atomic-write.js';
-import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { CLIENT_CODEX } from '../constants/clients.js';
 import { isWaykeepHookCommand } from '../constants/index.js';
 import { ENV } from '../constants/env.js';
-import { FILES, BACKUP_SUFFIX } from '../constants/paths.js';
+import { FILES, BACKUP_SUFFIX, robustHomedir } from '../constants/paths.js';
 import { MCP_SERVER_NAME } from '../constants/mcp.js';
 import { LEGACY_NAMESPACES } from 'waykeep-contract';
 import { parse as parseToml } from 'smol-toml';
@@ -29,7 +28,7 @@ import { CODEX } from '../constants/codex.js';
 
 /** ~/.codex, overridable for hermetic tests. */
 export function codexDir(): string {
-  return process.env[ENV.CODEX_DIR] ?? join(homedir(), CODEX.CONFIG_DIR);
+  return process.env[ENV.CODEX_DIR] ?? join(robustHomedir(), CODEX.CONFIG_DIR);
 }
 export function codexHooksPath(): string { return join(codexDir(), 'hooks.json'); }
 export function codexConfigPath(): string { return join(codexDir(), 'config.toml'); }
@@ -44,7 +43,6 @@ interface CodexHookCommand {
 }
 interface CodexMatcherGroup { matcher?: string; hooks: CodexHookCommand[] }
 export interface CodexHooksFile { description: string; hooks: Record<string, CodexMatcherGroup[]> }
-
 
 /** Canonical PostToolUse route (client-neutral, contract revision 1). */
 export const POST_TOOL_ROUTE = 'post-tool';

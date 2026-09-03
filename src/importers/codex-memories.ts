@@ -35,7 +35,7 @@ import { projectId } from '../utils/project-id.js';
 import { IMPORT } from '../constants/index.js';
 import type { LearnSection } from './learn-pipeline.js';
 import { sectionsFromFreeformMarkdown } from './memory-md.js';
-import { inferKind } from './shared.js';
+import { inferKind, slugOf } from './shared.js';
 
 export interface CodexMemoriesImport {
   sections: LearnSection[];
@@ -150,7 +150,7 @@ function groupSections(group: TaskGroup): LearnSection[] {
   // the CLI --project fallback (or global) applies — never a silent
   // hard-null that blocks the fallback (review).
   const project = group.cwd ? projectId(group.cwd) : undefined;
-  const groupSlug = group.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
+  const groupSlug = slugOf(group.name);
   const baseTags = ['import:codex-memories', ...(groupSlug ? [`group:${groupSlug}`] : [])];
   const why = `Codex task group "${group.name}"${group.scope ? ` — ${group.scope}` : ''}`.slice(0, 200);
   const context = { why };

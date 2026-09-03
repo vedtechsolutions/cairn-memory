@@ -76,3 +76,16 @@ function makeBigrams(text: string): Set<string> {
   }
   return bigrams;
 }
+
+/** Jaccard overlap |A∩B| / |A∪B| over token sets (arrays are de-duplicated
+ *  first). Either side empty → 0. Three copies with different empty-input
+ *  guards lived in truth.ts, fingerprint.ts and query-fingerprint.ts (audit). */
+export function jaccardOverlap(a: Iterable<string>, b: Iterable<string>): number {
+  const setA = a instanceof Set ? a : new Set(a);
+  const setB = b instanceof Set ? b : new Set(b);
+  if (setA.size === 0 || setB.size === 0) return 0;
+  let intersection = 0;
+  for (const item of setA) if (setB.has(item)) intersection++;
+  const union = setA.size + setB.size - intersection;
+  return union === 0 ? 0 : intersection / union;
+}

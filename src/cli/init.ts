@@ -13,7 +13,6 @@
  */
 import { existsSync, mkdirSync, readFileSync, copyFileSync } from 'node:fs';
 import { writeFileAtomic } from '../utils/atomic-write.js';
-import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { resolveRelay, relayBinaryPath, relayShellPath } from './relay.js';
@@ -22,14 +21,15 @@ import { registerClaudeMcp, claudeSettingsPath } from './claude-mcp.js';
 import { looksLikeWaykeepServer, sweepLegacyMcpServers } from './mcp-entry.js';
 import { isWaykeepHookCommand } from '../constants/index.js';
 import { BACKUP_SUFFIX } from '../constants/paths.js';
+import { detectOtherClients } from './other-clients.js';
 import { MCP_SERVER_NAME } from '../constants/mcp.js';
 import { CLAUDE_CODE } from '../constants/claude-code.js';
+import { isPlainObject } from '../utils/plain-object.js';
 
 /** Package root: dist/src/cli/ → the install root that holds dist/. */
 const PKG_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const HOOK_DIR = join(PKG_ROOT, 'dist', 'src', 'hooks');
 const SERVER = join(PKG_ROOT, 'dist', 'src', 'mcp', 'server.js');
-
 
 interface HookCommand { type: 'command'; command: string; async?: boolean }
 interface HookMatcher { matcher: string; hooks: HookCommand[] }
@@ -209,18 +209,10 @@ function mergeSettings(existing: Settings, relayCmd: string, statuslineOnly = fa
   return { changed, skipped, result };
 }
 
-/** Non-Claude MCP clients with no native wiring yet, reported not
- *  auto-edited. Codex is wired for real by runCodexInit. */
-const OTHER_CLIENTS: Array<{ name: string; dir: string }> = [
-  { name: 'Cursor', dir: '.cursor' },
-  { name: 'Gemini CLI', dir: '.gemini' },
-  { name: 'Windsurf', dir: '.codeium' },
-];
-
 function readSettings(path: string): Settings {
   if (!existsSync(path)) return {};
   const parsed: unknown = JSON.parse(readFileSync(path, 'utf-8'));
-  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+  if (!isPlainObject(parsed)) {
     throw new Error('settings.json is not a JSON object');
   }
   return parsed as Settings;
@@ -293,7 +285,7 @@ export function runInit(options: InitOptions = {}): number {
 
   if (options.dryRun) console.log('\n  (dry run — no files were written)');
 
-  const detected = OTHER_CLIENTS.filter(c => existsSync(join(homedir(), c.dir)));
+  const detected = detectOtherClients();
   if (detected.length > 0) {
     console.log(`\nOther MCP clients detected: ${detected.map(c => c.name).join(', ')}`);
     console.log(`  Waykeep works as an MCP server in any of them. Register this command:`);

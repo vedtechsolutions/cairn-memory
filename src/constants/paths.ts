@@ -35,7 +35,7 @@ import { ENV, LEGACY_STORE_ENV_INHERITED } from './env.js';
  * passwd home (`userInfo().homedir`, which ignores HOME) whenever `homedir()`
  * is empty or non-absolute, so the state root is always an absolute real home.
  */
-function robustHomedir(): string {
+export function robustHomedir(): string {
   const h = homedir();
   if (isAbsolute(h)) return h;
   try {

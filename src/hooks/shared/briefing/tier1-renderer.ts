@@ -10,7 +10,6 @@ import type { BriefingContext } from './types.js';
 import { tokeniseForOverlap, jaccardOverlap } from './query-fingerprint.js';
 import { renderGoalTiers, formatGoalTierLine } from './goal-tiers.js';
 import {
-  truncate,
   renderResumeCursor,
   isConversationalApproach,
   formatPlanSummary,
@@ -18,6 +17,7 @@ import {
   type TierResult,
 } from './render-helpers.js';
 import { TOOL } from '../../../constants/mcp.js';
+import { truncate } from '../../../utils/text.js';
 
 /** Tier 1: Fixed context — header, project, git, user, plan, goal, files, approach */
 export function renderTier1(

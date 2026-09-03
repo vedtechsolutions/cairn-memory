@@ -22,6 +22,8 @@ import type {
   AdaptedClaudeEvent, NormalizedToolEvent, RecorderDiagnostic,
 } from './types.js';
 import { gatesPath } from '../constants/paths.js';
+import { shellQuote } from '../utils/shell.js';
+import { isPlainObject } from '../utils/plain-object.js';
 
 export interface RecordGovernanceOptions {
   nowMs?: number;
@@ -69,17 +71,11 @@ function commandArgv(event: NormalizedToolEvent): string[] | null {
   return parsed.ok ? parsed.argv : null;
 }
 
-function shellQuote(argument: string): string {
-  return /^[A-Za-z0-9_./:@%+=,-]+$/u.test(argument)
-    ? argument
-    : `'${argument.replaceAll("'", "'\\''")}'`;
-}
-
 function observedEnvironment(event: NormalizedToolEvent): Record<string, string | undefined> | undefined {
   const raw = event.toolInput.environment ?? event.toolInput.env;
-  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  if (!isPlainObject(raw)) return undefined;
   const environment: Record<string, string | undefined> = {};
-  for (const [name, value] of Object.entries(raw as Record<string, unknown>)) {
+  for (const [name, value] of Object.entries(raw)) {
     if (typeof value === 'string') environment[name] = value;
   }
   return environment;

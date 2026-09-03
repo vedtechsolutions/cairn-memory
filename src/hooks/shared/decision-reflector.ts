@@ -32,7 +32,8 @@
  * caller's perspective so Stop latency is unaffected by the LLM call.
  */
 import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
-import { REFLECTION } from '../../constants/index.js';
+import { REFLECTION, TRUNCATE } from '../../constants/index.js';
+import { truncateAscii } from '../../utils/text.js';
 
 // --- Tunables --------------------------------------------------------
 
@@ -109,10 +110,8 @@ export function renderReflectedDecision(d: ReflectedDecision): string {
   const chose = d.chose.trim();
   const why = d.why.trim();
   if (!chose) return '';
-  if (!why) return chose.slice(0, 200);
-  const full = `${chose} because ${why}`;
-  if (full.length > 200) return full.slice(0, 197) + '...';
-  return full;
+  if (!why) return chose.slice(0, TRUNCATE.DECISION_FULL_CHARS);
+  return truncateAscii(`${chose} because ${why}`, TRUNCATE.DECISION_FULL_CHARS);
 }
 
 /** Shape of the structured JSON we ask the LLM to return. */

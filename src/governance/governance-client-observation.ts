@@ -5,13 +5,13 @@ import { resolve } from 'node:path';
 import { projectId } from '../utils/project-id.js';
 import { CLAUDE_ADAPTER_VERSION } from './types.js';
 import type { ShadowStopWireInput } from './shadow-stop.js';
+import { isPlainObject } from '../utils/plain-object.js';
 
 export const CLAUDE_GOVERNANCE_SETTINGS_SOURCE = 'claude-settings:governance-gate';
 const GOVERNANCE_GATE_ASYNC_PAIR_MAX_AGE_MS = 5_000;
 
 function record(value: unknown): Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
-    ? value as Record<string, unknown> : {};
+  return isPlainObject(value) ? value : {};
 }
 
 function text(value: unknown): string | null {

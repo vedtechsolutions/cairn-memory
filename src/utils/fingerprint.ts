@@ -7,6 +7,7 @@ import { extname, basename, dirname } from 'node:path';
 import type { ProjectContext } from './project-scanner.js';
 import { FINGERPRINT, RELEVANCE } from '../constants/index.js';
 import { CLAUDE_CODE } from '../constants/claude-code.js';
+import { jaccardOverlap } from './similarity.js';
 
 /** Extract task-signal tokens from a git branch name: lowercased segments
  *  split on /-_ with short and conventional-prefix noise (feat, fix, ...)
@@ -91,9 +92,9 @@ export function fingerprintOverlap(
   stored: ContextFingerprint,
   query: ContextFingerprint,
 ): number {
-  const langScore = jaccard(stored.lang, query.lang);
-  const frameworkScore = jaccard(stored.framework, query.framework);
-  const moduleScore = jaccard(stored.module, query.module);
+  const langScore = jaccardOverlap(stored.lang, query.lang);
+  const frameworkScore = jaccardOverlap(stored.framework, query.framework);
+  const moduleScore = jaccardOverlap(stored.module, query.module);
 
   const weights = FINGERPRINT.DIMENSION_WEIGHTS;
   return (
@@ -256,17 +257,4 @@ const LANGUAGE_NAMES = new Set([
 
 function isLanguageName(s: string): boolean {
   return LANGUAGE_NAMES.has(s);
-}
-
-/** Jaccard similarity between two string arrays (0-1). */
-function jaccard(a: string[], b: string[]): number {
-  if (a.length === 0 && b.length === 0) return 0;
-  const setA = new Set(a);
-  const setB = new Set(b);
-  let intersection = 0;
-  for (const item of setA) {
-    if (setB.has(item)) intersection++;
-  }
-  const union = new Set([...setA, ...setB]).size;
-  return union === 0 ? 0 : intersection / union;
 }

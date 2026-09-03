@@ -2,6 +2,9 @@
  * Parse markdown plan content into a structured name + steps format.
  * Used by the plan-bridge hook to auto-persist Claude Code plan mode plans.
  */
+import { truncateAscii } from './text.js';
+import { TRUNCATE } from '../constants/index.js';
+
 
 /**
  * Parse markdown plan content into a name and list of steps.
@@ -47,8 +50,8 @@ export function parsePlanContent(content: string): { name: string; steps: string
   if (steps.length < 2) return null;
 
   // Truncate
-  const truncated = steps.map(s => s.length > 200 ? s.slice(0, 197) + '...' : s);
-  return { name: name.slice(0, 100), steps: truncated };
+  const truncated = steps.map(s => truncateAscii(s, TRUNCATE.PLAN_STEP_CHARS));
+  return { name: name.slice(0, TRUNCATE.PLAN_NAME_CHARS), steps: truncated };
 }
 
 /** Extract steps from numbered list items (1. Step description) */

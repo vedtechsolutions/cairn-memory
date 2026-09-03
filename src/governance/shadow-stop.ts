@@ -9,6 +9,7 @@ import {
 } from './shadow-evaluator.js';
 import { CLAUDE_ADAPTER_VERSION } from './types.js';
 import { reconcileAsyncStopGovernanceCapability } from './governance-client-observation.js';
+import { isPlainObject } from '../utils/plain-object.js';
 
 export interface ShadowStopWireInput {
   session_id: unknown;
@@ -28,8 +29,7 @@ export interface ShadowStopFailOpenOptions {
 }
 
 function record(value: unknown): Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
-    ? value as Record<string, unknown> : {};
+  return isPlainObject(value) ? value : {};
 }
 
 function text(value: unknown): string | null {

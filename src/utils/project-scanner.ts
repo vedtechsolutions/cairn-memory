@@ -8,6 +8,7 @@ import { execFileSync } from 'node:child_process';
 import { join, basename, dirname, resolve } from 'node:path';
 import { PROJECT_SCAN, GIT_SUBPROCESS } from '../constants/index.js';
 import { now } from './time.js';
+import { truncate } from './text.js';
 
 // --- Types ------------------------------------------------------------------
 
@@ -165,9 +166,7 @@ export function formatProjectContextCompact(ctx: ProjectContext, maxChars: numbe
   const parts: string[] = [];
   if (ctx.techStack) parts.push(ctx.techStack);
   if (ctx.structure.length > 0) parts.push(ctx.structure.join(' | '));
-  const line = parts.join(' | ');
-  if (line.length <= maxChars) return line;
-  return line.slice(0, maxChars - 1) + '…';
+  return truncate(parts.join(' | '), maxChars);
 }
 
 /** Extract all meaningful directory/file-stem tokens from the project structure.

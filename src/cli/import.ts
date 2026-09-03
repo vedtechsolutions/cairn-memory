@@ -9,7 +9,6 @@
  *   memory-md       a freeform MEMORY.md (+ sibling topic files)
  *   claude-mem      the community claude-mem archive (format-versioned)
  */
-import { homedir } from 'node:os';
 import { NAMESPACE } from 'waykeep-contract';
 import { join } from 'node:path';
 import { openDatabase } from '../db/connection.js';
@@ -22,6 +21,7 @@ import { transformMemoryMd } from '../importers/memory-md.js';
 import { transformClaudeMem } from '../importers/claude-mem.js';
 import { ENV } from '../constants/env.js';
 import { CODEX } from '../constants/codex.js';
+import { robustHomedir } from '../constants/paths.js';
 
 export interface ImportOptions {
   from: string;
@@ -39,7 +39,7 @@ export function runImport(options: ImportOptions): number {
   try {
     switch (options.from) {
       case 'codex-memories': {
-        const dir = options.path ?? join(process.env[ENV.CODEX_DIR] ?? join(homedir(), CODEX.CONFIG_DIR), CODEX.MEMORIES_SUBDIR);
+        const dir = options.path ?? join(process.env[ENV.CODEX_DIR] ?? join(robustHomedir(), CODEX.CONFIG_DIR), CODEX.MEMORIES_SUBDIR);
         const result = transformCodexMemories(dir, { includeNotes: options.includeNotes });
         ({ sections, excluded, notes } = result);
         break;

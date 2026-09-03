@@ -1,9 +1,8 @@
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, statSync } from 'node:fs';
-import { homedir } from 'node:os';
 import { isAbsolute, posix, relative, resolve, sep } from 'node:path';
 import Database from 'better-sqlite3';
-import { defaultDbPath } from '../constants/paths.js';
+import { defaultDbPath, robustHomedir } from '../constants/paths.js';
 import { projectId } from '../utils/project-id.js';
 import {
   loadGateConfig, type LoadedGateConfig, type NormalizedCommandForm,
@@ -133,7 +132,7 @@ function defaultStorePath(): string {
 function resolveDatabasePath(input: string): string {
   if (input.includes('\0')) throw new InspectorError('database path contains NUL');
   if (input === ':memory:') throw new InspectorError('inspector requires a persistent read-only database path');
-  return resolve(input.startsWith('~') ? input.replace('~', homedir()) : input);
+  return resolve(input.startsWith('~') ? input.replace('~', robustHomedir()) : input);
 }
 
 function readCapabilities(

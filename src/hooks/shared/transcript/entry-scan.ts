@@ -3,12 +3,13 @@
  * (first pass) and tool_use / tool_result extraction (tail pass).
  */
 import { TOKEN_BUDGET, TRUNCATE } from '../../../constants/index.js';
-import { type RawEntry, type ContentBlock, type CommandBucket, type TranscriptSnapshot, truncate } from './snapshot.js';
+import { type RawEntry, type ContentBlock, type CommandBucket, type TranscriptSnapshot } from './snapshot.js';
 import { looksLikeFilePath, classifyCommandBucket } from './classify.js';
 import { isHumanMessage } from './goal-extraction.js';
 import { extractAssistantDecision } from './decision-extraction.js';
 import { isApproachNote, isLikelyErrorOutput } from './signal-extraction.js';
 import { TOOL, qualifiedToolName } from '../../../constants/mcp.js';
+import { truncateAscii } from '../../../utils/text.js';
 
 /** Hoisted: this scan runs per transcript entry. */
 const QUALIFIED_PLAN = qualifiedToolName(TOOL.PLAN);
@@ -63,12 +64,12 @@ export function collectUserContext(allLines: string[], snapshot: TranscriptSnaps
 
     if (typeof content === 'string' && content.trim()) {
       if (isHumanMessage(content)) {
-        snapshot.userContext.push(truncate(content, TRUNCATE.USER_CONTEXT_CHARS));
+        snapshot.userContext.push(truncateAscii(content, TRUNCATE.USER_CONTEXT_CHARS));
       }
     } else if (Array.isArray(content)) {
       for (const block of content) {
         if (block.type === 'text' && block.text?.trim() && isHumanMessage(block.text)) {
-          snapshot.userContext.push(truncate(block.text, TRUNCATE.USER_CONTEXT_CHARS));
+          snapshot.userContext.push(truncateAscii(block.text, TRUNCATE.USER_CONTEXT_CHARS));
         }
       }
     }
@@ -113,7 +114,7 @@ export function scanAssistantEntry(content: ContentBlock[], snapshot: Transcript
         if (action === 'create') {
           const planName = input.name as string | undefined;
           if (planName && planName.length >= 10) {
-            snapshot.projectGoal = truncate(planName, TRUNCATE.PROJECT_GOAL_CHARS);
+            snapshot.projectGoal = truncateAscii(planName, TRUNCATE.PROJECT_GOAL_CHARS);
           }
         }
       }
@@ -126,8 +127,8 @@ export function scanAssistantEntry(content: ContentBlock[], snapshot: Transcript
           const why = input.why as string | undefined;
           if (chose && why) {
             snapshot.recentDecisions.push({
-              chose: truncate(chose, TRUNCATE.DECISION_FIELD_CHARS),
-              why: truncate(why, TRUNCATE.DECISION_FIELD_CHARS),
+              chose: truncateAscii(chose, TRUNCATE.DECISION_FIELD_CHARS),
+              why: truncateAscii(why, TRUNCATE.DECISION_FIELD_CHARS),
             });
           }
         }
@@ -140,7 +141,7 @@ export function scanAssistantEntry(content: ContentBlock[], snapshot: Transcript
           const content = input.content as string | undefined;
           if (content) {
             snapshot.recentDecisions.push({
-              chose: truncate(content, TRUNCATE.DECISION_FIELD_CHARS),
+              chose: truncateAscii(content, TRUNCATE.DECISION_FIELD_CHARS),
               why: `(via ${TOOL.LEARN})`,
             });
           }
@@ -158,7 +159,7 @@ export function scanAssistantEntry(content: ContentBlock[], snapshot: Transcript
 
     // Assistant text → approach notes (only strategy-like content)
     if (block.type === 'text' && block.text && block.text.length > 50 && isApproachNote(block.text)) {
-      snapshot.approachNotes.push(truncate(block.text, TOKEN_BUDGET.APPROACH_NOTE_MAX_CHARS));
+      snapshot.approachNotes.push(truncateAscii(block.text, TOKEN_BUDGET.APPROACH_NOTE_MAX_CHARS));
     }
 
     // Collect assistant text for reasoning state extraction (Phase 5)
@@ -188,9 +189,9 @@ export function scanUserToolResults(content: ContentBlock[], snapshot: Transcrip
 
     if (command && !state.seenCommands.has(command)) {
       state.seenCommands.add(command);
-      const outputSummary = truncate(block.content ?? '', TRUNCATE.TOOL_OUTPUT_SUMMARY_CHARS);
+      const outputSummary = truncateAscii(block.content ?? '', TRUNCATE.TOOL_OUTPUT_SUMMARY_CHARS);
       snapshot.recentCommands.push({
-        command: truncate(command, TRUNCATE.COMMAND_CHARS),
+        command: truncateAscii(command, TRUNCATE.COMMAND_CHARS),
         outputSummary,
       });
     }

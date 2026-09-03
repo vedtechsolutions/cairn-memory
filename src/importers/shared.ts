@@ -6,6 +6,7 @@
  * misclassification over time.
  */
 import type { LearnSection } from './learn-pipeline.js';
+import { LIMITS } from '../constants/index.js';
 
 /** Wording → kind. Decision requires CHOICE phrasing — bare 'over'
  *  matches "iterate over rows" (review). */
@@ -17,7 +18,13 @@ export function inferKind(text: string): LearnSection['kind'] {
   return 'fact';
 }
 
+/** The one slug shape: lower-case, runs of non-alphanumerics collapsed to
+ *  `-`, edge dashes trimmed, capped. Empty when nothing survives. */
+export function slugOf(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-/, '').slice(0, LIMITS.SLUG_MAX_CHARS).replace(/-$/, '');
+}
+
 /** `prefix:slug-of-value`, capped — the one tag shape for provenance. */
 export function slugTag(prefix: string, value: string): string {
-  return `${prefix}:${value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40)}`;
+  return `${prefix}:${slugOf(value)}`;
 }

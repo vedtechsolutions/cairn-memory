@@ -1,6 +1,5 @@
-import { homedir } from 'node:os';
 import { resolve } from 'node:path';
-import { defaultDbPath } from '../constants/paths.js';
+import { defaultDbPath, robustHomedir } from '../constants/paths.js';
 
 /**
  * Resolve the SQLite database path the way every Waykeep process must, so the
@@ -16,6 +15,6 @@ export function resolveDbPath(input?: string): string {
     return defaultDbPath();
   }
   if (input === ':memory:') return input;
-  if (input.startsWith('~')) return input.replace('~', homedir());
+  if (input.startsWith('~')) return input.replace('~', robustHomedir());
   return resolve(input);
 }

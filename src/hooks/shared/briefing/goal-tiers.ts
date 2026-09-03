@@ -4,7 +4,7 @@ import { LIMITS, TOKEN_BUDGET, GOAL_TIER_LABELS, formatAgeCompact, type GoalTier
 import { isMetaGoal } from '../transcript-parser.js';
 import type { BriefingContext } from './types.js';
 import { tokeniseForOverlap, jaccardOverlap } from './query-fingerprint.js';
-import { truncate } from './render-helpers.js';
+import { truncate } from '../../../utils/text.js';
 
 /** Result of evaluating a carried goal against staleness gates. */
 interface GoalStalenessResult {

@@ -17,13 +17,13 @@ import {
 } from './query-fingerprint.js';
 import { computeEffectiveness } from './recovery.js';
 import {
-  truncate,
   isCompletedDecision,
   isCorrectionQuality,
   emptyTier,
   measureLines,
   type TierResult,
 } from './render-helpers.js';
+import { truncate } from '../../../utils/text.js';
 
 /** Tier 2: Decisions from memory DB — effectiveness-ranked */
 export function renderTier2(

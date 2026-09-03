@@ -19,6 +19,7 @@ import { readFileSync, statSync } from 'node:fs';
 import { configPath as sharedConfigPath } from '../constants/paths.js';
 import { log } from '../utils/log.js';
 import { CONFIG_CACHE } from '../constants/index.js';
+import { isPlainObject } from '../utils/plain-object.js';
 
 export interface WaykeepScopeConfig {
   /** Projects whose memories never surface OUTSIDE the project — on any
@@ -70,7 +71,7 @@ let warnedIdentity: string | null = null;
  */
 function parseConfig(raw: string): { config: WaykeepConfig; badSections: string[] } {
   const parsed = JSON.parse(raw) as unknown;
-  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+  if (!isPlainObject(parsed)) {
     return { config: EMPTY_CONFIG, badSections: ['(document)'] };
   }
   const badSections: string[] = [];

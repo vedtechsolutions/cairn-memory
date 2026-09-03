@@ -15,7 +15,7 @@
 import type { MemoryRepository } from '../../db/memory-repository.js';
 import { formatMemoryContent } from '../../utils/memory-injection.js';
 import type { PlanRepository } from '../../db/plan-repository.js';
-import { LIMITS, TOKEN_BUDGET, BRIEFING_ALLOCATION, BRIEFING_MODE, BRIEFING_BUDGET } from '../../constants/index.js';
+import { LIMITS, TOKEN_BUDGET, BRIEFING_ALLOCATION, BRIEFING_MODE, BRIEFING_BUDGET, TRUNCATE } from '../../constants/index.js';
 // NOTE: Briefing compilation runs on the hot path for every session-start. Use
 // estimateTokensFast (~microseconds) for all incremental budget checks and the
 // returned tokenEstimate. Profiling showed the real estimateTokens / countTokens
@@ -30,6 +30,7 @@ import { compileIndexBriefing } from './briefing/index-briefing.js';
 import {
   renderGovernanceTier,
 } from './briefing/governance-tier.js';
+import { truncateAscii } from '../../utils/text.js';
 
 // Facade re-exports — every name importable from this module before the
 // briefing/ split remains importable here.
@@ -142,7 +143,7 @@ function appendContradictions(
 ): BriefingOutput {
   const pairs = memoryRepo.getContradictions(ctx.project);
   if (pairs.length === 0) return out;
-  const clip = (s: string) => (s.length > 70 ? s.slice(0, 67) + '...' : s);
+  const clip = (s: string): string => truncateAscii(s, TRUNCATE.BRIEFING_CLIP_CHARS);
   const lines = pairs.slice(0, LIMITS.BRIEFING_CONTRADICTIONS_MAX)
     .map(p => `  ⚠ "${formatMemoryContent({ ...p.winner, content: clip(p.winner.content) })}" vs "${formatMemoryContent({ ...p.loser, content: clip(p.loser.content) })}"`);
   const section = ['[WAYKEEP] Conflicting memories — verify & resolve:', ...lines].join('\n');

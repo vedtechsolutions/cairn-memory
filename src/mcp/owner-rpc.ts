@@ -9,6 +9,7 @@ import { OWNER_RPC, SYNC_APPLY } from '../constants/index.js';
 import { applyEventBatch, readGeneration, type ApplyBatchResult } from '../db/sync-apply/index.js';
 import { ApplyValidationError, ProtocolInvariantError } from '../db/sync-apply/errors.js';
 import type { SessionCache } from '../hooks/shared/session-cache.js';
+import { isPlainObject } from '../utils/plain-object.js';
 
 /**
  * Owner-control RPC (brief D3) — the non-hook route registry served by
@@ -120,18 +121,18 @@ function parseApplyBody(raw: string): ApplyRequestBody {
   } catch {
     throw new ApplyValidationError('request body is not valid JSON');
   }
-  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+  if (!isPlainObject(parsed)) {
     throw new ApplyValidationError('request body must be an object');
   }
-  const b = parsed as Record<string, unknown>;
-  if (typeof b.project !== 'string' || b.project.length === 0 || b.project.length > SYNC_APPLY.MAX_ID_LENGTH) {
+  if (typeof parsed.project !== 'string' || parsed.project.length === 0 || parsed.project.length > SYNC_APPLY.MAX_ID_LENGTH) {
     throw new ApplyValidationError('project must be a bounded non-empty string');
   }
-  if (typeof b.batch_id !== 'string' || b.batch_id.length === 0 || b.batch_id.length > SYNC_APPLY.MAX_ID_LENGTH) {
+  if (typeof parsed.batch_id !== 'string' || parsed.batch_id.length === 0 || parsed.batch_id.length > SYNC_APPLY.MAX_ID_LENGTH) {
     throw new ApplyValidationError('batch_id must be a bounded non-empty string');
   }
-  if (!Array.isArray(b.events)) throw new ApplyValidationError('events must be an array');
-  return parsed as ApplyRequestBody;
+  if (!Array.isArray(parsed.events)) throw new ApplyValidationError('events must be an array');
+  // Fields validated above; the narrowed record type has no static overlap with the interface.
+  return parsed as unknown as ApplyRequestBody;
 }
 
 export class OwnerRpc {

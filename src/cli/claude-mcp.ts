@@ -14,7 +14,6 @@
  */
 import { spawnSync } from 'node:child_process';
 import { accessSync, constants as fsConstants, existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
-import { homedir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { LEGACY_NAMESPACES } from 'waykeep-contract';
 import { ENV } from '../constants/env.js';
@@ -24,11 +23,14 @@ import {
   type McpServerEntry, waykeepMcpServerEntry, referencesServer, looksLikeWaykeepServer,
   sameServerEntry, describeServerEntry,
 } from './mcp-entry.js';
+import { shellQuote } from '../utils/shell.js';
+import { isPlainObject } from '../utils/plain-object.js';
+import { robustHomedir } from '../constants/paths.js';
 
 /** Claude Code's config dir: `$CLAUDE_CONFIG_DIR` when set (the CLI honors
  *  it for both files — verified), else `~/.claude`. */
 function claudeConfigDir(): string {
-  return process.env[CLAUDE_CODE.CONFIG_DIR_ENV] || join(homedir(), CLAUDE_CODE.CONFIG_DIR);
+  return process.env[CLAUDE_CODE.CONFIG_DIR_ENV] || join(robustHomedir(), CLAUDE_CODE.CONFIG_DIR);
 }
 
 /** ~/.claude/settings.json (hooks, StatusLine, plugin enablement); an explicit override for hermetic tests. */
@@ -41,7 +43,7 @@ export function claudeSettingsPath(): string {
 export function claudeConfigPath(): string {
   const override = process.env[ENV.CLAUDE_CONFIG];
   if (override) return override;
-  return join(process.env[CLAUDE_CODE.CONFIG_DIR_ENV] || homedir(), CLAUDE_CODE.CONFIG_FILENAME);
+  return join(process.env[CLAUDE_CODE.CONFIG_DIR_ENV] || robustHomedir(), CLAUDE_CODE.CONFIG_FILENAME);
 }
 
 /** The user-scope `mcpServers` map (absent file or key → empty), or an error
@@ -51,10 +53,10 @@ export function readClaudeUserMcpServers(path: string): { servers: Record<string
   if (!existsSync(path)) return { servers: {} };
   try {
     const parsed: unknown = JSON.parse(readFileSync(path, 'utf-8'));
-    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return { error: 'not a JSON object' };
+    if (!isPlainObject(parsed)) return { error: 'not a JSON object' };
     const servers = (parsed as { mcpServers?: unknown }).mcpServers;
     if (servers === undefined) return { servers: {} };
-    if (typeof servers !== 'object' || servers === null || Array.isArray(servers)) return { error: 'mcpServers is not an object' };
+    if (!isPlainObject(servers)) return { error: 'mcpServers is not an object' };
     return { servers: servers as Record<string, unknown> };
   } catch (err) {
     return { error: (err as Error).message };
@@ -103,7 +105,7 @@ export function resolveClaudeBin(): ClaudeBin {
   for (const dir of (process.env.PATH ?? '').split(delimiter)) {
     if (dir && isExecutableFile(join(dir, CLAUDE_CODE.CLI_BIN))) return { bin: join(dir, CLAUDE_CODE.CLI_BIN) };
   }
-  const home = homedir();
+  const home = robustHomedir();
   const candidates = [
     ...CLAUDE_CODE.CLI_HOME_LOCATIONS.map(segments => join(home, ...segments, CLAUDE_CODE.CLI_BIN)),
     ...CLAUDE_CODE.CLI_SYSTEM_LOCATIONS.map(dir => join(dir, CLAUDE_CODE.CLI_BIN)),
@@ -186,9 +188,6 @@ export function commandArgv(action: ClaudeMcpAction, entry: unknown): string[] {
     ? ['mcp', 'add-json', '-s', CLAUDE_CODE.MCP_SCOPE, action.name, JSON.stringify(entry)]
     : ['mcp', 'remove', action.name, '-s', CLAUDE_CODE.MCP_SCOPE];
 }
-
-const shellQuote = (s: string): string =>
-  /^[A-Za-z0-9_./:=@%+,-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`;
 
 /** The exact command for a human to paste — dry runs, a missing CLI, failures. */
 export function commandLine(action: ClaudeMcpAction, entry: unknown): string {

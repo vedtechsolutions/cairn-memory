@@ -156,6 +156,8 @@ export const LIMITS = {
    *  shipped and suppressed. Below 1.0 so commit subjects need not repeat
    *  every goal word verbatim. */
   GOAL_SHIPPED_COVERAGE: 0.6,
+  /** Provenance tag slugs (`type:…`, `topic:…`, `group:…`) are capped here. */
+  SLUG_MAX_CHARS: 40,
   /** Shortest userContext message that may stand in as a fallback goal. */
   FALLBACK_GOAL_MIN_CHARS: 20,
   /** Branch-name-derived goals shorter or longer than this are not goals. */

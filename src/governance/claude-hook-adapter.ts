@@ -8,15 +8,13 @@ import {
   type NormalizedCommandInput,
   type NormalizedToolResult,
 } from './types.js';
+import { isPlainObject } from '../utils/plain-object.js';
 
 const SUPPORTED_TOOLS = new Set(['Bash', 'Write', 'Edit', 'MultiEdit']);
 const HOOK_EVENTS = new Set<GovernanceHookEvent>([
   'PostToolUse', 'PostToolUseFailure', 'FileChanged',
 ]);
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
 
 function stringField(record: Record<string, unknown>, key: string): string | null {
   return typeof record[key] === 'string' ? record[key] : null;
@@ -64,7 +62,7 @@ function hashOutput(text: string): string {
 
 function canonicalJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
-  if (isRecord(value)) {
+  if (isPlainObject(value)) {
     return `{${Object.entries(value)
       .filter(([, child]) => child !== undefined)
       .sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0)
@@ -81,7 +79,7 @@ function adapterError(
   input?: Record<string, unknown>,
   hookEvent: GovernanceHookEvent | null = null,
 ): AdapterErrorEvent {
-  const metadata = input !== undefined && isRecord(input.client_metadata)
+  const metadata = input !== undefined && isPlainObject(input.client_metadata)
     ? input.client_metadata : {};
   return {
     kind: 'adapter_error',
@@ -106,11 +104,11 @@ function detectedClientName(input: Record<string, unknown>): string | null {
   const flat = stringField(input, 'client_name');
   if (flat !== null) return flat;
   const metadata = input.client_metadata;
-  return isRecord(metadata) ? stringField(metadata, 'name') : null;
+  return isPlainObject(metadata) ? stringField(metadata, 'name') : null;
 }
 
 function clientMetadata(input: Record<string, unknown>): NormalizedClientMetadata | null {
-  const metadata = isRecord(input.client_metadata) ? input.client_metadata : {};
+  const metadata = isPlainObject(input.client_metadata) ? input.client_metadata : {};
   const name = detectedClientName(input);
   if (name !== null && name !== 'claude-code') return null;
   const version = stringField(input, 'client_version') ?? stringField(metadata, 'version');
@@ -206,7 +204,7 @@ function successResult(
       outputText: toolName === 'Bash' ? normalized : '',
     };
   }
-  if (!isRecord(response)) return null;
+  if (!isPlainObject(response)) return null;
   if (toolName === 'Bash') return structuredBashResult(response, durationMs);
   const recognizedEditResponse = response.success === true ||
     typeof response.filePath === 'string' || typeof response.file_path === 'string' ||
@@ -246,7 +244,7 @@ function failureResult(
 /** Claude Code wire-shape boundary. It never throws and never infers unknown data. */
 export function adaptClaudeHook(inputValue: unknown): AdaptedClaudeEvent {
   try {
-    if (!isRecord(inputValue)) return adapterError('hook input must be an object');
+    if (!isPlainObject(inputValue)) return adapterError('hook input must be an object');
     const event = hookEvent(inputValue);
     if (event === null) return adapterError('unsupported or missing hook event', inputValue);
     const client = clientMetadata(inputValue);
@@ -283,7 +281,7 @@ export function adaptClaudeHook(inputValue: unknown): AdaptedClaudeEvent {
 
     const toolName = stringField(inputValue, 'tool_name');
     const toolInput = inputValue.tool_input;
-    if (!toolName || !SUPPORTED_TOOLS.has(toolName) || !isRecord(toolInput)) {
+    if (!toolName || !SUPPORTED_TOOLS.has(toolName) || !isPlainObject(toolInput)) {
       return adapterError('unsupported tool or invalid tool_input', inputValue, event);
     }
     const observedCommand = toolName === 'Bash' ? commandInput(toolInput) : null;

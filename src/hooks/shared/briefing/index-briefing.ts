@@ -16,7 +16,6 @@ import {
 import { renderGoalTiers, formatGoalTierLine } from './goal-tiers.js';
 import { computeEffectiveness } from './recovery.js';
 import {
-  truncate,
   renderResumeCursor,
   isCompletedDecision,
   isCorrectionQuality,
@@ -25,6 +24,7 @@ import {
 import { renderGovernanceTier } from './governance-tier.js';
 import { isMemoryEligibleForInjection } from '../../../utils/memory-injection.js';
 import { TOOL } from '../../../constants/mcp.js';
+import { truncate } from '../../../utils/text.js';
 
 /**
  * Emit a compact index briefing. Each memory entry is rendered as a single

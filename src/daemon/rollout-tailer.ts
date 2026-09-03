@@ -21,7 +21,6 @@
  */
 import { readdirSync, statSync, openSync, readSync, closeSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { homedir } from 'node:os';
 import type { CachedHookContext } from '../hooks/shared/db-client.js';
 import type { PostToolUseInput } from '../hooks/shared/hook-io.js';
 import { handleCodexPostTool, isToolSeen } from '../hooks/handlers/codex-post-tool-handler.js';
@@ -32,6 +31,7 @@ import { ENV } from '../constants/env.js';
 import { log } from '../utils/log.js';
 import { MS_PER_DAY } from '../constants/time.js';
 import { CODEX } from '../constants/codex.js';
+import { robustHomedir } from '../constants/paths.js';
 
 interface FileState {
   offset: number;
@@ -50,7 +50,7 @@ interface FileState {
 interface TailerHandle { stop(): void; tick(): Promise<number>; }
 
 function sessionsRoot(): string {
-  return process.env[ENV.CODEX_SESSIONS_DIR] ?? join(homedir(), CODEX.CONFIG_DIR, CODEX.SESSIONS_SUBDIR);
+  return process.env[ENV.CODEX_SESSIONS_DIR] ?? join(robustHomedir(), CODEX.CONFIG_DIR, CODEX.SESSIONS_SUBDIR);
 }
 
 /** Today's and yesterday's date dirs — covers the midnight straddle without

@@ -8,12 +8,6 @@ import { existsSync as fsExistsSync } from 'node:fs';
 import type { BriefingContext } from './types.js';
 import { TOOL } from '../../../constants/mcp.js';
 
-/** Truncate text to maxChars, adding ellipsis if cut */
-export function truncate(text: string, maxChars: number): string {
-  if (text.length <= maxChars) return text;
-  return text.slice(0, maxChars - 1) + '…';
-}
-
 /** Format the Phase 2 resume cursor as a briefing line, or return null when
  *  the cursor is absent, stale (>RESUME_CURSOR_STALE_MS), or points to a
  *  file that no longer exists. "Resume: <basename>:<line> (<tool>, Nm ago)".

@@ -57,11 +57,6 @@ export interface TranscriptSnapshot {
  *  too aggressively would cause unrelated errors to be retired together. */
 export type CommandBucket = 'typecheck' | 'test' | 'build' | 'lint';
 
-export function truncate(text: string, maxLen: number): string {
-  if (text.length <= maxLen) return text;
-  return text.slice(0, maxLen - 3) + '...';
-}
-
 export function emptySnapshot(): TranscriptSnapshot {
   return {
     recentFiles: [],

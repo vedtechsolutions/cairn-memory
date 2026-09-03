@@ -25,7 +25,7 @@
  * `src-project:` tag; --project scopes the batch if wanted.
  */
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
-import { homedir, tmpdir } from 'node:os';
+import { tmpdir } from 'node:os';
 import { join, basename } from 'node:path';
 import DatabaseCtor from 'better-sqlite3';
 import type { Database as DatabaseType } from 'better-sqlite3';
@@ -33,6 +33,7 @@ import { LIMITS, IMPORT } from '../constants/index.js';
 import { scrubSecrets } from '../utils/secret-scanner.js';
 import type { LearnSection } from './learn-pipeline.js';
 import { inferKind, slugTag } from './shared.js';
+import { robustHomedir } from '../constants/paths.js';
 
 export interface ClaudeMemImport {
   sections: LearnSection[];
@@ -114,7 +115,7 @@ function openSnapshot(dbPath: string, scratch: string): DatabaseType {
 }
 
 export function transformClaudeMem(path?: string): ClaudeMemImport {
-  const root = path ?? join(homedir(), '.claude-mem');
+  const root = path ?? join(robustHomedir(), '.claude-mem');
   const sections: LearnSection[] = [];
   const excluded: Array<{ name: string; reason: string }> = [];
   const notes: string[] = [];

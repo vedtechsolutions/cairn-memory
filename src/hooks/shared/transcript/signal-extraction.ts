@@ -2,7 +2,8 @@
  * Approach-note, winning-pattern, and error-output extraction from
  * transcript content.
  */
-import { LEARNABLE_ERROR_PATTERNS, NOISE_ERROR_PATTERNS } from '../../../constants/index.js';
+import { LEARNABLE_ERROR_PATTERNS, NOISE_ERROR_PATTERNS, TRUNCATE } from '../../../constants/index.js';
+import { truncateAscii } from '../../../utils/text.js';
 
 /**
  * Filter approach notes to strategy-like content, skipping conversational
@@ -104,10 +105,7 @@ export function extractWinningPattern(text: string): string | null {
   // Reject generic confirmations that hit the word matches without substance
   if (/^(all tests pass|tests pass|build (?:clean|passes|ok))\.?$/i.test(lower)) return null;
 
-  let pattern = text.replace(/\s+/g, ' ').trim();
-  if (pattern.length > 200) {
-    pattern = pattern.slice(0, 197) + '...';
-  }
+  const pattern = truncateAscii(text.replace(/\s+/g, ' ').trim(), TRUNCATE.SIGNAL_PATTERN_CHARS);
   return pattern;
 }
 

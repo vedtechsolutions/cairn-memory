@@ -5,12 +5,12 @@
  * wrote while reporting success, and what this check exists to catch.
  * Diagnostic only: reads both files, edits nothing.
  */
-import { existsSync, readFileSync, realpathSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
 import { NAMESPACE } from 'waykeep-contract';
 import { MCP_SERVER_NAME } from '../constants/mcp.js';
 import { claudeConfigPath, claudeSettingsPath, readClaudeUserMcpServers } from './claude-mcp.js';
 import { describeServerEntry, looksLikeWaykeepServer, referencesServer, serverArgs } from './mcp-entry.js';
+import { canonicalPath } from '../utils/fs-paths.js';
 
 export interface ClaudeHealth { status: 'ok' | 'warn'; detail: string }
 
@@ -33,12 +33,6 @@ function readSettingsFacts(path: string): { pluginEnabled: boolean; inertBlock: 
   }
 }
 
-/** realpath both sides so the same install reached through a symlink does
- *  not read as a different one (mirrors the Codex parity check). */
-function canonical(p: string): string {
-  try { return realpathSync(p); } catch { return resolve(p); }
-}
-
 export function claudeMcpHealth(serverPath: string): ClaudeHealth {
   const registry = claudeConfigPath();
   const settings = claudeSettingsPath();
@@ -55,7 +49,7 @@ export function claudeMcpHealth(serverPath: string): ClaudeHealth {
     : '';
   const entry = read.servers[MCP_SERVER_NAME];
   if (entry !== undefined) {
-    const ours = referencesServer(entry, serverPath) || serverArgs(entry).some(a => canonical(a) === canonical(serverPath));
+    const ours = referencesServer(entry, serverPath) || serverArgs(entry).some(a => canonicalPath(a) === canonicalPath(serverPath));
     if (ours) {
       return { status: facts.inertBlock ? 'warn' : 'ok', detail: `MCP server registered with Claude Code at user scope for this install${inert}` };
     }
